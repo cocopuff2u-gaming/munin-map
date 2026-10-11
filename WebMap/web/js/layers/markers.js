@@ -39,6 +39,7 @@ const GAME_ICON = {
   spawn: 'StartTemple', tombstone: 'pin:Death', base: 'pin:Icon1', boss: 'pin:Boss',   // portals keep their blue icon
   trader: 'Vendor_BlackForest', hildir: 'Hildir_camp', bogwitch: 'BogWitch_Camp',
   hildir1: 'pin:Hildir1', hildir2: 'pin:Hildir2', hildir3: 'pin:Hildir3',   // Hildir's sisters' lairs
+  invasion: 'pin:RandomEvent',
   fire: 'pin:Icon0', house: 'pin:Icon1', mine: 'pin:Icon2', dot: 'pin:Icon3', cave: 'pin:Icon4', pin: 'pin:Icon3', bed: 'pin:Bed',
 };
 
@@ -76,6 +77,10 @@ export class MarkerLayers {
   emitPins() { for (const fn of this.pinListeners || []) fn(this.pinList()); }
 
   render(sets) {
+    this.storeSets = sets;
+    // invasions (layers/raid.js draws them on the map, pulsing like in game) close the list, for finding them
+    const inv = window.app && window.app.layers.raid && window.app.layers.raid.invasionMarkers();
+    if (inv && inv.length) sets = [...sets, { id: 'invasions', label: 'Invasions', mapless: true, markers: inv }];
     // the spawn point (the server's world_start_pos) heads the list as its own set, like the seed maps do
     const sp = window.app && window.app.spawn;
     if (sp && !sets.some((s) => s.id === 'spawn'))
@@ -97,7 +102,7 @@ export class MarkerLayers {
       }
     const byTag = new Map();
     for (const set of this.sets) {
-      if (this.visible.get(set.id) === false) continue;
+      if (this.visible.get(set.id) === false || set.mapless) continue;
       for (const m of set.markers || []) {
         const cat = m.cat || 'custom';
         if (set.id === 'locations' && this.catVisible.get(cat) === false) continue;
@@ -120,6 +125,7 @@ export class MarkerLayers {
 
   setVisible(id, v) {
     this.visible.set(id, v);
+    if (id === 'invasions' && window.app && window.app.layers.raid) window.app.layers.raid.redraw();
     this.list = null;
     this.canvas.draw();
   }

@@ -67,7 +67,7 @@ namespace WebMap.Live
                     string name = ev != null ? ev.m_name : null;
                     if (name != current)
                     {
-                        if (current != null) Events.Add("raid", "Raid", endText ?? "is over");
+                        if (current != null) { Events.Add("raid", "Raid", endText ?? "is over"); global::WebMap.WebMap.PostWorldEvent("⚔️ Raid: " + (endText ?? "is over")); }
                         RaidJson = "null";
                         if (ev != null)
                         {
@@ -77,6 +77,7 @@ namespace WebMap.Live
                             string who = Names(there);
                             Stats.OnRaid(there);
                             Events.Add("raid", "Raid", start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
+                            global::WebMap.WebMap.PostWorldEvent("⚔️ Raid: " + start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
                             endText = Localize(ev.m_endMessage, "is over");
                             RaidJson = new JsonWriter(160).BeginObject().Prop("name", start).Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("r", ev.m_eventRange, 0).End().ToString();
                         }
@@ -84,8 +85,60 @@ namespace WebMap.Live
                     }
                 }
                 catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: raid check: " + e.Message); }
+                try { CheckInvasions(); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: invasion check: " + e.Message); }
                 yield return new WaitForSeconds(2f);
             }
+        }
+
+        // ---- invasions: the game's other kind of event (PersistentEventSystem), not a raid on a base
+        // but a site that stays for an hour or two. The game's map draws each like a raid: a red area
+        // its radius wide, the pulsing "!", and its name under it. [{"id","name","x","z","r","left"}]
+        // ("left": seconds to go, absent when it doesn't end on its own)
+        public static volatile string InvasionsJson = "[]";
+        private static readonly Dictionary<int, string> invasionNames = new Dictionary<int, string>();   // id -> name, the ones on now
+
+        private static void CheckInvasions()
+        {
+            var ps = PersistentEventSystem.instance;
+            var list = ps != null && ps.m_activePersistentEvents != null ? ps.m_activePersistentEvents.list : null;
+            double now = ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : 0;
+            var j = new JsonWriter(256).BeginArray();
+            var on = new HashSet<int>();
+            if (list != null)
+                foreach (var ev in list)
+                {
+                    on.Add(ev.eventId);
+                    if (!invasionNames.TryGetValue(ev.eventId, out string name))
+                    {
+                        string token = null;
+                        try { token = ev.Source.mapTokenString; } catch { }
+                        string fallback = null;
+                        try { fallback = Pretty(ev.internalName); } catch { }
+                        name = Localize(token, fallback ?? "Invasion");
+                        invasionNames[ev.eventId] = name;
+                        // new: started in the last two minutes (this looks every 2 s). Not one carried over
+                        // from before a restart, nor one met before the world's clock is loaded (no age yet)
+                        double age = now - ev.startTime;
+                        if (now > 1 && age >= 0 && age < 120)
+                        {
+                            string who = Names(NearbyPeers(ev.position, null, ev.radius + 150f));
+                            Events.Add("invasion", name, "has begun" + (who.Length > 0 ? " (near " + who + ")" : ""), ev.position.x, ev.position.z);
+                            global::WebMap.WebMap.PostWorldEvent("🔥 " + name + " has begun" + (who.Length > 0 ? " (near " + who + ")" : ""), ev.position.x, ev.position.z);
+                        }
+                    }
+                    j.BeginObject().Prop("id", ev.eventId).Prop("name", name).Prop("x", ev.position.x, 1).Prop("z", ev.position.z, 1).Prop("r", ev.radius, 0);
+                    if (ev.duration >= 0) j.Prop("left", Math.Max(0, ev.startTime + ev.duration - now), 0);
+                    j.End();
+                }
+            foreach (int id in new List<int>(invasionNames.Keys))
+                if (!on.Contains(id))
+                {
+                    Events.Add("invasion", invasionNames[id], "is over");
+                    global::WebMap.WebMap.PostWorldEvent("🔥 " + invasionNames[id] + " is over");
+                    invasionNames.Remove(id);
+                }
+            InvasionsJson = j.End().ToString();
         }
 
         // ---- found: boss altars and traders, the moment their ground is explored (World/Markers).

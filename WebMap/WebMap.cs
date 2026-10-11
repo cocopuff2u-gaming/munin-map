@@ -21,7 +21,7 @@ namespace WebMap
     {
         public const string GUID = "com.valheimwebmap.server";
         public const string NAME = "WebMap";
-        public const string VERSION = "2.2.4";
+        public const string VERSION = "2.2.5";
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
 
@@ -169,6 +169,23 @@ namespace WebMap
         public void NotifyOffline()
         {
             try { discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** is *offline* 🔴"); } catch { }
+        }
+
+        // a world event (raid, invasion) for the Discord webhook, with a link to it on the map when the
+        // map's address is set
+        public static void PostWorldEvent(string message, float? x = null, float? z = null)
+        {
+            if (!WebMapConfig.DISCORD_WORLD_EVENTS || string.IsNullOrEmpty(WebMapConfig.DISCORD_WEBHOOK)) return;
+            try
+            {
+                var w = instance;
+                if (w == null || w.discordWebHook == null) return;
+                string link = "";
+                if (x.HasValue && z.HasValue && !string.IsNullOrEmpty(WebMapConfig.URL))
+                    link = $" ([map]({WebMapConfig.URL.TrimEnd('#')}#{Mathf.RoundToInt(x.Value)},{Mathf.RoundToInt(z.Value)},6))";
+                w.discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** {message}{link}");
+            }
+            catch { }
         }
 
         public void NotifyJoin(ZNetPeer peer)
@@ -577,7 +594,7 @@ namespace WebMap
 
                         if (!HandleChatCommand(steamid, userInfo.Name, pos, message) && messageType != (int)Talker.Type.Whisper)
                         {
-                            mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message);
+                            mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message, pos);
                         }
                     }
                     catch (Exception ex) { ZLog.LogWarning("WebMap: failed handling a chat message: " + ex); }
@@ -600,7 +617,7 @@ namespace WebMap
                         {
                             var message = (package.ReadString() ?? "").Trim();
                             if (!HandleChatCommand(steamid, userInfo.Name, pos, message))
-                                mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message);
+                                mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message, pos);
                         }
                     }
                     catch (Exception ex) { if (WebMapConfig.DEBUG) ZLog.LogError(ex.ToString()); }

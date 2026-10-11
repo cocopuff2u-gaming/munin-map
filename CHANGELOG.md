@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.5
+
+Invasions, shouts and weather on the map, raids and invasions on Discord, and a better phone view. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.
+
+**Map**
+* Invasions (the game's long-running events, e.g. a Jotun Invasion) drawn like the game's map draws them: the red area and the pulsing "!" with the invasion's name, over the fog. Click one (or a raid) for when it ends, its size and who is near it. They have their own group in Markers and a switch in Layers.
+* Invasions starting and ending are in Events (with a filter chip) and pop up as notices.
+* Shouts show on the map where they were shouted for 10 seconds, with the game's shout pin, for players who share their position.
+* Weather: each online player's weather where they stand (worked out the way their game does) on their tooltip, card and in the Players list; the wind's direction beside the coordinates.
+* The raid sprites are fetched ahead, so the first raid or invasion shows at once.
+
+**Discord**
+* Raids and invasions starting and ending are posted to the webhook, with who is near and a link to the spot on the map (`url` set). Off with `discord_world_events = false`.
+
+**Phone**
+* The zoom buttons no longer float over the full-screen menu.
+* Search results use the screen's width, each place's group and position under its name.
+
+**Server**
+* Building the markers at the end of a sweep is spread over frames like the rest (Valheim02's worst sweep frame: ~60 ms to ~34 ms).
+
 ## 2.2.4
 
 Lighter on the game server, and the page keeps up with players without catching. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.

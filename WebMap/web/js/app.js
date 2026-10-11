@@ -178,6 +178,7 @@ class App {
     connect();
     on('hello', (f) => { if (f.config) { this.config = f.config; this.applyConfig(f.config); } });
     on('connection', (ok) => { $('#conn').hidden = ok; });
+    on('players', (f) => this.showWind(f.data && f.data.windDeg));
     on('tiles', (f) => { $('#render-status').textContent = f.status ? `tiles ${f.status}` : ''; });
     setInterval(() => { if (this.sidebar.active === 'stats') stats.refresh(); }, 30000);
     if (matchMedia('(max-width: 720px)').matches) this.toggleSidebar(false);
@@ -255,6 +256,17 @@ class App {
     const p = list[(i + 1) % list.length];
     this.lastCycled = p.id;
     PL.follow(p.id);
+  }
+
+  // the wind arrow by the coordinates: where the wind blows to, like the arrow on the game's map
+  showWind(deg) {
+    const w = $('#wind');
+    if (deg === undefined || deg === null) { w.textContent = ''; return; }
+    const names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const from = names[Math.round(((deg + 180) % 360) / 45) % 8];   // a wind is named for where it comes from
+    if (!w.firstChild) w.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2l6 14h-5v6h-2v-6H6z" fill="currentColor"/></svg><span></span>';
+    w.querySelector('svg').style.transform = `rotate(${Math.round(deg)}deg)`;
+    w.querySelector('span').textContent = `${from} wind`;
   }
 
   toggleSidebar(show) {

@@ -42,6 +42,7 @@ namespace WebMap
         public static string ANNOUNCE_NAME = "Server";
         public static string DISCORD_WEBHOOK = "";
         public static string DISCORD_INVITE_URL = "";
+        public static bool DISCORD_WORLD_EVENTS = true;
 
         public static string URL = "";
         public static string MAP_TITLE = "";
@@ -191,6 +192,10 @@ namespace WebMap
             DISCORD_WEBHOOK = config.Bind("Server", "discord_webhook",
                 WebMapConfig.DISCORD_WEBHOOK,
                 "Discord webhook URL").Value;
+
+            DISCORD_WORLD_EVENTS = config.Bind("Server", "discord_world_events",
+                WebMapConfig.DISCORD_WORLD_EVENTS,
+                "Also post raids and invasions (starting and ending) to the Discord webhook, with a link to the spot on the map.").Value;
 
             DISCORD_INVITE_URL = config.Bind("Server", "discord_invite_url",
                 WebMapConfig.DISCORD_INVITE_URL,

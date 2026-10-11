@@ -121,8 +121,8 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .event[data-type=join] b { color: var(--ok); }
 .event[data-type=boss] b { color: #ff5c5c; }
 .event[data-type=boss] .msg { color: #ffd2d2; }
-.event[data-type=raid] b { color: #ffb347; }
-.event[data-type=raid] .msg { color: #ffe2bd; }
+.event[data-type=raid] b, .event[data-type=invasion] b { color: #ffb347; }
+.event[data-type=raid] .msg, .event[data-type=invasion] .msg { color: #ffe2bd; }
 .event[data-type=found] b { color: #f2c14e; }
 .event[data-type=biome] b { color: #8fd8d0; }
 .event[data-type=sleep] b { color: #c9a7ff; }
@@ -142,7 +142,9 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 /* hud */
 .hud { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 8px; align-items: center; z-index: 800; font-family: var(--mono); font-size: 12px; pointer-events: none; }
 .hud > div { background: rgba(14,17,22,.8); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
-.hud .biome:empty, .hud .render-status:empty { display: none; }
+.hud .biome:empty, .hud .render-status:empty, .hud .wind:empty { display: none; }
+.hud .wind { display: flex; align-items: center; gap: 5px; }
+.hud .wind svg { width: 12px; height: 12px; transition: transform .6s ease; }
 .hud .render-status { color: var(--muted); }
 .app:not(.sidebar-hidden) .hud { left: calc(var(--sidebar-w) + 10px); }
 .app:not(.sidebar-hidden) .leaflet-left { left: calc(var(--sidebar-w) + 8px); }
@@ -175,6 +177,11 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .raid-area { pointer-events: none; }
 /* the game's pulse: size x (0.8 + 0.2 sin(5t)) */
 @keyframes raid-pulse { 0% { transform: scale(.8); } 25% { transform: scale(1); } 50% { transform: scale(.8); } 75% { transform: scale(.6); } 100% { transform: scale(.8); } }
+.shout-icon { overflow: visible; }
+.shout-pin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; animation: shout-in .25s ease-out; }
+.shout-pin img, .shout-pin svg { width: 28px; height: 28px; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)); }
+.shout-text { position: absolute; left: 50%; top: 30px; transform: translateX(-50%); max-width: 260px; width: max-content; text-align: center; font: 600 13px/1.25 var(--font); color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000; pointer-events: none; }
+@keyframes shout-in { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .ping { width: 40px; height: 40px; border-radius: 50%; border: 3px solid var(--accent-2); animation: ping 1.2s ease-out infinite; box-shadow: 0 0 12px var(--accent-2); }
 @keyframes ping { 0% { transform: scale(.3); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
 .leaflet-tooltip { background: var(--bg-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.5); font: 12px var(--font); }
@@ -216,7 +223,11 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
   #btn-fullscreen, #btn-link { display: none; }
   .sidebar { width: 100vw; }
   .app:not(.sidebar-hidden) .hud { display: none; }
-  .app:not(.sidebar-hidden) .leaflet-left { left: 8px; }
+  /* search results the width of the screen, each name with its kind and place under it */
+  .search-results { position: fixed; left: 8px; right: 8px; top: calc(var(--topbar-h) - 2px); max-height: 60vh; }
+  .search-results button { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .search-results .kind { margin-left: 0; }
+  .app:not(.sidebar-hidden) .leaflet-left, .app:not(.sidebar-hidden) .leaflet-right { display: none; }   /* the full-screen menu: the map's buttons would float over it */
   .hud { font-size: 11px; }
   .v3d-help { display: none; }
   .topbar { gap: 6px; padding: 0 8px; }

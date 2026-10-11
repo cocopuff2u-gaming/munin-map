@@ -7,6 +7,7 @@ import { layerState } from './layerstate.js';
 import { VEG, VEG_GROUPS } from './vegpack.js';
 import { RUIN_SITES } from './layers/shapes.js';
 import { on } from './net.js';
+import { RaidLayer } from './layers/raid.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
@@ -183,7 +184,7 @@ export class Sidebar {
     for (const [kind, name] of VEG_KEY) if (VEG[kind]) legend.querySelector('.lv').append(el(`<span><i class="${VEG[kind][2] ? 'rock' : 'round'}" style="background:${VEG[kind][1]}"></i>${name}</span>`));
     p.append(legend);
 
-    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', bases: 'house', vehicles: 'boat', locations: 'poi' };
+    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
     L.markers.onChange((sets) => {
       this.markerSetRows.replaceChildren();
       for (const s of sets) {
@@ -215,7 +216,7 @@ export class Sidebar {
       const hp = pl.maxHealth ? Math.round(100 * pl.health / pl.maxHealth) : 100;
       const color = PL.color(pl.name), following = PL.following === pl.id;
       const tags = [pl.dead && '<span class="tag dead">Dead</span>', pl.inBed && '<span class="tag sleep">Sleeping</span>', pl.pvp && '<span class="tag pvp">PvP</span>'].filter(Boolean).join('');
-      const where = pl.x !== undefined ? `${escape(pl.biome || '')}${pl.biome ? ' · ' : ''}${this.whereText(pl.x, pl.z)}` : 'Position hidden';
+      const where = pl.x !== undefined ? `${escape(pl.biome || '')}${pl.biome ? ' · ' : ''}${pl.weather ? escape(pl.weather) + ' · ' : ''}${this.whereText(pl.x, pl.z)}` : 'Position hidden';
       const r = el(`<div class="pcard${following ? ' on' : ''}">
         <div class="pc-top"><span class="avatar" style="background:${color}">${escape((pl.name || '?').slice(0, 1).toUpperCase())}</span>
           <div class="grow"><div class="pc-name">${escape(pl.name)}${tags}</div><div class="pc-where" title="${pl.x !== undefined ? `${pl.x}, ${pl.z}` : ''}">${where}</div></div>
@@ -264,7 +265,7 @@ export class Sidebar {
     }
     if (!p.contains(this.mkSearch)) p.replaceChildren(this.mkSearch, this.mkBody);
     const q = this.mkSearch.querySelector('input').value.trim().toLowerCase();
-    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', bases: 'house', vehicles: 'boat' };
+    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
     const go = (x, z) => this.app.goTo(x, z, Math.max(this.app.map.getZoom(), 6));
     this.mkBody.replaceChildren();
     let any = false;
@@ -282,7 +283,7 @@ export class Sidebar {
       const row = (m, name, meta, side = '') => {
         const icon = m.icon || m.cat || iconName;
         const r = el(`<div class="mrow clickable" title="${m.x}, ${m.z}">${this.markerIcon(icon, colors[icon] || colors[iconName], m.cat === 'tablepin')}<div class="grow"><div class="name">${name}</div><div class="meta">${meta}</div></div>${side}</div>`);
-        r.addEventListener('click', () => go(m.x, m.z));
+        r.addEventListener('click', () => { go(m.x, m.z); if (m.invasion) this.app.layers.raid.openInvasion(m); });
         return r;
       };
       if (s.id === 'portals') {
@@ -304,6 +305,7 @@ export class Sidebar {
           if (s.id === 'tombstones' && m.when) side = `<span class="mside">${new Date(m.when / 10000 - 62135596800000).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>`;
           if (s.id === 'bases' && m.pieces) side = `<span class="mside">${m.pieces.toLocaleString()} pieces</span>`;
           if (s.id === 'spawn') meta = `${m.x}, ${m.z}`;
+          if (m.invasion) { const left = RaidLayer.left(m.invasion); side = `<span class="mside">${left === null ? 'until cleared' : RaidLayer.duration(left) + ' left'}</span>`; }
           list.append(row(m, escape(m.label || (m.cat === 'tablepin' ? 'Map pin' : '')), meta, side));
         }
         if (ms.length > 300) list.append(el(`<div class="empty">...and ${ms.length - 300} more: use the search above</div>`));
@@ -623,7 +625,7 @@ export class Sidebar {
     if (!this.olderLoaded) while (this.eventList.children.length > 300) this.eventList.lastElementChild.remove();   // trimmed unless older history was asked for
     this.applyEventFilter();
     this.badge();
-    if (!initial) for (const e of list) if (e.type === 'death' || e.type === 'join' || e.type === 'leave' || e.type === 'server' || e.type === 'boss' || e.type === 'raid' || e.type === 'found' || e.type === 'biome') this.app.toast(`${e.name} ${e.text}`);
+    if (!initial) for (const e of list) if (e.type === 'death' || e.type === 'join' || e.type === 'leave' || e.type === 'server' || e.type === 'boss' || e.type === 'raid' || e.type === 'invasion' || e.type === 'found' || e.type === 'biome') this.app.toast(`${e.name} ${e.text}`);
   }
 }
 
@@ -704,6 +706,7 @@ const EVENT_KINDS = [
   ['biome', 'Biomes', 'A player entered a biome for the first time', 'Players'],
   ['boss', 'Boss kills', 'A boss was defeated, and by whom', 'World'],
   ['raid', 'Raids', 'A raid started or ended (click to see where)', 'World'],
+  ['invasion', 'Invasions', 'An invasion appeared somewhere in the world or went away (click to see where)', 'World'],
   ['found', 'Found', 'A boss altar or trader was found for the first time', 'World'],
   ['sleep', 'Slept', 'Everyone slept through the night', 'World'],
   ['chat', 'Chat', 'Chat messages', 'Chat'],

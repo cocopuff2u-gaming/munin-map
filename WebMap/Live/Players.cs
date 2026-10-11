@@ -21,7 +21,8 @@ namespace WebMap.Live
         {
             public long id, playerId; public string key, name, biome;
             public float x, y, z, yaw, health, maxHealth, stamina, eitr;
-            public bool hasPos, tracked, hidden, dead, pvp, inBed;
+            public bool hasPos, tracked, hidden, dead, pvp, inBed, hasWeather;
+            public Weather.Now weather;
             public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility (prefab names, "" when empty)
         }
 
@@ -104,20 +105,28 @@ namespace WebMap.Live
                         s.x = pos.x; s.y = pos.y; s.z = pos.z;
                         try { s.yaw = zdo.GetRotation().eulerAngles.y; } catch { }
                         try { s.biome = Palette.BiomeName((int)WorldGenerator.instance.GetBiome(pos.x, pos.z)); } catch { s.biome = ""; }
+                        s.hasWeather = Weather.At(pos, out s.weather);
                     }
                     s.hasPos = showPos;
                     s.tracked = trackPos;
                     current.Add(s);
                 }
             }
+            // the wind's direction is the same everywhere (its strength is the weather's): for the page's
+            // wind arrow, with or without anyone on
+            hasWorldWind = Weather.At(Vector3.zero, out worldWind);
             json = Build();
         }
+
+        private static bool hasWorldWind;
+        private static Weather.Now worldWind;
 
         private static string Build()
         {
             var j = new JsonWriter(256 + current.Count * 160);
             j.BeginObject();
             j.Prop("count", current.Count);
+            if (hasWorldWind) j.Prop("windDeg", worldWind.windDeg, 0);
             j.Key("players").BeginArray();
             foreach (var s in current)
             {
@@ -136,6 +145,7 @@ namespace WebMap.Live
                 if (s.hasPos)
                 {
                     j.Prop("x", s.x, 1).Prop("z", s.z, 1).Prop("y", s.y, 1).Prop("yaw", s.yaw, 0).Prop("biome", s.biome ?? "");
+                    if (s.hasWeather) j.Prop("weather", s.weather.name).Prop("windDeg", s.weather.windDeg, 0).Prop("wind", s.weather.wind, 2);
                 }
                 j.End();
             }

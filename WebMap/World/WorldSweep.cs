@@ -216,7 +216,8 @@ namespace WebMap.World
             yield return Step("buildings", Structures.Finish());
             int changedChunks = Structures.LastChanged;
             yield return Step("ruins", Ruins.Finish());
-            yield return Step("markers", Once(() => { Vehicles.Finish(); Dungeons.Finish(); Markers.Finish(); }));
+            Vehicles.Finish(); Dungeons.Finish();
+            yield return Step("markers", Markers.Finish());
             yield return Step("structure map", Once(StructureMap.Finish));
             StructureMap.LastScanned = seen;
             yield return Step("forest map", Once(ForestMap.Finish));

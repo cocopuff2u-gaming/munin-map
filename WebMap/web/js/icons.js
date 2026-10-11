@@ -30,6 +30,7 @@ const glyphs = {
   fire: '<path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   mine: '<path d="M4 16l6-6 4 4-6 6z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M13 7l4-4 4 4-4 4z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   house: '<path d="M4 11l8-7 8 7v9H4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M10 20v-6h4v6" fill="#111"/>',
+  invasion: '<circle cx="12" cy="12" r="9.5" fill="#111" stroke="COLOR" stroke-width="2"/><path d="M10.6 5.5h2.8l-.5 8.5h-1.8z" fill="COLOR"/><circle cx="12" cy="17.3" r="1.6" fill="COLOR"/>',
   player: '<path d="M12 2l8 20-8-5-8 5z" fill="COLOR" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/>',
 };
 
@@ -40,7 +41,7 @@ export const colors = {
   trader: '#f2c14e', hildir: '#f2c14e', bogwitch: '#9be37a', miniboss: '#ff9d4d', hildir1: '#ff9d4d', hildir2: '#ff9d4d', hildir3: '#ff9d4d', dungeon: '#c9a5ff', cave: '#9fd8ff', camp: '#ff9d4d',
   village: '#e0c39a', ruin: '#bfc7d2', runestone: '#8fd3ff', wreck: '#bfc7d2', poi: '#9aa5b5', portal: '#5ce0e6',
   tombstone: '#d6d6d6', boat: '#8fc7ff', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',
-  mine: '#c7c7c7', maptable: '#e8d3a3', house: '#9aa5b5', base: '#9aa5b5', custom: '#6fb7ff',   // homes in gray
+  invasion: '#ff3b2f', mine: '#c7c7c7', maptable: '#e8d3a3', house: '#9aa5b5', base: '#9aa5b5', custom: '#6fb7ff',   // homes in gray
 };
 
 const ALIAS = { hildir: 'trader', bogwitch: 'trader', hildir1: 'boss', hildir2: 'boss', hildir3: 'boss', miniboss: 'boss' };   // the traders share the bag on lists (the map uses the game's own icons)

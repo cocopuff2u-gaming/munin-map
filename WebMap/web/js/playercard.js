@@ -78,7 +78,7 @@ export class PlayerCard {
     const following = PL.following === p.id;
     this.el.innerHTML = `
       <div class="pc-head"><span class="ico" style="color:${col}">${iconSvg('player', col)}</span><div class="grow"><div class="name">${escape(p.name)}</div>
-        <div class="meta">${p.x !== undefined ? `${escape(p.biome || '')} · ${p.x}, ${p.z}` : 'position hidden'}${state.length ? ' · ' + state.join(' · ') : ''}</div></div>
+        <div class="meta">${p.x !== undefined ? `${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}${p.wind !== undefined ? `, wind ${Math.round(p.wind * 100)}%` : ''}` : ''} · ${p.x}, ${p.z}` : 'position hidden'}${state.length ? ' · ' + state.join(' · ') : ''}</div></div>
         <button class="icon-btn small" data-act="close" title="Close"><svg><use href="#i-close"/></svg></button></div>
       ${bar('Health', p.health, p.maxHealth, 'hp-health')}
       ${p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : ''}

@@ -138,7 +138,7 @@ namespace WebMap
 
         public string HelloFrame()
         {
-            return "{\"t\":\"hello\",\"version\":\"" + WebMap.VERSION + "\",\"worldRev\":" + worldRev + ",\"raid\":" + WorldEvents.RaidJson + ",\"config\":" + MakeClientConfigJson() + "}";
+            return "{\"t\":\"hello\",\"version\":\"" + WebMap.VERSION + "\",\"worldRev\":" + worldRev + ",\"raid\":" + WorldEvents.RaidJson + ",\"invasions\":" + WorldEvents.InvasionsJson + ",\"config\":" + MakeClientConfigJson() + "}";
         }
 
         private void Send(string frame)
@@ -147,7 +147,8 @@ namespace WebMap
             try { wsLegacyHost.Sessions.Broadcast(frame); } catch { }
         }
 
-        private string lastRaidJson = "null";
+        private string lastRaidJson = "null", lastInvasionKey = "";
+        private static string InvasionKey(string json) => System.Text.RegularExpressions.Regex.Replace(json, ",\"left\":[0-9.]+", "");
         private void Broadcast()
         {
             if (forceReload)
@@ -164,6 +165,9 @@ namespace WebMap
             }
             string raid = WorldEvents.RaidJson;
             if (raid != lastRaidJson) { lastRaidJson = raid; Send("{\"t\":\"raid\",\"data\":" + raid + "}"); }
+            string inv = WorldEvents.InvasionsJson;   // ("left" counts down: sent when the set changes, the page counts itself)
+            string invKey = InvasionKey(inv);
+            if (invKey != lastInvasionKey) { lastInvasionKey = invKey; Send("{\"t\":\"invasions\",\"data\":" + inv + "}"); }
             string ev = Events.DrainPendingJson();
             if (ev != null) Send("{\"t\":\"events\",\"data\":" + ev + "}");
             var tiles = TileStore.DrainNotifications();
@@ -230,12 +234,30 @@ namespace WebMap
             return j.ToString();
         }
 
-        public void AddMessage(long id, int type, string name, string message)
+        // pos: where it was said (shouts come with it). A shout shows on the map where it was shouted,
+        // like the game's map does, for players who share their position.
+        public void AddMessage(long id, int type, string name, string message, Vector3? pos = null)
         {
             string kind = type == (int)Talker.Type.Shout ? "shout" : type == (int)Talker.Type.Whisper ? "whisper" : name == "Server" ? "server" : "chat";
             // the game's own shout on every spawn: the join is already in the events
             if (kind == "shout" && (message == "I have arrived!" || message == "$text_player_arrived")) return;
+            if (kind == "shout" && pos.HasValue && pos.Value != Vector3.zero && Shares(id))
+            {
+                var j = new JsonWriter(160);
+                j.BeginObject().Prop("t", "shout").Prop("id", id).Prop("name", name).Prop("text", message)
+                 .Prop("x", pos.Value.x, 1).Prop("z", pos.Value.z, 1).End();
+                Send(j.ToString());
+                Events.Add(kind, name, message, pos.Value.x, pos.Value.z);
+                return;
+            }
             Events.Add(kind, name, message);
+        }
+
+        private static bool Shares(long peerId)
+        {
+            if (WebMapConfig.ALWAYS_VISIBLE) return true;
+            try { var peer = ZNet.instance != null ? ZNet.instance.GetPeer(peerId) : null; return peer != null && peer.m_publicRefPos; }
+            catch { return false; }
         }
 
         private static string Fixed(float f) => f.ToString("F2", CultureInfo.InvariantCulture);

@@ -1,5 +1,6 @@
 using System.Linq;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -225,7 +226,8 @@ namespace WebMap.World
         }
 
         // Main thread, end of sweep: publish everything.
-        public static void Finish()
+        // Main thread, end of sweep, a slice per frame (WorldSweep.Due)
+        public static IEnumerator Finish()
         {
             if (buildingPortals != null) { portals = buildingPortals; tombs = buildingTombs; }
             if (buildingTables != null)
@@ -235,13 +237,21 @@ namespace WebMap.World
                 foreach (var id in gone) tables.Remove(id);
             }
             buildingPortals = null; buildingTombs = null; buildingTables = null;
-            try
+            var j = new JsonWriter(8192);
+            var parts = BuildParts(j, true).GetEnumerator();
+            while (true)
             {
-                string built = Build(); rev++;
-                if (built != json && cachePath != null) { try { File.WriteAllText(cachePath, built); } catch { } }
-                json = built;
+                try { if (!parts.MoveNext()) break; }
+                catch (Exception e) { ZLog.LogWarning("WebMap: markers failed: " + e.Message); yield break; }
+                yield return null;
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: markers failed: " + e.Message); }
+            string built = j.ToString(); rev++;
+            if (built != json && cachePath != null)
+            {
+                string path = cachePath;   // written off the game's thread
+                System.Threading.ThreadPool.QueueUserWorkItem(_ => { try { File.WriteAllText(path, built); } catch { } });
+            }
+            json = built;
         }
 
         private static bool Visible(float x, float z) => WebMapConfig.REVEAL_ALL || Fog.IsExplored(x, z);
@@ -339,6 +349,13 @@ namespace WebMap.World
         private static string Build()
         {
             var j = new JsonWriter(8192);
+            foreach (var _ in BuildParts(j, false)) { }
+            return j.ToString();
+        }
+
+        // slice: pause (yield) when the sweep's frame is used up (WorldSweep.Due), from Finish
+        private static IEnumerable<object> BuildParts(JsonWriter j, bool slice)
+        {
             j.BeginObject();
             j.Prop("rev", rev + 1);
             j.Key("sets").BeginArray();
@@ -362,6 +379,8 @@ namespace WebMap.World
             catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: boss altars: " + e.Message); }
             j.End().End();
 
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
             // --- mini-boss lairs (Hildir's sisters), on explored ground like the altars
             j.BeginObject().Prop("id", "minibosses").Prop("label", "Mini-boss lairs").Key("markers").BeginArray();
             try
@@ -379,6 +398,8 @@ namespace WebMap.World
             }
             catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: mini bosses: " + e.Message); }
             j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- dungeon entrances, on explored ground
             j.BeginObject().Prop("id", "dungeons").Prop("label", "Dungeons").Key("markers").BeginArray();
@@ -409,6 +430,8 @@ namespace WebMap.World
             catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: dungeons: " + e.Message); }
             j.End().End();
 
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
             // --- traders (Haldor, Hildir, the Bog Witch), on explored ground like the altars
             j.BeginObject().Prop("id", "traders").Prop("label", "Traders").Key("markers").BeginArray();
             try
@@ -427,6 +450,8 @@ namespace WebMap.World
             catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: traders: " + e.Message); }
             j.End().End();
 
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
             // --- portals
             j.BeginObject().Prop("id", "portals").Prop("label", "Portals").Key("markers").BeginArray();
             foreach (var p in portals)
@@ -437,13 +462,17 @@ namespace WebMap.World
             }
             j.End().End();
 
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
             // --- pins shared on cartography tables (every table holds what was shared at it, so the
             // same pin is on many: keep one per spot)
             j.BeginObject().Prop("id", "tablepins").Prop("label", "Cartography table pins").Key("markers").BeginArray();
             var pinSeen = new HashSet<long>();
-            foreach (var t in tables.Values)
+            int n = 0;
+            foreach (var t in new List<Table>(tables.Values))
                 foreach (var p in t.pins)
                 {
+                    if (slice && (++n & 255) == 0 && WorldSweep.Due) yield return null;
                     long key = ((long)Mathf.RoundToInt(p.x) << 32) ^ (uint)Mathf.RoundToInt(p.z) ^ ((long)p.type << 58);
                     if (!pinSeen.Add(key) || !Visible(p.x, p.z)) continue;
                     j.BeginObject().Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("y", p.y, 1).Prop("cat", "tablepin").Prop("icon", TablePinIcon(p.type))
@@ -452,6 +481,8 @@ namespace WebMap.World
                     j.End();
                 }
             j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- tombstones
             j.BeginObject().Prop("id", "tombstones").Prop("label", "Tombstones").Key("markers").BeginArray();
@@ -462,6 +493,8 @@ namespace WebMap.World
                 j.Prop("label", string.IsNullOrEmpty(t.owner) ? "Tombstone" : t.owner + "'s tombstone").Prop("owner", t.owner).Prop("when", t.when).End();
             }
             j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- player bases (clusters of built pieces), named after a portal inside them when there is one
             j.BeginObject().Prop("id", "bases").Prop("label", "Player bases").Key("markers").BeginArray();
@@ -488,8 +521,12 @@ namespace WebMap.World
             catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: bases: " + e.Message); }
             j.End().End();
 
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
             // --- vehicles (from the same sweep)
             j.BeginObject().Prop("id", "vehicles").Prop("label", "Boats & carts").PropRaw("markers", Vehicles.GetMarkersJson()).End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- custom markers.json
             string custom = LoadCustom();
@@ -497,7 +534,6 @@ namespace WebMap.World
 
             j.End();   // sets
             j.End();
-            return j.ToString();
         }
 
         // markers.json beside map_data/<world>/: {"sets":[{"id":"...","label":"...","markers":[{"x":0,"z":0,"label":"...","icon":"pin"}]}]}

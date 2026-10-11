@@ -19,6 +19,7 @@ export class PlayersLayer {
     this.colorOf = new Map();
     on('players', (f) => this.update(f.data));
     on('ping', (f) => this.ping(f));
+    on('shout', (f) => this.shout(f));
   }
 
   onChange(fn) { this.listeners.add(fn); }
@@ -47,7 +48,7 @@ export class PlayersLayer {
         mk.setLatLng(ll);
         this.refresh(mk, p);
       }
-      mk.setTooltipContent(`<b>${escape(p.name)}</b><br>${p.health}/${p.maxHealth} hp · ${escape(p.biome || '')}<br>${p.x}, ${p.z}${p.dead ? ' · dead' : ''}${p.pvp ? ' · PvP' : ''}${p.inBed ? ' · sleeping' : ''}`);
+      mk.setTooltipContent(`<b>${escape(p.name)}</b><br>${p.health}/${p.maxHealth} hp · ${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}` : ''}<br>${p.x}, ${p.z}${p.dead ? ' · dead' : ''}${p.pvp ? ' · PvP' : ''}${p.inBed ? ' · sleeping' : ''}`);
       if (this.following === p.id) this.map.panTo(ll, { animate: true, duration: 0.5, noMoveStart: true });
     }
     for (const id of [...this.markers.keys()]) if (!seen.has(id)) this.remove(id);
@@ -102,6 +103,19 @@ export class PlayersLayer {
     mk.addTo(this.map);
     const lbl = L.tooltip({ permanent: true, direction: 'top', offset: [0, -20], className: 'ping-label' }).setContent(`${escape(f.name)} pinged`).setLatLng(ll).addTo(this.map);
     setTimeout(() => { mk.remove(); lbl.remove(); }, 8000);
+  }
+
+  // a shout, where it was shouted, for a few seconds: the game's shout pin with "name: text" under it,
+  // as its map shows one
+  shout(f) {
+    const icons = window.app && window.app.layers.markers && window.app.layers.markers.gameIcons;
+    const s = icons && icons['pin:Shout'];
+    const html = `<div class="shout-pin">${s ? `<img src="icons/game/${s}.png" alt="">` : iconSvg('chat', '#fff')}</div><div class="shout-text">${escape(f.name)}: ${escape(f.text)}</div>`;
+    const mk = L.marker(toLatLng(f.x, f.z), {
+      icon: L.divIcon({ className: 'shout-icon', html, iconSize: [28, 28], iconAnchor: [14, 14] }),
+      interactive: false, keyboard: false, zIndexOffset: 1800,
+    }).addTo(this.map);
+    setTimeout(() => mk.remove(), 10000);
   }
 
   setVisible(v) { if (v) this.group.addTo(this.map); else this.group.remove(); }
