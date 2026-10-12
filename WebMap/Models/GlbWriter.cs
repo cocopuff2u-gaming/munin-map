@@ -20,7 +20,6 @@ namespace WebMap.Models
             public float[] uvs;           // uv or null (v already flipped)
             public uint[] indices;
             public float r = 1, g = 1, b = 1, a = 1;
-            public byte[] texturePng;     // optional, embedded
             public string textureUri;     // optional, relative to the .glb (preferred: shared between prefabs)
             public bool alphaMask, foliage;        // cutout (leaves, fences with holes)
             public bool doubleSided = true;
@@ -79,13 +78,10 @@ namespace WebMap.Models
                 int idxAcc = AddAccessor(AddView(ToBytes(p.indices), 34963), p.indices.Length, "SCALAR", 5125);
 
                 int texIndex = -1;
-                if (uvAcc >= 0 && (p.textureUri != null || p.texturePng != null))
+                if (uvAcc >= 0 && p.textureUri != null)
                 {
                     var im = new JsonWriter(128);
-                    im.BeginObject().Prop("mimeType", "image/png");
-                    if (p.textureUri != null) im.Prop("uri", p.textureUri);
-                    else im.Prop("bufferView", AddView(p.texturePng, 0));
-                    im.End();
+                    im.BeginObject().Prop("mimeType", "image/png").Prop("uri", p.textureUri).End();
                     images.Add(im.ToString());
                     texIndex = images.Count - 1;
                 }
