@@ -7,7 +7,7 @@ Munin Map ships with, or includes code from, the following. Each keeps its own l
 * **websocket-sharp** (MIT): `websocket-sharp.dll`, the live connection to the page
 * **SixLabors.ImageSharp 2.1.13** (Apache-2.0): `SixLabors.ImageSharp.dll`, WebP map tiles
 * **System.Buffers 4.5.1, System.Numerics.Vectors 4.5.0, System.Text.Encoding.CodePages 5.0.0** (MIT): the three `System.*.dll` files ImageSharp needs
-* **bcdec** (MIT): the BC7 texture decoder in `WebMap/Models/Unity/TextureDecoder.cs` is derived from it
+* **bcdec** (MIT): the BC7 texture decoder in `src/Models/Unity/TextureDecoder.cs` is derived from it
 
 ---
 

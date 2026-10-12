@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/cocopuff2u/munin-map/main/icon.png" alt="Munin Map" width="160"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/cocopuff2u/munin-map/main/package/icon.png" alt="Munin Map" width="160"></p>
 
 <h1 align="center">Munin Map</h1>
 
@@ -156,8 +156,8 @@ old `WebMap.dll` it stays switched off and says so in the log.
 
 5. Once the map looks right, delete the old `BepInEx/plugins/WebMap` folder.
 
-Nothing is drawn again; the move takes a moment. Everything that linked to the
-old map (bookmarks, `#x,z,zoom` links, the API) keeps working.
+Nothing is drawn again; the move takes a moment. Bookmarks and `#x,z,zoom`
+links to the old map keep working.
 
 ---
 
@@ -205,7 +205,7 @@ The ones people change most:
 | `enable_3d` | `true` | Offer the 3D view. |
 | `discord_webhook` | (empty) | A Discord webhook URL, to post joins, deaths, raids and more to a channel. |
 | `discord_world_events` | `true` | Also post raids and invasions to Discord. |
-| `webmap_url` | (empty) | The map's address, for links in Discord posts. |
+| `map_url` | (empty) | The map's address, for links in Discord posts. |
 | `explore_radius` | `110` | How far around each player the fog clears, in metres. The game uses 100. |
 | `reveal_visited` | `true` | When first installed, clear the fog everywhere players have already been. |
 | `always_visible` | `false` | Show players even if they set themselves hidden on the in-game map. |

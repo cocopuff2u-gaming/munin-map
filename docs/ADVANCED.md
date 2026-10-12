@@ -24,7 +24,7 @@ File: `BepInEx/config/com.cocopuff2u.muninmap.cfg`. Read at server start only.
 | Server | `server_port` | 3000 | HTTP port |
 | Server | `map_title` | (server name) | title on the page |
 | Server | `enable_3d` | true | offer the 3D view |
-| Server | `webmap_url` | | the map's address, used in Discord posts and in game |
+| Server | `map_url` | | the map's address, used in Discord posts and in game |
 | Server | `discord_webhook` | | Discord webhook URL for events |
 | Server | `discord_world_events` | true | also post raids and invasions, with a link to the spot |
 | Server | `discord_invite_url` | | Discord invite shown on the page |
@@ -170,7 +170,7 @@ with a heightmap. Fog applies: nothing unexplored leaves the server. See
 
 | Path | Returns |
 |---|---|
-| `/tiles/map/{z}/{x}/{y}.png` | map tile. 404 + `X-WebMap-Tile: pending` while drawing |
+| `/tiles/map/{z}/{x}/{y}.png` | map tile. 404 + `X-Munin-Tile: pending` while drawing |
 | `/tiles/height/{z}/{x}/{y}.png` | height tile, [Terrarium](https://github.com/tilezen/joerd/blob/master/docs/formats.md#terrarium) encoding |
 | `/data/players.json` | players online: position, health, gear, state |
 | `/data/markers.json` | every marker set |
@@ -211,6 +211,17 @@ cache for those two, or purge after each update.
 
 ## Building from source
 
+How the project is laid out:
+
+| Folder | What's in it |
+|---|---|
+| `src/` | the mod itself (C#): `MuninMap.cs` starts it, `Config.cs` holds the settings, `Server/` serves the page, `World/` and `Tiles/` read and draw the world, `Live/` tracks players and events, `Models/` makes the 3D models |
+| `web/` | the map page browsers load (also built into the DLL) |
+| `package/` | `manifest.json` (name, version) and `icon.png`, for the release zip and mod managers |
+| `tools/` | texture and mesh extractors, a mock server, Docker files |
+| `docs/` | these guides and the screenshots |
+| `libs/` | build inputs (filled in by the build scripts) |
+
 Needs the .NET SDK (8 or newer) and the Valheim dedicated server's files.
 
 * **Linux / macOS**: `./build.sh --managed <server>/valheim_server_Data/Managed`
@@ -220,8 +231,8 @@ Needs the .NET SDK (8 or newer) and the Valheim dedicated server's files.
 Output: `dist/MuninMap-<version>.zip`. Add `--deploy <BepInEx/plugins>` (or
 `-Deploy`) to copy it straight to a server.
 
-**Releases** are built by GitHub Actions. Set the version in `manifest.json`
-and `VERSION` in `WebMap/WebMap.cs`, add a section to `CHANGELOG.md`, then
+**Releases** are built by GitHub Actions. Set the version in `package/manifest.json`
+and `VERSION` in `src/MuninMap.cs`, add a section to `CHANGELOG.md`, then
 push a tag:
 
 ```

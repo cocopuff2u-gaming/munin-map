@@ -8,7 +8,7 @@
 const http = require('http'), fs = require('fs'), path = require('path'), zlib = require('zlib'), crypto = require('crypto');
 
 const PORT = +(process.argv[2] || 3000);
-const WEB = path.join(__dirname, '..', 'WebMap', 'web');
+const WEB = path.join(__dirname, '..', 'web');
 const TILE = 256, MAX_ZOOM = 7, WORLD_HALF = 10240, WATER = 30;
 const MIME = { html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png', svg: 'image/svg+xml', json: 'application/json', bin: 'application/octet-stream', ico: 'image/x-icon' };
 
@@ -216,7 +216,7 @@ function glb(name, prims) {
     primitives.push({ attributes: { POSITION: a, NORMAL: a + 1 }, indices: a + 2, material: materials.length - 1 });
   }
   const bin = Buffer.concat(bufs);
-  const json = JSON.stringify({ asset: { version: '2.0', generator: 'webmap-mock' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name }], meshes: [{ name, primitives }], materials, accessors, bufferViews: views, buffers: [{ byteLength: bin.length }] });
+  const json = JSON.stringify({ asset: { version: '2.0', generator: 'munin-map-mock' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name }], meshes: [{ name, primitives }], materials, accessors, bufferViews: views, buffers: [{ byteLength: bin.length }] });
   let jb = Buffer.from(json); const jpad = (4 - jb.length % 4) % 4; jb = Buffer.concat([jb, Buffer.alloc(jpad, 0x20)]);
   const head = Buffer.alloc(12); head.write('glTF', 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + jb.length + 8 + bin.length, 8);
   const jh = Buffer.alloc(8); jh.writeUInt32LE(jb.length, 0); jh.write('JSON', 4);
@@ -333,7 +333,7 @@ const stats = () => ({ server: { startedUtc: new Date(Date.now() - 3.6e6).toISOS
   onlineHistory: Array.from({ length: 288 }, (_, i) => [Math.floor(Date.now() / 1000) - (288 - i) * 300, Math.round(2 + 2 * Math.sin(i / 20) + (i % 7 === 0 ? 1 : 0))]),
   players: [{ key: 'a', name: 'Ragnar', playtime: 54000, sessions: 31, deaths: 7, distance: 182000, portalTrips: 40, online: true, lastSeen: new Date().toISOString(), biomes: ['Meadows', 'Black Forest'] }, { key: 'b', name: 'Freya', playtime: 32000, sessions: 18, deaths: 2, distance: 91000, portalTrips: 12, online: true, lastSeen: new Date().toISOString(), biomes: ['Meadows'] }, { key: 'c', name: 'Olaf', playtime: 9000, sessions: 4, deaths: 9, distance: 12000, portalTrips: 1, online: false, lastSeen: new Date(Date.now() - 2 * 864e5).toISOString(), lastX: 300, lastZ: -200, biomes: ['Meadows'] }] });
 const pins = [{ owner: 'x', id: 'p1', type: 'mine', name: 'Ragnar', x: 520, z: 480, text: 'copper' }];
-const config = { web_pins: true, web_edit_bases: true, world_name: process.env.WEBMAP_WORLD || 'Mockheim', title: process.env.WEBMAP_TITLE || 'Mock server', version: '1.0.0-mock', texture_size: FOG, pixel_size: FPX, max_zoom: 7, world_size: 20480, world_start_pos: '0,40,0', water_level: WATER, enable_3d: true, explore_radius: 100, update_interval: 1 };
+const config = { web_pins: true, web_edit_bases: true, world_name: process.env.MUNIN_WORLD || 'Mockheim', title: process.env.MUNIN_TITLE || 'Mock server', version: '1.0.0-mock', texture_size: FOG, pixel_size: FPX, max_zoom: 7, world_size: 20480, world_start_pos: '0,40,0', water_level: WATER, enable_3d: true, explore_radius: 100, update_interval: 1 };
 
 // ---------------------------------------------------------------- http
 const tileCache = new Map();
@@ -350,7 +350,7 @@ const server = http.createServer((req, res) => {
       const mpp = Math.pow(2, 7 - z), span = TILE * mpp, minX = -WORLD_HALF + x * span, maxZ = WORLD_HALF - y * span;
       let any = false;
       for (let j = 0; j < 4 && !any; j++) for (let i = 0; i < 4 && !any; i++) if (explored(minX + (i + .5) * span / 4, maxZ - (j + .5) * span / 4)) any = true;
-      if (!any) return send(404, 'pending', 'text/plain', { 'X-WebMap-Tile': 'pending' });
+      if (!any) return send(404, 'pending', 'text/plain', { 'X-Munin-Tile': 'pending' });
     }
     if (!tileCache.has(key)) { if (tileCache.size > 4000) tileCache.clear(); tileCache.set(key, layer === 'veg' ? renderVegTile(+z, +x, +y) : renderTile(layer, +z, +x, +y)); }
     return send(200, tileCache.get(key), 'image/png');
@@ -373,7 +373,7 @@ const server = http.createServer((req, res) => {
     let body = ''; req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
     req.on('end', () => {
       let f; try { f = JSON.parse(body); } catch (e) { return send(400, '{"error":"bad json"}', 'application/json'); }
-      const owner = 'web:' + String(req.headers['x-webmap-client'] || f.client || 'anon').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+      const owner = 'web:' + String(req.headers['x-munin-client'] || f.client || 'anon').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
       const clean = (t, n) => String(t || '').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, n);
       const pin = { owner, id: `${Math.floor(Date.now() / 1000)}-${1000 + Math.floor(Math.random() * 9000)}`, type: ['dot', 'fire', 'mine', 'house', 'cave'].includes(f.type) ? f.type : 'dot', name: clean(f.name, 16) || 'web', x: Math.round(+f.x * 10) / 10, z: Math.round(+f.z * 10) / 10, text: clean(f.text, 20) };
       if (!isFinite(pin.x) || !isFinite(pin.z)) return send(400, '{"error":"need x and z"}', 'application/json');
@@ -399,7 +399,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (p === '/api/unpin' && req.method === 'POST') {
-    const owner = 'web:' + String(req.headers['x-webmap-client'] || 'anon').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+    const owner = 'web:' + String(req.headers['x-munin-client'] || 'anon').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
     const i = pins.findIndex((q) => q.id === u.searchParams.get('id') && q.owner === owner);
     if (i < 0) return send(404, '{"error":"not yours"}', 'application/json');
     pins.splice(i, 1); broadcast({ t: 'rmpin', id: u.searchParams.get('id') });

@@ -8,12 +8,16 @@ Valheim WebMap is now **Munin Map**, with its own home at https://github.com/coc
 * Stop the server, delete `BepInEx/plugins/WebMap/WebMap.dll` (leave the rest of that folder), and install Munin Map into `BepInEx/plugins/MuninMap`. With a mod manager, disable Valheim WebMap instead of uninstalling it.
 * On its first start Munin Map moves everything over by itself: your settings (copied to `com.cocopuff2u.muninmap.cfg`), your whole map (`map_data`: explored area, tiles, 3D models, base names, `markers.json`) and your `announce.token`. Nothing is drawn again. Then the old `WebMap` folder can go.
 * If `WebMap.dll` is still there, Munin Map says so in the log and stays off, so the two never fight over the port.
-* Links, bookmarks and the HTTP API are unchanged.
+* Links and bookmarks are unchanged. The setting `webmap_url` is now `map_url` (renamed in your config by itself). For the admin API, send the token as `X-Announce-Token` (as before) or `X-Munin-Token`.
+* Browsers forget their saved admin key, pin name and 3D object filter once (they were stored under the old name).
 
 **What changed**
-* New name, new plugin ID (`com.cocopuff2u.muninmap`), new icon. The DLL is `MuninMap.dll` and the zip `MuninMap-<version>.zip`.
+* New name, new plugin ID (`com.cocopuff2u.muninmap`), new icon. The zip is `MuninMap-<version>.zip`.
+* **One DLL**: everything is in `MuninMap.dll`. websocket-sharp, ImageSharp and its helper libraries ride inside it and load from there, so there's nothing else to copy and no loose DLLs to clash with other mods.
 * Log lines start with `MuninMap:`.
+* The licence credits the Valheim WebMap contributors, and `THIRD-PARTY-NOTICES.md` (also in the zip) carries the full licences of the bundled libraries.
 * A new README, easier to follow, with fresh screenshots; the detailed reference moved to `docs/ADVANCED.md`.
+* The project is laid out more simply: `src/` (the mod), `web/` (the page), `package/` (manifest and icon), `tools/`, `docs/`.
 
 The versions below were released as Valheim WebMap.
 

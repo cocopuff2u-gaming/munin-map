@@ -12,7 +12,7 @@
 services:
   valheim:
     image: lloesche/valheim-server
-    container_name: valheim-webmap-test
+    container_name: munin-map-test
     cap_add: [SYS_NICE]
     stop_grace_period: 2m
     ports:

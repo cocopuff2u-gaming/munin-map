@@ -5,7 +5,7 @@
 #
 # The game assemblies come from the Valheim dedicated server, fetched with SteamCMD
 # (anonymous login is enough for app 896660) and cached between runs. Nothing from the
-# game ends up in the zip: only the mod's own DLL, websocket-sharp, ImageSharp (WebP tiles), the web app and the
+# game ends up in the zip: only the mod's own DLL (websocket-sharp and ImageSharp inside it), the web app and the
 # helper scripts, exactly what build.sh packages locally.
 name: Build
 
@@ -29,8 +29,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          ver=$(python3 -c "import json;print(json.load(open('manifest.json'))['version_number'])")
-          [ "$tag" = "$ver" ] || { echo "tag v$tag but manifest.json says $ver"; exit 1; }
+          ver=$(python3 -c "import json;print(json.load(open('package/manifest.json'))['version_number'])")
+          [ "$tag" = "$ver" ] || { echo "tag v$tag but package/manifest.json says $ver"; exit 1; }
 
       - uses: actions/setup-dotnet@v5
         with:
@@ -75,7 +75,7 @@ jobs:
       - name: Release notes from the changelog
         id: notes
         run: |
-          ver=$(python3 -c "import json;print(json.load(open('manifest.json'))['version_number'])")
+          ver=$(python3 -c "import json;print(json.load(open('package/manifest.json'))['version_number'])")
           python3 - "$ver" > notes.md <<'PY'
           import re, sys
           ver = sys.argv[1]

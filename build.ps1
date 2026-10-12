@@ -58,23 +58,22 @@ if (-not (Test-Path libs\BepInEx\core\BepInEx.dll)) {
 }
 
 # --- 3. build -----------------------------------------------------------------
-dotnet build WebMap\WebMap.csproj -c Release -v minimal
+dotnet build src\MuninMap.csproj -c Release -v minimal
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 # --- 4. package ---------------------------------------------------------------
-$version = (Get-Content manifest.json | ConvertFrom-Json).version_number
+$version = (Get-Content package\manifest.json | ConvertFrom-Json).version_number
 # plugins\MuninMap\ inside the zip: r2modman, Gale and Thunderstore know that folder and keep
 # everything under it together (the web folder included) when they install
 $pkg = "dist\pkg\plugins\MuninMap"
 if (Test-Path dist\pkg) { Remove-Item dist\pkg -Recurse -Force }
 New-Item -ItemType Directory -Force $pkg | Out-Null
-Copy-Item WebMap\bin\Release\MuninMap.dll, WebMap\bin\Release\websocket-sharp.dll $pkg
-# WebP tiles: ImageSharp and the helpers the game doesn't have (it ships System.Memory and Unsafe itself)
-Copy-Item WebMap\bin\Release\SixLabors.ImageSharp.dll, WebMap\bin\Release\System.Buffers.dll, WebMap\bin\Release\System.Numerics.Vectors.dll, WebMap\bin\Release\System.Text.Encoding.CodePages.dll $pkg
-Copy-Item WebMap\web $pkg\web -Recurse
+# one DLL: websocket-sharp, ImageSharp and its helpers are inside it (MuninMap.csproj EmbedDeps)
+Copy-Item src\bin\Release\MuninMap.dll $pkg
+Copy-Item web $pkg\web -Recurse
 New-Item -ItemType Directory -Force $pkg\tools | Out-Null
 Copy-Item tools\extract_textures.py, tools\extract_meshes.py $pkg\tools\
-Copy-Item manifest.json, README.md, CHANGELOG.md, icon.png, LICENSE, THIRD-PARTY-NOTICES.md dist\pkg\
+Copy-Item package\manifest.json, package\icon.png, README.md, CHANGELOG.md, LICENSE, THIRD-PARTY-NOTICES.md dist\pkg\
 if (-not $SkipPackage) {
   $zipOut = "dist\MuninMap-$version.zip"
   if (Test-Path $zipOut) { Remove-Item $zipOut }

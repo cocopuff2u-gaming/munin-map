@@ -1,13 +1,13 @@
 # Public demo of the web app: the mock server with a made-up world, fake players
 # and events. No game files, no real world, nothing to write. ~60 MB image.
 #
-#   docker build -f tools/Dockerfile.demo -t valheim-webmap-demo .
-#   docker run -d --restart unless-stopped -p 3000:3000 valheim-webmap-demo
+#   docker build -f tools/Dockerfile.demo -t munin-map-demo .
+#   docker run -d --restart unless-stopped -p 3000:3000 munin-map-demo
 FROM node:22-alpine
 WORKDIR /app
-COPY WebMap/web ./WebMap/web
+COPY web ./web
 COPY tools/mockserver.js ./tools/mockserver.js
-ENV WEBMAP_TITLE="Munin Map demo" WEBMAP_WORLD="Demo world"
+ENV MUNIN_TITLE="Munin Map demo" MUNIN_WORLD="Demo world"
 EXPOSE 3000
 USER node
 CMD ["node", "tools/mockserver.js", "3000"]

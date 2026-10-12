@@ -2,17 +2,17 @@
 # (Caddy, nginx, Cloudflare Tunnel) on a demo hostname.
 #   docker compose -f tools/docker-compose.demo.yml up -d --build
 services:
-  webmap-demo:
+  munin-map-demo:
     build:
       context: ..
       dockerfile: tools/Dockerfile.demo
-    container_name: valheim-webmap-demo
+    container_name: munin-map-demo
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      WEBMAP_TITLE: "Munin Map demo"
-      WEBMAP_WORLD: "Demo world"
+      MUNIN_TITLE: "Munin Map demo"
+      MUNIN_WORLD: "Demo world"
     read_only: true
     mem_limit: 256m
     cpus: 0.5

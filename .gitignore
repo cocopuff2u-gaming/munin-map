@@ -329,12 +329,11 @@ ASALocalRun/
 .mfractor/
 
 notes.txt
-ValheimWebMap.zip
+MuninMap.zip
 */web/main.js
 libs/valheim
 libs/BepInEx
-WebMap.dll
-WebMap.zip
+MuninMap.dll
 
 # tools/ (cake tools, no longer used)
 dist/
@@ -348,6 +347,6 @@ valheim-test/
 worlds-*/
 
 # runtime data (tiles, models, extracted textures)
-WebMap/map_data/
+src/map_data/
 map_data/
 *.tar.gz

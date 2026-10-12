@@ -46,21 +46,20 @@ if [ ! -f libs/BepInEx/core/BepInEx.dll ]; then
 fi
 
 # --- build
-dotnet build WebMap/WebMap.csproj -c Release -v minimal
+dotnet build src/MuninMap.csproj -c Release -v minimal
 
 # --- package
-V=$(python3 -c "import json;print(json.load(open('manifest.json'))['version_number'])" 2>/dev/null || grep -o '"version_number": *"[^"]*"' manifest.json | cut -d'"' -f4)
+V=$(python3 -c "import json;print(json.load(open('package/manifest.json'))['version_number'])" 2>/dev/null || grep -o '"version_number": *"[^"]*"' package/manifest.json | cut -d'"' -f4)
 rm -rf dist/pkg "dist/MuninMap-$V.zip"
 # plugins/MuninMap/ inside the zip: r2modman, Gale and Thunderstore know that folder and keep
 # everything under it together (the web folder included) when they install
 PKG=dist/pkg/plugins/MuninMap
 mkdir -p "$PKG"
-cp WebMap/bin/Release/MuninMap.dll WebMap/bin/Release/websocket-sharp.dll "$PKG/"
-# WebP tiles: ImageSharp and the helpers the game doesn't have (it ships System.Memory and Unsafe itself)
-cp WebMap/bin/Release/{SixLabors.ImageSharp,System.Buffers,System.Numerics.Vectors,System.Text.Encoding.CodePages}.dll "$PKG/"
-cp -r WebMap/web "$PKG/web"
+# one DLL: websocket-sharp, ImageSharp and its helpers are inside it (MuninMap.csproj EmbedDeps)
+cp src/bin/Release/MuninMap.dll "$PKG/"
+cp -r web "$PKG/web"
 mkdir -p "$PKG/tools" && cp tools/extract_textures.py tools/extract_meshes.py "$PKG/tools/"
-cp manifest.json README.md CHANGELOG.md icon.png LICENSE THIRD-PARTY-NOTICES.md dist/pkg/
+cp package/manifest.json package/icon.png README.md CHANGELOG.md LICENSE THIRD-PARTY-NOTICES.md dist/pkg/
 (cd dist/pkg && zip -qr "../MuninMap-$V.zip" . -x '.*')
 echo "packaged dist/MuninMap-$V.zip"
 

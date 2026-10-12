@@ -24,6 +24,6 @@ SOFTWARE.
 ----------------------------------------------------------------------
 Third-party notices
 
-The BC7 texture decoder in WebMap/Models/Unity/TextureDecoder.cs is
+The BC7 texture decoder in src/Models/Unity/TextureDecoder.cs is
 derived from bcdec, Copyright (c) 2022 Sergii Kudlai, MIT License. The
 permission notice above applies to it unchanged.
