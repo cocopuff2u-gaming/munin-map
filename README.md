@@ -10,9 +10,27 @@ day and brings back what it saw.
 
 ![Munin Map in 3D: a player base by the sea](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/hero-3d.jpg)
 
-> **Coming from Valheim WebMap?** Munin Map is its continuation under a new
-> name. Your map, settings and markers move over by themselves. See
-> [Moving from Valheim WebMap](#moving-from-valheim-webmap).
+### Based on Valheim WebMap, with a lot more
+
+Munin Map is based on [Valheim WebMap](#credits), with a lot more tweaks
+and a lot more information on the map:
+
+* **Smoother and lighter**: the map is drawn on the graphics card, so dragging
+  and zooming stay smooth. Tiles are smaller (WebP), so the server uploads far
+  less. World scans are spread out so players don't feel a hitch.
+* **More of the world**: lava in the Ashlands, mist in the Mistlands, raids and
+  invasions as they happen, a biome view, and the weather where each player stands.
+* **More markers**: wards and the ground they protect, runestones you can read,
+  Vegvisirs, beds, dungeon entrances (with what's still inside), map table
+  pins, Hildir's mini-boss lairs, and every kind of tree, rock and ore.
+* **More stats and events**: boss progress, world modifiers, Hildir's quests,
+  a leaderboard, boss kills, raids, first visits to each biome, and Discord posts
+  for raids and invasions.
+* **More control**: switch each kind of marker, tree and ruin on or off, rename
+  bases from the page, and read the server log from the page.
+
+> **Coming from Valheim WebMap?** Your map, settings and markers move over by
+> themselves. See [Moving from Valheim WebMap](#moving-from-valheim-webmap).
 
 ---
 
@@ -233,7 +251,7 @@ and attach `BepInEx/LogOutput.log`.
 
 ## Credits
 
-Munin Map is made by [Cody Keats](https://github.com/cocopuff2u). It grew out of
+Munin Map is made by [Cody Keats](https://github.com/cocopuff2u). It's based on
 Valheim WebMap, first made by Kyle Paulsen and carried on by Jeffrey Clark
 ([h0tw1r3/valheim-webmap](https://github.com/h0tw1r3/valheim-webmap)), and the
 version of it by [f00d4tehg0dz](https://github.com/f00d4tehg0dz/valheim-webmap)
