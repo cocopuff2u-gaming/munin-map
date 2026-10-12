@@ -2,7 +2,7 @@
 
 ## 3.0.0
 
-Valheim WebMap is now **Munin Map**, with its own home at https://github.com/cocopuff2u/munin-map. It's based on Valheim WebMap, with a lot more tweaks and information added along the way (everything in 2.2.0 to 2.2.6 below: a smoother GPU-drawn map, lower upload, lava, mist, raids and invasions, wards, runestones, Vegvisirs, beds, dungeon contents, more stats and events). The map itself is the same as 2.2.6.
+Valheim WebMap is now **Munin Map**, with its own home at https://github.com/cocopuff2u/munin-map. It's based on Valheim WebMap, with a lot more tweaks and information: a smoother GPU-drawn map, lower upload, lava, mist, raids and invasions, wards, runestones, Vegvisirs, beds, dungeon contents, and more stats and events.
 
 **Upgrading from Valheim WebMap**
 * Stop the server, delete `BepInEx/plugins/WebMap/WebMap.dll` (leave the rest of that folder), and install Munin Map into `BepInEx/plugins/MuninMap`. With a mod manager, disable Valheim WebMap instead of uninstalling it.
