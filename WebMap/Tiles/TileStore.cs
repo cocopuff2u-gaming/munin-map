@@ -80,12 +80,12 @@ namespace WebMap.Tiles
                     string old = root + "-grid" + have;
                     if (Directory.Exists(old)) Directory.Delete(old, true);
                     Directory.Move(root, old);
-                    ZLog.Log($"WebMap: map grid is now {TileMath.WORLD_SIZE} m (was {have}): old tiles moved to {Path.GetFileName(old)}, rendering afresh");
+                    ZLog.Log($"MuninMap: map grid is now {TileMath.WORLD_SIZE} m (was {have}): old tiles moved to {Path.GetFileName(old)}, rendering afresh");
                 }
                 Directory.CreateDirectory(root);
                 File.WriteAllText(grid, TileMath.WORLD_SIZE.ToString());
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: tile grid check: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: tile grid check: " + e.Message); }
             Directory.CreateDirectory(Path.Combine(root, "map"));
             Directory.CreateDirectory(Path.Combine(root, "height"));
             Directory.CreateDirectory(Path.Combine(root, "veg"));
@@ -97,7 +97,7 @@ namespace WebMap.Tiles
                 Scan("height", haveHeight);
                 Scan("veg", haveVeg);
             }
-            ZLog.Log($"WebMap: tile store at {root}: {haveColor.Count} map tiles, {haveHeight.Count} height tiles on disk");
+            ZLog.Log($"MuninMap: tile store at {root}: {haveColor.Count} map tiles, {haveHeight.Count} height tiles on disk");
         }
 
         // Tiles rendered by an older look (format number in tiles/format.txt) are deleted where
@@ -131,7 +131,7 @@ namespace WebMap.Tiles
                     catch { }
                 }
             try { File.WriteAllText(marker, TILE_FORMAT.ToString()); } catch { }
-            if (dropped > 0) ZLog.Log($"WebMap: tile look changed, {dropped} tiles dropped for re-render");
+            if (dropped > 0) ZLog.Log($"MuninMap: tile look changed, {dropped} tiles dropped for re-render");
         }
 
         // Whether tile file "x_y.ext" at zoom z reaches the Ashlands: its farthest corner is past the
@@ -183,16 +183,16 @@ namespace WebMap.Tiles
             workers = new Thread[n];
             for (int i = 0; i < n; i++)
             {
-                workers[i] = new Thread(WorkerLoop) { IsBackground = true, Name = "WebMap tiles " + i, Priority = System.Threading.ThreadPriority.BelowNormal };
+                workers[i] = new Thread(WorkerLoop) { IsBackground = true, Name = "MuninMap tiles " + i, Priority = System.Threading.ThreadPriority.BelowNormal };
                 workers[i].Start();
             }
             EnqueueOverview();
             // tiles a look change dropped, rendered again in the background after the overview
             foreach (long k in redo) { TileMath.Unkey(k, out int z, out int x, out int y); Enqueue(z, x, y, 40 + z, onlyIfMissing: true); }
-            if (redo.Count > 0) ZLog.Log($"WebMap: {redo.Count} close-zoom tiles queued to render again");
+            if (redo.Count > 0) ZLog.Log($"MuninMap: {redo.Count} close-zoom tiles queued to render again");
             redo.Clear();
-            new Thread(BackgroundPasses) { IsBackground = true, Name = "WebMap tile upkeep", Priority = System.Threading.ThreadPriority.Lowest }.Start();
-            ZLog.Log($"WebMap: tile workers started ({n} thread(s), main-thread sampling {(mainThreadSampling ? "on" : "off")})");
+            new Thread(BackgroundPasses) { IsBackground = true, Name = "MuninMap tile upkeep", Priority = System.Threading.ThreadPriority.Lowest }.Start();
+            ZLog.Log($"MuninMap: tile workers started ({n} thread(s), main-thread sampling {(mainThreadSampling ? "on" : "off")})");
         }
 
         public static void Stop()
@@ -214,7 +214,7 @@ namespace WebMap.Tiles
                     for (int x = 0; x < n; x++)
                         if (Enqueue(z, x, y, 10 + z, onlyIfMissing: true)) count++;
             }
-            if (count > 0) ZLog.Log($"WebMap: {count} overview tiles to render");
+            if (count > 0) ZLog.Log($"MuninMap: {count} overview tiles to render");
         }
 
         // A browser wants this tile and it does not exist yet.
@@ -325,7 +325,7 @@ namespace WebMap.Tiles
                 }
                 catch (Exception e)
                 {
-                    ZLog.LogWarning($"WebMap: tile {job.zoom}/{job.x}/{job.y} failed: {e.Message}");
+                    ZLog.LogWarning($"MuninMap: tile {job.zoom}/{job.x}/{job.y} failed: {e.Message}");
                 }
                 finally
                 {
@@ -348,7 +348,7 @@ namespace WebMap.Tiles
                 }
                 catch (Exception e) when (LooksLikeThreadRule(e))
                 {
-                    ZLog.LogWarning("WebMap: the engine refused terrain sampling off the main thread; switching to sliced main-thread sampling. (" + e.Message + ")");
+                    ZLog.LogWarning("MuninMap: the engine refused terrain sampling off the main thread; switching to sliced main-thread sampling. (" + e.Message + ")");
                     mainThreadSampling = true;
                     job.work = new TileJob(job.zoom, job.x, job.y, wantHeight);
                 }
@@ -389,7 +389,7 @@ namespace WebMap.Tiles
             lock (notify) notify.Add(job.zoom + "/" + job.x + "/" + job.y);
             Rendered++;
             RenderMsTotal += sw.Elapsed.TotalMilliseconds;
-            if (WebMapConfig.DEBUG) ZLog.Log($"WebMap: tile {job.zoom}/{job.x}/{job.y} in {sw.ElapsedMilliseconds} ms");
+            if (WebMapConfig.DEBUG) ZLog.Log($"MuninMap: tile {job.zoom}/{job.x}/{job.y} in {sw.ElapsedMilliseconds} ms");
         }
 
         private static bool LooksLikeThreadRule(Exception e)
@@ -422,7 +422,7 @@ namespace WebMap.Tiles
             {
                 if (!toWebp.TryDequeue(out string f)) { webpWake.WaitOne(5000); continue; }
                 try { ConvertToWebp(f); }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: WebP of " + f + " failed: " + e.Message); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: WebP of " + f + " failed: " + e.Message); }
             }
         }
 
@@ -458,9 +458,9 @@ namespace WebMap.Tiles
                         }
                     }
                 File.WriteAllText(marker, PNG_FORMAT.ToString());
-                if (done > 0) ZLog.Log($"WebMap: re-compressed {done} tiles, {saved / 1048576.0:F1} MB smaller");
+                if (done > 0) ZLog.Log($"MuninMap: re-compressed {done} tiles, {saved / 1048576.0:F1} MB smaller");
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: tile re-compress stopped: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: tile re-compress stopped: " + e.Message); }
         }
 
         // PNG map/overlay tiles still on disk (older versions, or rendered before a restart) become
@@ -484,9 +484,9 @@ namespace WebMap.Tiles
                             Thread.Sleep(5);
                         }
                     }
-                if (made > 0) ZLog.Log($"WebMap: converted {made} PNG tiles to WebP in {sw.Elapsed.TotalSeconds:F0} s, {png / 1048576.0:F1} MB -> {webp / 1048576.0:F1} MB");
+                if (made > 0) ZLog.Log($"MuninMap: converted {made} PNG tiles to WebP in {sw.Elapsed.TotalSeconds:F0} s, {png / 1048576.0:F1} MB -> {webp / 1048576.0:F1} MB");
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: WebP conversion stopped: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: WebP conversion stopped: " + e.Message); }
         }
 
         private static readonly ConcurrentQueue<string> toWebp = new ConcurrentQueue<string>();

@@ -56,7 +56,7 @@ namespace WebMap
         {
             string endpoint = Context.Headers.Get("X-Forwarded-For");
             if (endpoint.IsNullOrEmpty()) endpoint = Context.UserEndPoint.ToString();
-            if (WebMapConfig.DEBUG) ZLog.Log("WebMap: new visitor connected from " + endpoint);
+            if (WebMapConfig.DEBUG) ZLog.Log("MuninMap: new visitor connected from " + endpoint);
             var s = MapDataServer.getInstance();
             if (s != null)
             {
@@ -118,7 +118,7 @@ namespace WebMap
 
             publicRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty, "web"));
 
-            broadcastTimer = new System.Threading.Timer(e => { try { Broadcast(); } catch (Exception ex) { if (DEBUG) ZLog.LogWarning("WebMap: broadcast failed: " + ex.Message); } },
+            broadcastTimer = new System.Threading.Timer(e => { try { Broadcast(); } catch (Exception ex) { if (DEBUG) ZLog.LogWarning("MuninMap: broadcast failed: " + ex.Message); } },
                 null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(PLAYER_UPDATE_INTERVAL));
 
             httpServer.OnGet += (sender, e) => { try { if (!Route(e, false)) ServeStatic(e); } catch (Exception ex) { Fail(e, ex); } };
@@ -130,7 +130,7 @@ namespace WebMap
 
         private static void Fail(HttpRequestEventArgs e, Exception ex)
         {
-            ZLog.LogWarning("WebMap: request " + e.Request.RawUrl + " failed: " + ex);
+            ZLog.LogWarning("MuninMap: request " + e.Request.RawUrl + " failed: " + ex);
             try { e.Response.StatusCode = 500; e.Response.Close(); } catch { }
         }
 
@@ -274,7 +274,7 @@ namespace WebMap
                 mapJpgCache = ImageConv.EncodeToJPG(tex, 85);
                 UnityEngine.Object.Destroy(tex);
             }
-            catch (Exception ex) { ZLog.LogWarning("WebMap: jpeg encode failed: " + ex.Message); }
+            catch (Exception ex) { ZLog.LogWarning("MuninMap: jpeg encode failed: " + ex.Message); }
         }
 
         // ---------------------------------------------------------------- lifecycle
@@ -282,8 +282,8 @@ namespace WebMap
         public void ListenAsync()
         {
             httpServer.Start();
-            if (httpServer.IsListening) ZLog.Log($"WebMap: HTTP server listening on port {SERVER_PORT}");
-            else ZLog.LogError("WebMap: HTTP server failed to start");
+            if (httpServer.IsListening) ZLog.Log($"MuninMap: HTTP server listening on port {SERVER_PORT}");
+            else ZLog.LogError("MuninMap: HTTP server failed to start");
         }
 
         public void Stop()
@@ -352,7 +352,7 @@ namespace WebMap
                     int n = fileCache.Count;
                     fileCache.Clear(); stampedIndex = null; stampedFrom = null;
                     Reload();
-                    ZLog.Log("WebMap: web files reloaded (" + n + " cached files dropped), browsers told to refresh");
+                    ZLog.Log("MuninMap: web files reloaded (" + n + " cached files dropped), browsers told to refresh");
                     return Text(e, "{\"dropped\":" + n + ",\"browsers\":" + (wsHost.Sessions.Count + wsLegacyHost.Sessions.Count) + "}", "application/json", nocache: true);
                 }
 
@@ -693,7 +693,7 @@ namespace WebMap
             if (full.StartsWith(publicRoot, StringComparison.Ordinal) && File.Exists(full))
             {
                 try { data = File.ReadAllBytes(full); }
-                catch (Exception ex) { ZLog.LogError("WebMap: failed to read " + rel + ": " + ex.Message); return null; }
+                catch (Exception ex) { ZLog.LogError("MuninMap: failed to read " + rel + ": " + ex.Message); return null; }
             }
             else
             {
@@ -791,7 +791,7 @@ namespace WebMap
                 foreach (string name in asm.GetManifestResourceNames())
                     if (name.StartsWith("web/", StringComparison.Ordinal) || name.StartsWith("web\\", StringComparison.Ordinal)) map[name.Substring(4).Replace('\\', '/')] = name;
                 embeddedWeb = map;
-                if (!Directory.Exists(publicRoot)) ZLog.LogWarning("WebMap: no web folder next to WebMap.dll, serving the copy built into the DLL (" + map.Count + " files)");
+                if (!Directory.Exists(publicRoot)) ZLog.LogWarning("MuninMap: no web folder next to MuninMap.dll, serving the copy built into the DLL (" + map.Count + " files)");
             }
             if (!embeddedWeb.TryGetValue(rel, out string resName)) return null;
             using (var st = asm.GetManifestResourceStream(resName))

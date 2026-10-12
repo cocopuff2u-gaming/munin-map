@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Build Valheim WebMap on Windows and package it for a server.
+  Build Munin Map on Windows and package it for a server.
 
 .DESCRIPTION
   1. Copies the game assemblies the mod compiles against into libs/valheim
@@ -8,7 +8,7 @@
   2. Downloads BepInEx into libs/BepInEx if it is not there yet.
   3. dotnet build (Release). Krafs.Publicizer publicizes the game assemblies
      at build time, so there is no separate publicize step.
-  4. Packages dist/ValheimWebMap-<version>.zip and, with
+  4. Packages dist/MuninMap-<version>.zip and, with
      -Deploy, copies the plugin folder into a BepInEx/plugins directory.
 
 .EXAMPLE
@@ -63,12 +63,12 @@ if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 # --- 4. package ---------------------------------------------------------------
 $version = (Get-Content manifest.json | ConvertFrom-Json).version_number
-# plugins\WebMap\ inside the zip: r2modman, Gale and Thunderstore know that folder and keep
+# plugins\MuninMap\ inside the zip: r2modman, Gale and Thunderstore know that folder and keep
 # everything under it together (the web folder included) when they install
-$pkg = "dist\pkg\plugins\WebMap"
+$pkg = "dist\pkg\plugins\MuninMap"
 if (Test-Path dist\pkg) { Remove-Item dist\pkg -Recurse -Force }
 New-Item -ItemType Directory -Force $pkg | Out-Null
-Copy-Item WebMap\bin\Release\WebMap.dll, WebMap\bin\Release\websocket-sharp.dll $pkg
+Copy-Item WebMap\bin\Release\MuninMap.dll, WebMap\bin\Release\websocket-sharp.dll $pkg
 # WebP tiles: ImageSharp and the helpers the game doesn't have (it ships System.Memory and Unsafe itself)
 Copy-Item WebMap\bin\Release\SixLabors.ImageSharp.dll, WebMap\bin\Release\System.Buffers.dll, WebMap\bin\Release\System.Numerics.Vectors.dll, WebMap\bin\Release\System.Text.Encoding.CodePages.dll $pkg
 Copy-Item WebMap\web $pkg\web -Recurse
@@ -76,13 +76,13 @@ New-Item -ItemType Directory -Force $pkg\tools | Out-Null
 Copy-Item tools\extract_textures.py, tools\extract_meshes.py $pkg\tools\
 Copy-Item manifest.json, README.md, CHANGELOG.md, icon.png, LICENSE dist\pkg\
 if (-not $SkipPackage) {
-  $zipOut = "dist\ValheimWebMap-$version.zip"
+  $zipOut = "dist\MuninMap-$version.zip"
   if (Test-Path $zipOut) { Remove-Item $zipOut }
   Compress-Archive -Path dist\pkg\* -DestinationPath $zipOut
   Write-Host "Packaged $zipOut"
 }
 if ($Deploy) {
-  $dest = Join-Path $Deploy "WebMap"
+  $dest = Join-Path $Deploy "MuninMap"
   Write-Host "Deploying to $dest"
   New-Item -ItemType Directory -Force $dest | Out-Null
   Copy-Item "$pkg\*" $dest -Recurse -Force

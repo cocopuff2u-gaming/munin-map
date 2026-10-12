@@ -83,7 +83,7 @@ namespace WebMap.World
                     var loc = li.m_location;
                     if (loc == null) continue;
                     byte kind = SiteOf(loc.m_prefabName);
-                    if (kind == 0 && WebMapConfig.DEBUG && loggedOther.Add(loc.m_prefabName)) ZLog.Log("WebMap: world structures: no kind for location " + loc.m_prefabName);
+                    if (kind == 0 && WebMapConfig.DEBUG && loggedOther.Add(loc.m_prefabName)) ZLog.Log("MuninMap: world structures: no kind for location " + loc.m_prefabName);
                     float r = Mathf.Max(loc.m_exteriorRadius, loc.m_interiorRadius, 12f) + 8f;
                     var site = new Site { pos = li.m_position, r2 = r * r, kind = kind };
                     int x0 = Mathf.FloorToInt((li.m_position.x - r) / 64f), x1 = Mathf.FloorToInt((li.m_position.x + r) / 64f);
@@ -98,7 +98,7 @@ namespace WebMap.World
                 }
                 sitesFrom = zs.m_locationInstances.Count;
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: world structure kinds: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: world structure kinds: " + e.Message); }
         }
         private static byte SiteAt(Vector3 p)
         {

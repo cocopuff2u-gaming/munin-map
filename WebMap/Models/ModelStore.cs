@@ -90,13 +90,13 @@ namespace WebMap.Models
                     }
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: models/index.json not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: models/index.json not readable: " + e.Message); }
             foreach (var i in index.Values) if (i.ok) Readable++; else if (i.renderers > 0) Unreadable++;
             // textures and meshes extracted since the last run: re-export the models that use them
             int again = RescanTextures() + RescanMeshes();
             WriteTexturesJson();
             Rebuild();
-            ZLog.Log($"WebMap: model library at {root}: {index.Count} prefabs known" + (again > 0 ? $", {again} to re-export with newly extracted textures or meshes" : ""));
+            ZLog.Log($"MuninMap: model library at {root}: {index.Count} prefabs known" + (again > 0 ? $", {again} to re-export with newly extracted textures or meshes" : ""));
         }
 
         // Models with a locked mesh whose cache file now exists (the mesh extractor ran): re-export them.
@@ -187,7 +187,7 @@ namespace WebMap.Models
                 File.WriteAllText(Path.Combine(root, "textures.json"), j.ToString());
                 TexturesWanted = names.Count; TexturesPresent = present;
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: could not write models/textures.json: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: could not write models/textures.json: " + e.Message); }
         }
         public static int TexturesWanted { get; private set; }
         public static int TexturesPresent { get; private set; }
@@ -230,12 +230,12 @@ namespace WebMap.Models
                     // once a minute (and a few seconds after the first export): fetch missing textures from the
                     // game files on a background thread, then re-export the models that use them
                     int tick = idleTicks++;
-                    if (extractDone) { extractDone = false; int n = RescanTextures(); WriteTexturesJson(); Rebuild(); ZLog.Log($"WebMap: {n} models to re-export with newly extracted textures"); }
-                    else if (meshDone) { meshDone = false; int n = RescanMeshes(); Rebuild(); ZLog.Log($"WebMap: {n} models to re-export with newly extracted meshes"); }
+                    if (extractDone) { extractDone = false; int n = RescanTextures(); WriteTexturesJson(); Rebuild(); ZLog.Log($"MuninMap: {n} models to re-export with newly extracted textures"); }
+                    else if (meshDone) { meshDone = false; int n = RescanMeshes(); Rebuild(); ZLog.Log($"MuninMap: {n} models to re-export with newly extracted meshes"); }
                     else if (WebMapConfig.ENABLE_3D && (tick == 5 || tick % 60 == 59))   // texture/mesh extraction only feeds 3D
                     {
                         int again = RescanTextures() + RescanMeshes();
-                        if (again > 0) ZLog.Log($"WebMap: {again} models to re-export with newly extracted textures or meshes");
+                        if (again > 0) ZLog.Log($"MuninMap: {again} models to re-export with newly extracted textures or meshes");
                         else if (WebMapConfig.USE_TEXTURES && !TextureExtractor.Running && !MeshExtractor.Running)
                         {
                             var missing = MissingTextures();
@@ -296,14 +296,14 @@ namespace WebMap.Models
             }
             catch (Exception e)
             {
-                ZLog.LogWarning($"WebMap: model export of {info.name} failed: {e.Message}");
+                ZLog.LogWarning($"MuninMap: model export of {info.name} failed: {e.Message}");
             }
             if (index.TryGetValue(hash, out var old) && old.ok) Readable--;   // re-export: counted again below
             index[hash] = info;
             Exported++;
             indexDirty = true;
             if (Exported == 1 || Exported % 100 == 0)
-                ZLog.Log($"WebMap: models exported {Exported} (readable meshes {Readable}, unreadable {Unreadable}, queued {QueueLength})");
+                ZLog.Log($"MuninMap: models exported {Exported} (readable meshes {Readable}, unreadable {Unreadable}, queued {QueueLength})");
         }
 
         // Prefab-space bounds from the renderers (works even when meshes are unreadable), in the viewer's frame (z negated).
@@ -350,7 +350,7 @@ namespace WebMap.Models
                 if (File.Exists(path)) File.Delete(path);
                 File.Move(tmp, path);
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: could not save models/index.json: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: could not save models/index.json: " + e.Message); }
         }
 
         private static void WriteInfo(JsonWriter j, Info i, bool full)

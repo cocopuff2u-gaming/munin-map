@@ -70,7 +70,7 @@ namespace WebMap.World
         {
             cachePath = Path.Combine(worldDataPath, "markers-cache.json");
             try { if (File.Exists(cachePath)) { string c = File.ReadAllText(cachePath); if (c.StartsWith("{", StringComparison.Ordinal)) json = c; } }
-            catch (Exception e) { ZLog.LogWarning("WebMap: markers cache: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: markers cache: " + e.Message); }
         }
 
         public static void LoadOverrides(string worldDataPath)
@@ -87,7 +87,7 @@ namespace WebMap.World
                     if (o is Dictionary<string, object> d)
                         overrides.Add(new BaseOverride { x = (float)JsonParser.Num(d, "x"), z = (float)JsonParser.Num(d, "z"), label = JsonParser.Str(d, "label", null), hidden = JsonParser.Bool(d, "hidden") });
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: bases.json not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: bases.json not readable: " + e.Message); }
         }
 
         private static void SaveOverrides()
@@ -108,7 +108,7 @@ namespace WebMap.World
                 j.End().End();
                 File.WriteAllText(overridesPath, j.ToString());
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: could not save bases.json: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: could not save bases.json: " + e.Message); }
         }
 
         private static BaseOverride FindOverride(float x, float z)
@@ -139,7 +139,7 @@ namespace WebMap.World
                 }
             }
             SaveOverrides();
-            try { json = Build(); rev++; } catch (Exception e) { ZLog.LogWarning("WebMap: markers failed: " + e.Message); }
+            try { json = Build(); rev++; } catch (Exception e) { ZLog.LogWarning("MuninMap: markers failed: " + e.Message); }
         }
 
         public static int ClearOverrides()
@@ -194,7 +194,7 @@ namespace WebMap.World
                     t.pins.Add(new TablePin { x = pos.x, y = pos.y, z = pos.z, name = name ?? "", type = type, check = check });
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: map table pins not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: map table pins not readable: " + e.Message); }
         }
 
         // our icon for one of the game's pin types (Minimap.PinType)
@@ -319,7 +319,7 @@ namespace WebMap.World
             while (true)
             {
                 try { if (!parts.MoveNext()) break; }
-                catch (Exception e) { ZLog.LogWarning("WebMap: markers failed: " + e.Message); yield break; }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: markers failed: " + e.Message); yield break; }
                 yield return null;
             }
             string built = j.ToString(); rev++;
@@ -420,7 +420,7 @@ namespace WebMap.World
                 if (built != json && cachePath != null) { try { File.WriteAllText(cachePath, built); } catch { } }
                 json = built;
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: markers failed: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: markers failed: " + e.Message); }
         }
 
         private static string Build()
@@ -453,7 +453,7 @@ namespace WebMap.World
                          .Prop("cat", "boss").Prop("icon", "boss").Prop("label", boss).Prop("prefab", name).End();
                     }
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: boss altars: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: boss altars: " + e.Message); }
             j.End().End();
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
@@ -473,7 +473,7 @@ namespace WebMap.World
                          .Prop("cat", "miniboss").Prop("icon", icon).Prop("label", mb).Prop("prefab", name).End();
                     }
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: mini bosses: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: mini bosses: " + e.Message); }
             j.End().End();
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
@@ -504,7 +504,7 @@ namespace WebMap.World
                         j.End();
                     }
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: dungeons: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: dungeons: " + e.Message); }
             j.End().End();
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
@@ -524,7 +524,7 @@ namespace WebMap.World
                          .Prop("cat", "trader").Prop("icon", icon).Prop("label", trader).Prop("prefab", name).End();
                     }
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: traders: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: traders: " + e.Message); }
             j.End().End();
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
@@ -649,7 +649,7 @@ namespace WebMap.World
                     j.End();
                 }
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: bases: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: bases: " + e.Message); }
             j.End().End();
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
@@ -713,7 +713,7 @@ namespace WebMap.World
             }
             catch (Exception e)
             {
-                ZLog.LogWarning("WebMap: markers.json not understood: " + e.Message);
+                ZLog.LogWarning("MuninMap: markers.json not understood: " + e.Message);
                 customCache = null;
                 return null;
             }

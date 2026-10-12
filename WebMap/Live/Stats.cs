@@ -92,9 +92,9 @@ namespace WebMap.Live
                     foreach (var ho in hist)
                         if (ho is List<object> pair && pair.Count == 2 && pair[0] is double ts && pair[1] is double n)
                             onlineHistory.Add(new KeyValuePair<long, int>((long)ts, (int)n));
-                ZLog.Log($"WebMap: stats loaded for {players.Count} players");
+                ZLog.Log($"MuninMap: stats loaded for {players.Count} players");
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: stats.json not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: stats.json not readable: " + e.Message); }
         }
 
         public static void Save(bool force = false)
@@ -119,7 +119,7 @@ namespace WebMap.Live
                 File.Move(tmp, StatsPath);
                 dirty = false;
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: could not save stats.json: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: could not save stats.json: " + e.Message); }
         }
 
         private static void WritePlayer(JsonWriter j, PlayerStat s, bool full)
@@ -321,7 +321,7 @@ namespace WebMap.Live
             }
             catch (Exception e)
             {
-                if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: stats rebuild failed: " + e.Message);
+                if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: stats rebuild failed: " + e.Message);
             }
         }
 

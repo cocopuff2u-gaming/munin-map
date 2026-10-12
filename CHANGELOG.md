@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.0
+
+Valheim WebMap is now **Munin Map**, with its own home at https://github.com/cocopuff2u/munin-map. The map itself is the same as 2.2.6.
+
+**Upgrading from Valheim WebMap**
+* Stop the server, delete `BepInEx/plugins/WebMap/WebMap.dll` (leave the rest of that folder), and install Munin Map into `BepInEx/plugins/MuninMap`. With a mod manager, disable Valheim WebMap instead of uninstalling it.
+* On its first start Munin Map moves everything over by itself: your settings (copied to `com.cocopuff2u.muninmap.cfg`), your whole map (`map_data`: explored area, tiles, 3D models, base names, `markers.json`) and your `announce.token`. Nothing is drawn again. Then the old `WebMap` folder can go.
+* If `WebMap.dll` is still there, Munin Map says so in the log and stays off, so the two never fight over the port.
+* Links, bookmarks and the HTTP API are unchanged.
+
+**What changed**
+* New name, new plugin ID (`com.cocopuff2u.muninmap`), new icon. The DLL is `MuninMap.dll` and the zip `MuninMap-<version>.zip`.
+* Log lines start with `MuninMap:`.
+* A new README, easier to follow, with fresh screenshots; the detailed reference moved to `docs/ADVANCED.md`.
+
+The versions below were released as Valheim WebMap.
+
 ## 2.2.6
 
 The Ashlands look like they do on the game's map, and dragging the map is smooth. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.

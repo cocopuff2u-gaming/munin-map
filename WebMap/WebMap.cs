@@ -19,9 +19,10 @@ namespace WebMap
     [BepInPlugin(GUID, NAME, VERSION)]
     public class WebMap : BaseUnityPlugin
     {
-        public const string GUID = "com.valheimwebmap.server";
-        public const string NAME = "WebMap";
-        public const string VERSION = "2.2.6";
+        public const string GUID = "com.cocopuff2u.muninmap";
+        public const string NAME = "Munin Map";
+        public const string VERSION = "3.0.0";
+        private const string OLD_GUID = "com.valheimwebmap.server";   // the mod this one was, Valheim WebMap
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
 
@@ -43,17 +44,94 @@ namespace WebMap
         public void Awake()
         {
             instance = this;
+            pluginPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            // Valheim WebMap still installed: both would want the same port and the same work, so
+            // this one stays out of the way until the old DLL is gone
+            string old = FindOld("WebMap.dll");
+            if (old != null)
+            {
+                ZLog.LogError("MuninMap: Valheim WebMap is still installed (" + old + "). Munin Map replaces it: delete WebMap.dll and restart. Munin Map is not running.");
+                enabled = false;
+                return;
+            }
+            MoveFromWebMap();
             Live.ServerLog.Listen();   // the game's console lines from the start (the admin "Server log" view)
             harmony = new Harmony(GUID);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
 
-            pluginPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             mapDataPath = Path.Combine(pluginPath ?? string.Empty, "map_data");
             Directory.CreateDirectory(mapDataPath);
 
             WebMapConfig.ReadConfigFile(Config);
             discordWebHook = new DiscordWebHook(WebMapConfig.DISCORD_WEBHOOK);
-            ZLog.Log($"WebMap {VERSION} loaded");
+            ZLog.Log($"Munin Map {VERSION} loaded");
+        }
+
+        // a file of Valheim WebMap's anywhere under BepInEx/plugins, outside this mod's folder
+        private static string FindOld(string file)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(Paths.PluginPath, file, SearchOption.AllDirectories))
+                    if ((file.EndsWith("*") || string.Equals(Path.GetFileName(f), file, StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(Path.GetDirectoryName(f), pluginPath, StringComparison.OrdinalIgnoreCase)) return f;
+            }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: looking for Valheim WebMap: " + e.Message); }
+            return null;
+        }
+
+        // Coming from Valheim WebMap: its settings, its map (explored ground, tiles, models, bases,
+        // markers.json) and its announce.token come along, once. The map is moved, not copied: it can
+        // be gigabytes, and a move on the same disk is instant.
+        private void MoveFromWebMap()
+        {
+            try
+            {
+                string cfg = Path.Combine(Paths.ConfigPath, GUID + ".cfg"), oldCfg = Path.Combine(Paths.ConfigPath, OLD_GUID + ".cfg");
+                if (!File.Exists(cfg) && File.Exists(oldCfg))
+                {
+                    File.Copy(oldCfg, cfg);
+                    Config.Reload();
+                    ZLog.Log("MuninMap: settings taken over from " + oldCfg);
+                }
+            }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: settings from Valheim WebMap: " + e.Message); }
+
+            string data = Path.Combine(pluginPath ?? "", "map_data");
+            if (Directory.Exists(data) && Directory.GetFileSystemEntries(data).Length > 0) return;
+            // WebMap's folder is the one with its DLL in it (switched off by a mod manager: .old)
+            string oldDir = null;
+            foreach (string pat in new[] { "WebMap.dll.old", "WebMap.dll*" })
+            {
+                string f = FindOld(pat);
+                if (f != null && Directory.Exists(Path.Combine(Path.GetDirectoryName(f), "map_data"))) { oldDir = Path.GetDirectoryName(f); break; }
+            }
+            if (oldDir == null)
+            {
+                try
+                {
+                    foreach (string d in Directory.GetDirectories(Paths.PluginPath, "map_data", SearchOption.AllDirectories))
+                    {
+                        string parent = Path.GetDirectoryName(d);
+                        if (!string.Equals(parent, pluginPath, StringComparison.OrdinalIgnoreCase) && Path.GetFileName(parent).IndexOf("webmap", StringComparison.OrdinalIgnoreCase) >= 0) { oldDir = parent; break; }
+                    }
+                }
+                catch { }
+            }
+            if (oldDir == null) return;
+            try
+            {
+                if (Directory.Exists(data)) Directory.Delete(data);   // empty
+                Directory.Move(Path.Combine(oldDir, "map_data"), data);
+                ZLog.Log("MuninMap: map moved over from " + oldDir);
+            }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: could not move the map from " + oldDir + " (" + e.Message + "). Move its map_data folder next to MuninMap.dll by hand."); }
+            try
+            {
+                string tok = Path.Combine(pluginPath ?? "", "announce.token"), oldTok = Path.Combine(oldDir, "announce.token");
+                if (!File.Exists(tok) && File.Exists(oldTok)) File.Copy(oldTok, tok);
+            }
+            catch { }
         }
 
         // No Config.Save() here: BepInEx writes the file when the entries are bound,
@@ -82,12 +160,12 @@ namespace WebMap
 
             if (mapDataServer == null)
             {
-                ZLog.Log($"WebMap: loading world '{worldName}'");
+                ZLog.Log($"MuninMap: loading world '{worldName}'");
                 mapDataServer = new MapDataServer();
             }
             else if (forceReload)
             {
-                ZLog.Log($"WebMap: switching world from '{currentWorldName}' to '{worldName}'");
+                ZLog.Log($"MuninMap: switching world from '{currentWorldName}' to '{worldName}'");
             }
             currentWorldName = worldName;
 
@@ -103,13 +181,13 @@ namespace WebMap
                     mapDataServer.BuildMapJpg();
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: legacy map.png not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: legacy map.png not readable: " + e.Message); }
 
             Fog.Init(WebMapConfig.TEXTURE_SIZE, WebMapConfig.PIXEL_SIZE);
             string fogPath = Path.Combine(worldDataPath, "fog.png");
             if (!Fog.Load(fogPath))
             {
-                ZLog.Log("WebMap: starting a fresh fog of war");
+                ZLog.Log("MuninMap: starting a fresh fog of war");
                 Fog.Save(fogPath);
             }
 
@@ -118,7 +196,7 @@ namespace WebMap
                 string pinsFile = Path.Combine(worldDataPath, "pins.csv");
                 if (File.Exists(pinsFile)) mapDataServer.pins = new List<string>(File.ReadAllLines(pinsFile));
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: pins.csv not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: pins.csv not readable: " + e.Message); }
 
             Stats.Load();
             Events.LoadTail();
@@ -164,7 +242,7 @@ namespace WebMap
                 string ip = AccessTools.Method(typeof(ZNet), "GetServerIP")?.Invoke(ZNet.instance, new object[] { })?.ToString() ?? "";
                 discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** is *online* 🟢\n💻 {ip}:{ZNet.instance.GetHostPort()}\n🔑 {serverInfo["password"]}\n🗺 {WebMapConfig.URL}");
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: online notice failed: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: online notice failed: " + e.Message); }
         }
 
         public void NotifyOffline()
@@ -218,7 +296,7 @@ namespace WebMap
                     Players.Refresh(mapDataServer.players);
                     Stats.OnTick(Players.Current);
                 }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: player snapshot failed: " + e.Message); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: player snapshot failed: " + e.Message); }
                 yield return new WaitForSeconds(WebMapConfig.PLAYER_UPDATE_INTERVAL);
             }
         }
@@ -241,7 +319,7 @@ namespace WebMap
                     visitedT += WebMapConfig.UPDATE_FOG_TEXTURE_INTERVAL;
                     if (visitedT >= 60f) { visitedT = 0f; Fog.RevealVisitedZones(); }
                 }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: fog update failed: " + e.Message); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: fog update failed: " + e.Message); }
             }
         }
 
@@ -268,7 +346,7 @@ namespace WebMap
         public static void SavePins()
         {
             try { lock (mapDataServer.pins) File.WriteAllLines(Path.Combine(worldDataPath, "pins.csv"), mapDataServer.pins); }
-            catch (Exception e) { ZLog.Log("WebMap: FAILED TO WRITE PINS FILE! " + e.Message); }
+            catch (Exception e) { ZLog.Log("MuninMap: FAILED TO WRITE PINS FILE! " + e.Message); }
         }
 
         // ---------------------------------------------------------------- pins
@@ -397,7 +475,7 @@ namespace WebMap
                 WebMap.instance.NewWorld();
                 if (mapDataServer.mapImageData != null || !WebMapConfig.LEGACY_MAP) return;
 
-                ZLog.Log("WebMap: building legacy world render (once)");
+                ZLog.Log("MuninMap: building legacy world render (once)");
                 int size = WebMapConfig.TEXTURE_SIZE, num = size / 2;
                 float num2 = WebMapConfig.PIXEL_SIZE / 2f;
                 Color32[] colorArray = new Color32[size * size];
@@ -442,7 +520,7 @@ namespace WebMap
                 mapDataServer.mapImageData = pngBytes;
                 mapDataServer.BuildMapJpg();
                 try { File.WriteAllBytes(Path.Combine(worldDataPath, "map.png"), pngBytes); }
-                catch (Exception e) { ZLog.LogError("WebMap: FAILED TO WRITE MAP FILE! " + e.Message); }
+                catch (Exception e) { ZLog.LogError("MuninMap: FAILED TO WRITE MAP FILE! " + e.Message); }
             }
         }
 
@@ -454,13 +532,13 @@ namespace WebMap
                 if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out ZoneSystem.LocationInstance startLocation))
                 {
                     WebMapConfig.WORLD_START_POS = startLocation.m_position;
-                    ZLog.Log("WebMap: starting point " + WebMapConfig.WORLD_START_POS);
+                    ZLog.Log("MuninMap: starting point " + WebMapConfig.WORLD_START_POS);
                 }
-                else ZLog.LogWarning("WebMap: failed to find starting point");
+                else ZLog.LogWarning("MuninMap: failed to find starting point");
 
                 WebMap.instance.Online();
                 mapDataServer.ListenAsync();
-                try { Fog.RevealVisitedZones(); } catch (Exception e) { ZLog.LogWarning("WebMap: visited-zone reveal failed: " + e.Message); }
+                try { Fog.RevealVisitedZones(); } catch (Exception e) { ZLog.LogWarning("MuninMap: visited-zone reveal failed: " + e.Message); }
             }
         }
 
@@ -528,7 +606,7 @@ namespace WebMap
                     RoutedRPCData data = rpcData;
                     ZRoutedRpcPatch.Observe(ref __instance, ref data);
                 }
-                catch (Exception ex) { ZLog.LogWarning("WebMap: failed observing a routed rpc: " + ex); }
+                catch (Exception ex) { ZLog.LogWarning("MuninMap: failed observing a routed rpc: " + ex); }
             }
 
             private static bool IsDuplicate(RoutedRPCData d)
@@ -598,7 +676,7 @@ namespace WebMap
                             mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message, pos);
                         }
                     }
-                    catch (Exception ex) { ZLog.LogWarning("WebMap: failed handling a chat message: " + ex); }
+                    catch (Exception ex) { ZLog.LogWarning("MuninMap: failed handling a chat message: " + ex); }
                 }
                 else
                 {

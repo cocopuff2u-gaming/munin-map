@@ -28,7 +28,7 @@ namespace WebMap.World
                     if (File.Exists(path)) File.Delete(path);
                     File.Move(path + ".tmp", path);
                 }
-                catch (Exception e) { ZLog.LogWarning("WebMap: cache " + Path.GetFileName(path) + ": " + e.Message); }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: cache " + Path.GetFileName(path) + ": " + e.Message); }
             }) { IsBackground = true, Priority = ThreadPriority.BelowNormal }.Start();
         }
 
@@ -49,7 +49,7 @@ namespace WebMap.World
                     list.Add(new Line { key = key, rev = rev, count = count, json = s.Substring(tab + 1) });
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: cache " + Path.GetFileName(path) + ": " + e.Message); list.Clear(); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: cache " + Path.GetFileName(path) + ": " + e.Message); list.Clear(); }
             return list;
         }
     }

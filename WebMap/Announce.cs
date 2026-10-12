@@ -92,13 +92,13 @@ namespace WebMap
                     (int)MessageHud.MessageType.Center, text);
                 int sent = 0;
                 try { var ps = ZNet.instance.GetPeers(); sent = ps == null ? -1 : ps.Count; } catch { sent = -2; }
-                ZLog.Log($"WebMap: announced (peers seen: {sent}): \"{text}\"");
+                ZLog.Log($"MuninMap: announced (peers seen: {sent}): \"{text}\"");
                 // the web feed no longer sees this via the chat observer, so add it here
                 if (feed) try { Live.Events.Add("server", WebMapConfig.ANNOUNCE_NAME, text); } catch { }
             }
             catch (System.Exception ex)
             {
-                ZLog.LogWarning("WebMap: announce failed: " + ex);
+                ZLog.LogWarning("MuninMap: announce failed: " + ex);
             }
         }
     }

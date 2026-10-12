@@ -24,7 +24,7 @@ namespace WebMap
 
             if (webHookUrl.IsNullOrEmpty())
             {
-                ZLog.Log($"WebMap::DiscordWebHook::SendMessage: {values}");
+                ZLog.Log($"MuninMap::DiscordWebHook::SendMessage: {values}");
                 return;
             }
             webClient.UploadValues(webHookUrl, values);

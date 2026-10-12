@@ -67,7 +67,7 @@ async function loadChunkTerrain(cx, cz) {
 
 class GlbWriter {
   constructor() {
-    this.json = { asset: { version: '2.0', generator: 'Valheim WebMap' }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], accessors: [], bufferViews: [], buffers: [{ byteLength: 0 }], images: [], textures: [], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }], extensionsUsed: [] };
+    this.json = { asset: { version: '2.0', generator: 'Munin Map' }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], accessors: [], bufferViews: [], buffers: [{ byteLength: 0 }], images: [], textures: [], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }], extensionsUsed: [] };
     this.chunks = []; this.length = 0;
     this.imageIndex = new Map();   // url -> texture index
     this.materialIndex = new Map();
@@ -393,7 +393,7 @@ export class Exporter {
       ['instances.csv', csv([['prefab', 'ue_x_cm', 'ue_y_cm', 'ue_z_cm', 'ue_qx', 'ue_qy', 'ue_qz', 'ue_qw', 'scale_x', 'scale_y', 'scale_z', 'valheim_x', 'valheim_y', 'valheim_z'],
         ...instanceRows.map(([n, x, y, z, qx, qy, qz, qw, sx, sy, sz]) => [n, (x * 100).toFixed(1), (-z * 100).toFixed(1), (y * 100).toFixed(1), qx.toFixed(6), (-qz).toFixed(6), qy.toFixed(6), qw.toFixed(6), sx.toFixed(4), sy.toFixed(4), sz.toFixed(4), x.toFixed(2), y.toFixed(2), z.toFixed(2)])])],
       ['markers.csv', csv([['set', 'label', 'ue_x_cm', 'ue_y_cm', 'ue_z_cm', 'valheim_x', 'valheim_y', 'valheim_z'], ...markerRows.map(([s, l, x, y, z]) => [s, l, (x * 100).toFixed(1), (-z * 100).toFixed(1), (y * 100).toFixed(1), x.toFixed(2), y.toFixed(2), z.toFixed(2)])])],
-      ['import_valheim_webmap.py', unrealScript()],
+      ['import_munin_map.py', unrealScript()],
       ['README.txt', unrealReadme(meta, heightPng.width, heightPng.height)],
     ];
     const zip = makeZip(files.map(([n, d]) => [n, typeof d === 'string' ? new TextEncoder().encode(d) : (d.bytes || d)]));
@@ -503,7 +503,7 @@ function unrealReadme(meta, w, h) {
   const zScale = (range / 512 * 100).toFixed(3);
   const zLoc = ((meta.hMin + meta.hMax) / 2 * 100).toFixed(1);
   const x0 = (meta.bounds.z0 * 100).toFixed(0), y0 = (-meta.bounds.x1 * 100).toFixed(0);
-  return `Valheim WebMap export for Unreal Engine 5
+  return `Munin Map export for Unreal Engine 5
 ==========================================
 
 Area: x ${meta.bounds.x0}..${meta.bounds.x1}, z ${meta.bounds.z0}..${meta.bounds.z1} (Valheim metres)
@@ -515,7 +515,7 @@ Files
   heightmap_r16.png       ${w} x ${h} px, 16-bit, 1 px = 1 m, north at the top, for a Landscape
   instances.csv           one row per object in Unreal units (cm, Unreal axes) plus the Valheim originals
   markers.csv             portals, tombstones, bases, boats
-  import_valheim_webmap.py  optional editor script: spawns instances.csv onto already imported meshes
+  import_munin_map.py  optional editor script: spawns instances.csv onto already imported meshes
 
 Quickest: File > Import Into Level > scene.glb
   Interchange imports the terrain and one Static Mesh per prefab, and places every object.
@@ -541,12 +541,12 @@ Content note
 }
 
 function unrealScript() {
-  return `# Valheim WebMap: place instances.csv in the open level.
+  return `# Munin Map: place instances.csv in the open level.
 # Run in the Unreal editor (Tools > Execute Python Script) after importing scene.glb or the
 # individual prefab meshes. Meshes are looked up by prefab name under MESH_ROOT.
 import csv, os, unreal
 
-MESH_ROOT = '/Game/ValheimWebMap'        # where the imported static meshes live
+MESH_ROOT = '/Game/MuninMap'        # where the imported static meshes live
 CSV_PATH = os.path.join(os.path.dirname(__file__), 'instances.csv')
 
 def find_mesh(name):
@@ -578,6 +578,6 @@ for prefab, rows in by_mesh.items():
         t = unreal.Transform(unreal.Vector(float(r['ue_x_cm']), float(r['ue_y_cm']), float(r['ue_z_cm'])), q.rotator(), unreal.Vector(float(r['scale_x']), float(r['scale_z']), float(r['scale_y'])))
         comp.add_instance(t, True)
         placed += 1
-unreal.log('Valheim WebMap: placed %d instances, %d had no mesh under %s' % (placed, missing, MESH_ROOT))
+unreal.log('Munin Map: placed %d instances, %d had no mesh under %s' % (placed, missing, MESH_ROOT))
 `;
 }

@@ -187,7 +187,7 @@ class App {
   applyConfig(c) {
     if (!c) return;
     $('#title').textContent = c.title || 'Valheim';
-    document.title = `${c.title || 'Valheim'} · WebMap`;
+    document.title = `${c.title || 'Valheim'} · Munin Map`;
     if (c.world_name) $('#subtitle').textContent = c.world_name;
     $('#btn-mode').disabled = c.enable_3d === false;
     // with 3D off, hide what only works with it (inline style: CSS display would override `hidden`)

@@ -453,4 +453,4 @@ setInterval(() => {
   if (t % 20 === 0) broadcast({ t: 'tiles', keys: ['7/42/39'], status: `${512 + t}/3` });
 }, 1000);
 
-server.listen(PORT, () => console.log(`mock WebMap on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`mock Munin Map on http://localhost:${PORT}`));

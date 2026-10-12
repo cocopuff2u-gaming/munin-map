@@ -329,7 +329,7 @@ namespace WebMap.Models
             }
             catch (Exception e)
             {
-                if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: texture " + tex.name + " not exported: " + e.Message);
+                if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: texture " + tex.name + " not exported: " + e.Message);
                 file = null;
             }
             textureFiles[name] = file;

@@ -462,7 +462,7 @@ export class Sidebar {
       <dt>Render time / tile</dt><dd>${tiles.avgMs ? tiles.avgMs.toFixed(0) + ' ms' : '–'}${tiles.mainThreadSampling ? ' · main-thread' : ''}</dd>
       <dt>Max detail</dt><dd>${Math.pow(2, 7 - (tiles.maxRenderZoom ?? 7))} m / px</dd>
       <dt>3D models</dt><dd>${prefabs.stats.exported ?? 0} prefabs${prefabs.stats.unreadable ? ` (${prefabs.stats.unreadable} unreadable)` : ''}${prefabs.stats.queued ? ` +${prefabs.stats.queued} queued` : ''}</dd>
-      <dt>WebMap</dt><dd>${escape(this.app.config?.version || '')}</dd>
+      <dt>Munin Map</dt><dd>${escape(this.app.config?.version || '')}</dd>
     </dl></details>`);
     det.addEventListener('toggle', () => { this.serverOpen = det.open; });
     p.append(det);

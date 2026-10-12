@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>1.0.0</Version>
+    <Version>3.0.0</Version>
     <OutputType>Library</OutputType>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>9.0</LangVersion>
-    <AssemblyName>WebMap</AssemblyName>
-    <AssemblyTitle>Valheim WebMap</AssemblyTitle>
-    <Copyright>(c) 2025 Various Authors</Copyright>
+    <AssemblyName>MuninMap</AssemblyName>
+    <AssemblyTitle>Munin Map</AssemblyTitle>
+    <Copyright>(c) 2026 Cody Keats and the Valheim WebMap authors</Copyright>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
     <DebugType>portable</DebugType>
@@ -45,7 +45,7 @@
     <Reference Include="steamworks"><HintPath>..\libs\valheim\com.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="WebsocketSharp"><HintPath>..\libs\websocket-sharp.dll</HintPath></Reference>
     <Reference Include="System.IO.Compression" />
-    <!-- lossless WebP tiles (Apache-2.0); copied next to WebMap.dll with its helper DLLs -->
+    <!-- lossless WebP tiles (Apache-2.0); copied next to MuninMap.dll with its helper DLLs -->
     <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
   </ItemGroup>
 </Project>

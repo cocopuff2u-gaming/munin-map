@@ -11,7 +11,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      WEBMAP_TITLE: "Valheim WebMap demo"
+      WEBMAP_TITLE: "Munin Map demo"
       WEBMAP_WORLD: "Demo world"
     read_only: true
     mem_limit: 256m

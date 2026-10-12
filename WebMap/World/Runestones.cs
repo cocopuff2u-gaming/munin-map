@@ -53,7 +53,7 @@ namespace WebMap.World
             string key = "v2 " + names.Count + " " + string.Join(",", names).GetStableHashCode();
             string path = Path.Combine(cacheDir, "runestones.txt");
             var map = Load(path, key);
-            if (map != null) { byLocation = map; ZLog.Log("WebMap: runestones in " + map.Count + " kinds of location (cached)"); yield break; }
+            if (map != null) { byLocation = map; ZLog.Log("MuninMap: runestones in " + map.Count + " kinds of location (cached)"); yield break; }
 
             map = new Dictionary<int, List<Kind>>();
             var found = new List<string>();
@@ -71,7 +71,7 @@ namespace WebMap.World
                     t.GetMethod("HoldReference", Type.EmptyTypes).Invoke(sref, null);
                     t.GetMethod("LoadAsync", Type.EmptyTypes).Invoke(sref, null);
                 }
-                catch (Exception e) { ZLog.LogWarning("WebMap: runestones, " + n + ": " + e.Message); continue; }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: runestones, " + n + ": " + e.Message); continue; }
                 var loaded = t.GetProperty("IsLoaded");
                 var list = new List<Kind>();
                 var spawners = new List<KeyValuePair<Transform, object>>();
@@ -96,7 +96,7 @@ namespace WebMap.World
                         }
                     }
                 }
-                catch (Exception e) { ZLog.LogWarning("WebMap: runestones, " + n + ": " + e.Message); }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: runestones, " + n + ": " + e.Message); }
                 foreach (var sp in spawners)
                 {
                     var st = sp.Value.GetType();
@@ -110,7 +110,7 @@ namespace WebMap.World
                         var parent = sp.Key;
                         if (sgo != null && parent != null && locRoot != null) Collect(sgo, (p) => locRoot.InverseTransformPoint(parent.TransformPoint(p)), list);
                     }
-                    catch (Exception e) { ZLog.LogWarning("WebMap: runestones, " + n + " spawner: " + e.Message); }
+                    catch (Exception e) { ZLog.LogWarning("MuninMap: runestones, " + n + " spawner: " + e.Message); }
                     finally { try { st.GetMethod("Release", Type.EmptyTypes).Invoke(sp.Value, null); } catch { } }
                 }
                 try { t.GetMethod("Release", Type.EmptyTypes).Invoke(sref, null); } catch { }
@@ -119,7 +119,7 @@ namespace WebMap.World
             }
             byLocation = map;
             Save(path, key, map);
-            ZLog.Log($"WebMap: runestones in {found.Count} kinds of location ({(DateTime.UtcNow - started).TotalSeconds:0} s): " + string.Join(", ", found));
+            ZLog.Log($"MuninMap: runestones in {found.Count} kinds of location ({(DateTime.UtcNow - started).TotalSeconds:0} s): " + string.Join(", ", found));
         }
 
         // the stones in a prefab (a location, or what a spawner in one brings), placed in location space
@@ -172,7 +172,7 @@ namespace WebMap.World
                     }
                 File.WriteAllText(path, sb.ToString());
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: runestones cache: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: runestones cache: " + e.Message); }
         }
         private static Dictionary<int, List<Kind>> Load(string path, string key)
         {

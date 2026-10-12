@@ -68,7 +68,7 @@ namespace WebMap.Tiles
             try { p = Decode(blob, zx, zz, rev); }
             catch (Exception e)
             {
-                if (WebMapConfig.DEBUG) ZLog.LogWarning($"WebMap: terrain blob for zone {zx},{zz} not understood: {e.Message}");
+                if (WebMapConfig.DEBUG) ZLog.LogWarning($"MuninMap: terrain blob for zone {zx},{zz} not understood: {e.Message}");
                 seenRev[key] = rev;
                 return false;
             }

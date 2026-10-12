@@ -111,7 +111,7 @@ namespace WebMap.Live
                 keep.Reverse();
                 return "[" + string.Join(",", keep) + "]";
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: older events: " + e.Message); return "[]"; }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: older events: " + e.Message); return "[]"; }
         }
 
         // Load the tail of the log on startup so the feed is not empty after a restart.
@@ -142,7 +142,7 @@ namespace WebMap.Live
                     recentJson = ToJson(recent);
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: events.jsonl not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: events.jsonl not readable: " + e.Message); }
         }
     }
 }

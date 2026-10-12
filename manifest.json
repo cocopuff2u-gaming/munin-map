@@ -1,8 +1,8 @@
 {
-    "name": "ValheimWebMap",
-    "version_number": "2.2.6",
-    "website_url": "https://github.com/f00d4tehg0dz/valheim-webmap",
-    "description": "Live web map for your dedicated server. 3D/2D view with the game's own models, fog of war, players, bases, portals, stats.",
+    "name": "MuninMap",
+    "version_number": "3.0.0",
+    "website_url": "https://github.com/cocopuff2u/munin-map",
+    "description": "Server-only live map of your world in the browser. 2D and 3D, players, bases, portals, fog of war, stats. Players install nothing. Formerly Valheim WebMap.",
     "dependencies": [
         "denikson-BepInExPack_Valheim-5.4.2350"
     ]

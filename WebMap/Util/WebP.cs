@@ -9,7 +9,7 @@ using SixLabors.ImageSharp.PixelFormats;
 namespace WebMap.Util
 {
     // Map and overlay tiles are served as lossless WebP, through ImageSharp (pure managed,
-    // ships next to WebMap.dll). Same pixels as PNG, 25-35% fewer bytes, which is what a server
+    // ships next to MuninMap.dll). Same pixels as PNG, 25-35% fewer bytes, which is what a server
     // on a home upload line runs out of first. Tiles are rendered as PNG (quick, so a new
     // one shows at once) and converted in the background. Height tiles stay PNG (the 3D view
     // decodes those).
@@ -38,7 +38,7 @@ namespace WebMap.Util
                                       || e is TypeInitializationException)
             {
                 broken = true;
-                ZLog.LogWarning("WebMap: WebP tiles are off, the ImageSharp library did not load (" + e.GetType().Name + ": " + e.Message + "). Using PNG.");
+                ZLog.LogWarning("MuninMap: WebP tiles are off, the ImageSharp library did not load (" + e.GetType().Name + ": " + e.Message + "). Using PNG.");
                 return null;
             }
         }

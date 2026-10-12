@@ -53,7 +53,7 @@ namespace WebMap.World
                     l.Add(li.m_position);
                 }
             }
-            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: dungeons: " + e.Message); }
+            catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: dungeons: " + e.Message); }
         }
 
         private static long ZoneKey(float x, float z) => ((long)Mathf.FloorToInt(x / 64f) << 32) ^ (uint)Mathf.FloorToInt(z / 64f);

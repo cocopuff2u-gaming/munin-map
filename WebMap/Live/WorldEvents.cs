@@ -48,7 +48,7 @@ namespace WebMap.Live
                 if (peer != null) Events.Add("boss", boss, "was defeated" + (who.Length > 0 ? " by " + who : ""), peer.m_refPos.x, peer.m_refPos.z);
                 else Events.Add("boss", boss, "was defeated");
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: boss event: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: boss event: " + e.Message); }
         }
 
         // the raid on now, for the map's raid circle like the game draws: {"name","x","z","r"}, or null
@@ -84,9 +84,9 @@ namespace WebMap.Live
                         current = name;
                     }
                 }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: raid check: " + e.Message); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: raid check: " + e.Message); }
                 try { CheckInvasions(); }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: invasion check: " + e.Message); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: invasion check: " + e.Message); }
                 yield return new WaitForSeconds(2f);
             }
         }
@@ -171,7 +171,7 @@ namespace WebMap.Live
                     else if (t.Length == 3 && t[0] == "biomes") biomes[t[1]] = new HashSet<string>(t[2].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: world events state: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: world events state: " + e.Message); }
         }
 
         private static void Save()
@@ -189,7 +189,7 @@ namespace WebMap.Live
                 foreach (var kv in biomes) sb.Append("biomes\t").Append(kv.Key).Append('\t').Append(string.Join(",", kv.Value)).Append('\n');
                 File.WriteAllText(StatePath, sb.ToString());
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: world events state: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: world events state: " + e.Message); }
         }
 
         // the biomes on explored ground (a coarse scan of the fog), for the first run's seeding
@@ -230,7 +230,7 @@ namespace WebMap.Live
             yield return new WaitForSeconds(20f);   // the world, fog and first sweep come first
             while (true)
             {
-                try { Discover(); } catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: discovery: " + e.Message); }
+                try { Discover(); } catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: discovery: " + e.Message); }
                 yield return new WaitForSeconds(3f);
             }
         }
@@ -298,7 +298,7 @@ namespace WebMap.Live
                     Events.Add("sleep", "Everyone slept", "through the night, day " + day + " begins");
                     Stats.OnNightSlept();
                 }
-                catch (Exception e) { ZLog.LogWarning("WebMap: sleep event: " + e.Message); }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: sleep event: " + e.Message); }
             }
         }
 

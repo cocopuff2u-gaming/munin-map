@@ -47,7 +47,7 @@ namespace WebMap.World
                 if (!ImageConv.LoadImage(tex, File.ReadAllBytes(path))) return false;
                 if (tex.width != size || tex.height != size)
                 {
-                    ZLog.LogWarning($"WebMap: fog.png is {tex.width}x{tex.height}, expected {size}x{size}; starting a fresh fog");
+                    ZLog.LogWarning($"MuninMap: fog.png is {tex.width}x{tex.height}, expected {size}x{size}; starting a fresh fog");
                     UnityEngine.Object.Destroy(tex);
                     return false;
                 }
@@ -61,7 +61,7 @@ namespace WebMap.World
             }
             catch (Exception e)
             {
-                ZLog.LogWarning("WebMap: could not read fog.png: " + e.Message);
+                ZLog.LogWarning("MuninMap: could not read fog.png: " + e.Message);
                 return false;
             }
         }
@@ -75,7 +75,7 @@ namespace WebMap.World
             }
             catch (Exception e)
             {
-                ZLog.LogError("WebMap: FAILED TO WRITE FOG FILE! " + e.Message);
+                ZLog.LogError("MuninMap: FAILED TO WRITE FOG FILE! " + e.Message);
             }
         }
 
@@ -150,11 +150,11 @@ namespace WebMap.World
             if (tableSeen.TryGetValue(zdo.m_uid, out int old) && old == sig) return 0;
             tableSeen[zdo.m_uid] = sig;
             byte[] data;
-            try { data = Utils.Decompress(raw); } catch (Exception e) { ZLog.LogWarning("WebMap: map table not readable: " + e.Message); return 0; }
+            try { data = Utils.Decompress(raw); } catch (Exception e) { ZLog.LogWarning("MuninMap: map table not readable: " + e.Message); return 0; }
             if (data == null || data.Length < 8) return 0;
             int n = BitConverter.ToInt32(data, 4);
             int tsize = (int)Math.Round(Math.Sqrt(n));
-            if (tsize * tsize != n || data.Length < 8 + n) { ZLog.LogWarning($"WebMap: map table has {n} cells, not a square map"); return 0; }
+            if (tsize * tsize != n || data.Length < 8 + n) { ZLog.LogWarning($"MuninMap: map table has {n} cells, not a square map"); return 0; }
             // the game's grid: tsize cells, each (world diameter / tsize) wide, centred on the origin
             float tpx = (half * 2f * pixelSize) / tsize;
             int revealed = 0;
@@ -181,7 +181,7 @@ namespace WebMap.World
             if (WebMapConfig.DEBUG && tsize == size)   // the recorded map as is, for comparing against the zone guess
                 try { var cells = new byte[n]; Buffer.BlockCopy(data, 8, cells, 0, n); File.WriteAllBytes(Path.Combine(global::WebMap.WebMap.worldDataPath, $"maptable_{zdo.GetPosition().x:F0}_{zdo.GetPosition().z:F0}.bin"), cells); } catch { }
             MapTablesRead++;
-            ZLog.Log($"WebMap: cartography table at {zdo.GetPosition().x:F0}, {zdo.GetPosition().z:F0}: {revealed} newly explored cells from the recorded map");
+            ZLog.Log($"MuninMap: cartography table at {zdo.GetPosition().x:F0}, {zdo.GetPosition().z:F0}: {revealed} newly explored cells from the recorded map");
             return revealed;
         }
 
@@ -213,7 +213,7 @@ namespace WebMap.World
                 }
                 traces.Clear();
             }
-            if (cells > 0) ZLog.Log($"WebMap: revealed around {n} new player traces (builds, boats, carts, portals, tombstones): {cells} new cells");
+            if (cells > 0) ZLog.Log($"MuninMap: revealed around {n} new player traces (builds, boats, carts, portals, tombstones): {cells} new cells");
             return cells;
         }
 
@@ -244,7 +244,7 @@ namespace WebMap.World
                 // explored with the least ground they hadn't; filling the zones (46 m) left more out.
                 cells += Reveal(z.x * 64f, z.y * 64f, margin >= 4 ? 64f : 46f);
             }
-            if (zones > 0) ZLog.Log($"WebMap: revealed {zones} zones players had already visited ({cells} new cells)");
+            if (zones > 0) ZLog.Log($"MuninMap: revealed {zones} zones players had already visited ({cells} new cells)");
             return cells;
         }
 

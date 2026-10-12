@@ -19,7 +19,7 @@ namespace WebMap.World
     // extracts again.
     internal static class MapIcons
     {
-        private static readonly BepInEx.Logging.ManualLogSource log = BepInEx.Logging.Logger.CreateLogSource("WebMap.icons");
+        private static readonly BepInEx.Logging.ManualLogSource log = BepInEx.Logging.Logger.CreateLogSource("MuninMap.icons");
         private sealed class Entry { public string key, sprite; public Rect rect; }
 
         public static string Dir { get; private set; }
@@ -56,7 +56,7 @@ namespace WebMap.World
                     return;
                 }
                 string dataDir = Application.dataPath;
-                new Thread(() => Extract(dataDir, atlas, entries, manifest, mf)) { IsBackground = true, Name = "WebMap icons", Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
+                new Thread(() => Extract(dataDir, atlas, entries, manifest, mf)) { IsBackground = true, Name = "MuninMap icons", Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
             }
             catch (Exception e) { log.LogWarning("map icons: " + e.Message); }
         }
@@ -121,7 +121,7 @@ namespace WebMap.World
                     j.End();
                     BackgroundJson = j.ToString();
                     try { File.WriteAllText(mf, BackgroundJson); } catch { }
-                }) { IsBackground = true, Name = "WebMap map background", Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
+                }) { IsBackground = true, Name = "MuninMap map background", Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
             }
             catch (Exception e) { log.LogWarning("map background: " + e.Message); }
         }

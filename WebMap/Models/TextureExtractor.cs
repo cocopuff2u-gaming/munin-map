@@ -36,9 +36,9 @@ namespace WebMap.Models
             thread = new Thread(() =>
             {
                 try { Run(names, dataDir, modelsDir, maxSize); }
-                catch (Exception e) { LastReport = "failed: " + e.Message; ZLog.LogWarning("WebMap: texture extraction failed: " + e); }
+                catch (Exception e) { LastReport = "failed: " + e.Message; ZLog.LogWarning("MuninMap: texture extraction failed: " + e); }
                 finally { Running = false; try { onDone?.Invoke(); } catch { } }
-            }) { IsBackground = true, Name = "WebMap textures", Priority = ThreadPriority.BelowNormal };
+            }) { IsBackground = true, Name = "MuninMap textures", Priority = ThreadPriority.BelowNormal };
             thread.Start();
             return true;
         }
@@ -47,7 +47,7 @@ namespace WebMap.Models
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int total = wanted.Count, found = 0, unsupported = 0, files = 0;
-            ZLog.Log($"WebMap: extracting {total} textures from the game files in {dataDir}");
+            ZLog.Log($"MuninMap: extracting {total} textures from the game files in {dataDir}");
             foreach (string path in AssetFiles(dataDir))
             {
                 if (wanted.Count == 0) break;
@@ -57,12 +57,12 @@ namespace WebMap.Models
                     if (IsBundle(path)) found += FromBundle(path, wanted, modelsDir, maxSize, ref unsupported);
                     else found += FromSerialized(path, null, File.ReadAllBytes(path), wanted, modelsDir, maxSize, ref unsupported);
                 }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning($"WebMap: {Path.GetFileName(path)} skipped: {e.Message}"); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning($"MuninMap: {Path.GetFileName(path)} skipped: {e.Message}"); }
             }
             lock (gaveUp) foreach (var w in wanted) gaveUp.Add(w);
             LastFound = found;
             LastReport = $"{found} of {total} textures extracted from {files} files in {sw.Elapsed.TotalSeconds:F0}s" + (unsupported > 0 ? $", {unsupported} in unsupported formats" : "") + (wanted.Count > 0 ? $", {wanted.Count} not found" : "");
-            ZLog.Log("WebMap: " + LastReport);
+            ZLog.Log("MuninMap: " + LastReport);
         }
 
         // bundles first, biggest first (the world's assets live there), then the plain .assets files
@@ -125,7 +125,7 @@ namespace WebMap.Models
                 try { tex = sf.ReadTexture2D(o); } catch { continue; }
                 if (tex == null || tex.Name == null || !wanted.Contains(tex.Name)) continue;
                 if (tex.Width <= 0 || tex.Height <= 0) continue;
-                if (!TextureDecoder.Supported(tex.Format)) { unsupported++; wanted.Remove(tex.Name); lock (gaveUp) gaveUp.Add(tex.Name); ZLog.LogWarning($"WebMap: texture {tex.Name} is in format {tex.Format}, not supported"); continue; }
+                if (!TextureDecoder.Supported(tex.Format)) { unsupported++; wanted.Remove(tex.Name); lock (gaveUp) gaveUp.Add(tex.Name); ZLog.LogWarning($"MuninMap: texture {tex.Name} is in format {tex.Format}, not supported"); continue; }
                 byte[] rgba = DecodeTexture(path, bundle, tex);
                 if (rgba == null) continue;
                 try
@@ -133,7 +133,7 @@ namespace WebMap.Models
                     WritePng(rgba, tex.Width, tex.Height, maxSize, Path.Combine(modelsDir, PrefabExporter.TextureFileName(tex.Name)));
                     wanted.Remove(tex.Name); found++;
                 }
-                catch (Exception e) { ZLog.LogWarning($"WebMap: could not write texture {tex.Name}: {e.Message}"); }
+                catch (Exception e) { ZLog.LogWarning($"MuninMap: could not write texture {tex.Name}: {e.Message}"); }
             }
             return found;
         }

@@ -43,7 +43,7 @@ to centimetres automatically.
 4. Delete the `Terrain` actors from the scene import.
 
 `instances.csv` is in Unreal units already (cm, X = east, Y = south, Z =
-up). `import_valheim_webmap.py` spawns it onto imported meshes as
+up). `import_munin_map.py` spawns it onto imported meshes as
 Hierarchical Instanced Static Meshes (Tools > Execute Python Script; edit
 `MESH_ROOT` to where the meshes landed). Optional: the scene import already
 placed everything.

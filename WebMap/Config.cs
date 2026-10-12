@@ -145,7 +145,7 @@ namespace WebMap
 
             TILE_WEBP = config.Bind("Server", "tile_webp",
                 WebMapConfig.TILE_WEBP,
-                "Store map and overlay tiles as lossless WebP: same picture, 25-35% less upload per tile. New tiles are served as PNG at once and converted in the background. Browsers without WebP still get PNG. Needs SixLabors.ImageSharp.dll and its helper DLLs next to WebMap.dll.").Value;
+                "Store map and overlay tiles as lossless WebP: same picture, 25-35% less upload per tile. New tiles are served as PNG at once and converted in the background. Browsers without WebP still get PNG. Needs SixLabors.ImageSharp.dll and its helper DLLs next to MuninMap.dll.").Value;
 
             SERVER_PORT = config.Bind("Server", "server_port",
                 WebMapConfig.SERVER_PORT,

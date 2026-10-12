@@ -31,9 +31,9 @@ namespace WebMap.Models
             thread = new Thread(() =>
             {
                 try { Run(keys, dataDir, modelsDir); }
-                catch (Exception e) { LastReport = "failed: " + e.Message; ZLog.LogWarning("WebMap: mesh extraction failed: " + e); }
+                catch (Exception e) { LastReport = "failed: " + e.Message; ZLog.LogWarning("MuninMap: mesh extraction failed: " + e); }
                 finally { Running = false; try { onDone?.Invoke(); } catch { } }
-            }) { IsBackground = true, Name = "WebMap meshes", Priority = ThreadPriority.BelowNormal };
+            }) { IsBackground = true, Name = "MuninMap meshes", Priority = ThreadPriority.BelowNormal };
             thread.Start();
             return true;
         }
@@ -45,7 +45,7 @@ namespace WebMap.Models
             // names alone decide whether an object is worth decoding; the full key is checked after
             var names = new HashSet<string>();
             foreach (var k in wanted) names.Add(k.Substring(0, k.IndexOf('|')));
-            ZLog.Log($"WebMap: extracting {total} meshes from the game files in {dataDir}");
+            ZLog.Log($"MuninMap: extracting {total} meshes from the game files in {dataDir}");
             foreach (string path in TextureExtractor.AssetFiles(dataDir))
             {
                 if (wanted.Count == 0) break;
@@ -67,12 +67,12 @@ namespace WebMap.Models
                     }
                     else found += FromSerialized(path, null, File.ReadAllBytes(path), wanted, names, modelsDir, ref broken);
                 }
-                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning($"WebMap: {Path.GetFileName(path)} skipped: {e.Message}"); }
+                catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning($"MuninMap: {Path.GetFileName(path)} skipped: {e.Message}"); }
             }
             lock (gaveUp) foreach (var w in wanted) gaveUp.Add(w);
             LastFound = found;
             LastReport = $"{found} of {total} meshes extracted from {files} files in {sw.Elapsed.TotalSeconds:F0}s" + (broken > 0 ? $", {broken} could not be decoded" : "") + (wanted.Count > 0 ? $", {wanted.Count} not found" : "");
-            ZLog.Log("WebMap: " + LastReport);
+            ZLog.Log("MuninMap: " + LastReport);
         }
 
         private static int FromSerialized(string path, BundleFile bundle, byte[] data, HashSet<string> wanted, HashSet<string> names, string modelsDir, ref int broken)
@@ -110,14 +110,14 @@ namespace WebMap.Models
                     catch { continue; }
                 }
                 MeshDecoder.Decoded dec = null;
-                try { dec = MeshDecoder.Decode(m, vbytes); } catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning($"WebMap: mesh {m.Name}: {e.Message}"); }
-                if (dec == null || dec.Positions == null || dec.SubMeshes.Count == 0) { broken++; wanted.Remove(key); lock (gaveUp) gaveUp.Add(key); ZLog.LogWarning($"WebMap: mesh {m.Name} could not be decoded (compression {m.MeshCompression}, {m.Channels.Count} channels)"); continue; }
+                try { dec = MeshDecoder.Decode(m, vbytes); } catch (Exception e) { if (WebMapConfig.DEBUG) ZLog.LogWarning($"MuninMap: mesh {m.Name}: {e.Message}"); }
+                if (dec == null || dec.Positions == null || dec.SubMeshes.Count == 0) { broken++; wanted.Remove(key); lock (gaveUp) gaveUp.Add(key); ZLog.LogWarning($"MuninMap: mesh {m.Name} could not be decoded (compression {m.MeshCompression}, {m.Channels.Count} channels)"); continue; }
                 try
                 {
                     MeshCache.Save(modelsDir, key, new MeshCache.Data { positions = dec.Positions, normals = dec.Normals, uvs = dec.Uvs, subMeshes = dec.SubMeshes });
                     wanted.Remove(key); found++;
                 }
-                catch (Exception e) { ZLog.LogWarning($"WebMap: could not write mesh {m.Name}: {e.Message}"); }
+                catch (Exception e) { ZLog.LogWarning($"MuninMap: could not write mesh {m.Name}: {e.Message}"); }
             }
             return found;
         }

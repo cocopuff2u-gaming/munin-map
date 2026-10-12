@@ -111,7 +111,7 @@ namespace WebMap.Models
             if (prims.Count == 0) bounds = new float[6];
 
             j.BeginObject();
-            j.Key("asset").BeginObject().Prop("version", "2.0").Prop("generator", "Valheim WebMap").End();
+            j.Key("asset").BeginObject().Prop("version", "2.0").Prop("generator", "Munin Map").End();
             j.Prop("scene", 0);
             j.Key("scenes").BeginArray().BeginObject().Key("nodes").BeginArray().Value(0).End().End().End();
             j.Key("nodes").BeginArray().BeginObject().Prop("name", name).Prop("mesh", 0).End().End();

@@ -59,7 +59,7 @@ namespace WebMap
             catch (Exception e)
             {
                 // Never let a reporting failure escape into the RPC path.
-                ZLog.LogWarning($"WebMap: death watch failed: {e.Message}");
+                ZLog.LogWarning($"MuninMap: death watch failed: {e.Message}");
             }
         }
 
@@ -121,7 +121,7 @@ namespace WebMap
                 return;
             }
 
-            ZLog.Log($"WebMap: player {name} died");
+            ZLog.Log($"MuninMap: player {name} died");
             float? x = null, z = null;
             try
             {

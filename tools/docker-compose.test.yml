@@ -1,4 +1,4 @@
-# A local Valheim 1.0 dedicated server for testing WebMap, using the same image
+# A local Valheim 1.0 dedicated server for testing Munin Map, using the same image
 # as production (lloesche/valheim-server). Works with Docker Desktop on Windows.
 #
 #   1. Put a copy of your world folder at  valheim-test/config/worlds_local/<World>/
@@ -17,9 +17,9 @@ services:
     stop_grace_period: 2m
     ports:
       - "2456-2457:2456-2457/udp"
-      - "3000:3000/tcp"          # WebMap (server_port in the mod's config)
+      - "3000:3000/tcp"          # Munin Map (server_port in the mod's config)
     environment:
-      SERVER_NAME: "WebMap test"
+      SERVER_NAME: "Munin Map test"
       WORLD_NAME: "Newworld"
       SERVER_PASS: "testpass123"
       SERVER_PUBLIC: "false"
@@ -32,5 +32,5 @@ services:
       - ../valheim-test/config:/config
       - ../valheim-test/data:/opt/valheim
       # lloesche keeps BepInEx under /opt/valheim/bepinex; /config/bepinex is only its config dir.
-      # Mounting the plugins dir keeps WebMap (and its map_data) outside the BepInEx install.
+      # Mounting the plugins dir keeps Munin Map (and its map_data) outside the BepInEx install.
       - ../valheim-test/plugins:/opt/valheim/bepinex/BepInEx/plugins

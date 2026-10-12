@@ -110,7 +110,7 @@ namespace WebMap.World
             List<ZDO>[] bySector = null;
             Dictionary<ZoneSystem.SectorIndex, List<ZDO>> portalLists = null;
             try { bySector = ZDOMan.instance.m_objectsBySector; portalLists = ZDOMan.instance.m_portalObjects; }
-            catch (Exception e) { ZLog.LogWarning("WebMap: could not list ZDOs: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: could not list ZDOs: " + e.Message); }
             if (bySector == null) { sweeping = false; yield break; }
             var batch = new List<ZDO>(1024);
 
@@ -193,7 +193,7 @@ namespace WebMap.World
                         }
                         catch (Exception e)
                         {
-                            if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: sweep skipped an object: " + e.Message);
+                            if (WebMapConfig.DEBUG) ZLog.LogWarning("MuninMap: sweep skipped an object: " + e.Message);
                         }
                     }
                     if ((seen & 63) == 0 && (Due || seen % perFrame == 0)) { yield return Pause(); Resume(); }
@@ -245,7 +245,7 @@ namespace WebMap.World
             LastSweepUtc = started;
             Sweeps++;
             sweeping = false;
-            ZLog.Log($"WebMap: world sweep #{Sweeps}: {seen} objects in {LastSweepSeconds:0.0}s -> {Structures.Total} pieces ({changedChunks} chunks changed), "
+            ZLog.Log($"MuninMap: world sweep #{Sweeps}: {seen} objects in {LastSweepSeconds:0.0}s -> {Structures.Total} pieces ({changedChunks} chunks changed), "
                    + $"{Vegetation.LastTrees} trees, {Vegetation.LastRocks} rocks, {TerrainPatches.Count} terraformed zones, {rerendered} zones re-rendered, "
                    + $"{WorldObjects.Total} 3D objects ({changedObjectChunks} chunks changed), {Models.ModelStore.QueueLength} models to export; "
                    + $"longest frame {longestMs:0.0}ms in {longestPart}" + (took.Count > 0 ? " (" + string.Join(", ", took) + ")" : ""));

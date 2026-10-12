@@ -80,7 +80,7 @@ namespace WebMap.Live
                             if (p != null) r = Convert.ToSingle(p.GetValue(c, null));
                             break;
                         }
-                    ZLog.Log($"WebMap: {go.name} clears the mist for {r:F1} m");
+                    ZLog.Log($"MuninMap: {go.name} clears the mist for {r:F1} m");
                 }
             }
             catch { }

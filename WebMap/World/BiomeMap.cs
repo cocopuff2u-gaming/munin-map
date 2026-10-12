@@ -113,13 +113,13 @@ namespace WebMap.World
                 foreach (var l in found) sb.Append(l.name).Append('\t').Append(l.x.ToString("F0")).Append('\t').Append(l.z.ToString("F0")).Append('\t').Append(l.area.ToString("F0")).Append('\n');
                 File.WriteAllText(meta, sb.ToString());
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: biomes.png: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: biomes.png: " + e.Message); }
             labels = found;
             BiomeMap.cells = cells;
             BiomeMap.mist = mist;
             Png = png;
             Warm();
-            ZLog.Log($"WebMap: biome map built ({SIZE}x{SIZE}, {found.Count} named regions) in {Time.realtimeSinceStartup - started:F1} s");
+            ZLog.Log($"MuninMap: biome map built ({SIZE}x{SIZE}, {found.Count} named regions) in {Time.realtimeSinceStartup - started:F1} s");
         }
 
         // the big regions of each biome (not the ocean): connected cells on a coarser grid, each named at

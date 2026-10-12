@@ -1,7 +1,7 @@
 # Compiles the mod on every push and pull request, and attaches the zip to a GitHub
 # Release whenever a version tag is pushed.
 #
-#   git tag v2.1.5 && git push origin v2.1.5
+#   git tag v3.0.0 && git push origin v3.0.0
 #
 # The game assemblies come from the Valheim dedicated server, fetched with SteamCMD
 # (anonymous login is enough for app 896660) and cached between runs. Nothing from the
@@ -88,7 +88,7 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          sha256sum ValheimWebMap-*.zip > SHA256SUMS
+          sha256sum MuninMap-*.zip > SHA256SUMS
           cat SHA256SUMS
 
       - name: GitHub Release
@@ -98,13 +98,13 @@ jobs:
           name: ${{ steps.notes.outputs.version }}
           body_path: notes.md
           files: |
-            dist/ValheimWebMap-*.zip
+            dist/MuninMap-*.zip
             dist/SHA256SUMS
 
       - name: Keep the zip as a workflow artifact
         uses: actions/upload-artifact@v5
         with:
-          name: ValheimWebMap-${{ steps.notes.outputs.version }}
+          name: MuninMap-${{ steps.notes.outputs.version }}
           path: |
-            dist/ValheimWebMap-*.zip
+            dist/MuninMap-*.zip
             dist/SHA256SUMS

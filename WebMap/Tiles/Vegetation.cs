@@ -138,7 +138,7 @@ namespace WebMap.Tiles
                 }
                 version++;
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: vegetation cache: " + e.Message); zones.Clear(); zoneHash.Clear(); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: vegetation cache: " + e.Message); zones.Clear(); zoneHash.Clear(); }
         }
 
         private static void DumpKinds()
@@ -158,7 +158,7 @@ namespace WebMap.Tiles
                 File.WriteAllText(Path.Combine(Path.GetDirectoryName(cachePath), "vegetation-kinds.txt"), sb.ToString());
                 classSeen.Clear();
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: vegetation kinds: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: vegetation kinds: " + e.Message); }
         }
 
         private static void SaveCache()
@@ -183,7 +183,7 @@ namespace WebMap.Tiles
                     if (File.Exists(path)) File.Delete(path);
                     File.Move(path + ".tmp", path);
                 }
-                catch (Exception e) { ZLog.LogWarning("WebMap: vegetation cache: " + e.Message); }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: vegetation cache: " + e.Message); }
             }) { IsBackground = true, Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
         }
 

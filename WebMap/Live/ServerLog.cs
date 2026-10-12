@@ -58,7 +58,7 @@ namespace WebMap.Live
                     file = new StreamWriter(path, true) { AutoFlush = true };
                     foreach (var l in now) Write(l.ts, l.level, l.text);
                 }
-                catch (Exception e) { ZLog.LogWarning("WebMap: server-log.txt: " + e.Message); }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: server-log.txt: " + e.Message); }
             }
         }
 
@@ -105,7 +105,7 @@ namespace WebMap.Live
                     if (t.Length == 3) Add(t[0], t[1], t[2].Replace("\\n", "\n").Replace("\\\\", "\\"));
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: server-log.txt not readable: " + e.Message); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: server-log.txt not readable: " + e.Message); }
         }
 
         // lines after number `after` (-1: the latest `limit`), oldest first

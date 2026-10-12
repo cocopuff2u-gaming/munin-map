@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Valheim WebMap on Linux/macOS and package it for a server.
+# Build Munin Map on Linux/macOS and package it for a server.
 #
 #   ./build.sh [--managed <path to valheim_server_Data/Managed>] [--deploy <BepInEx/plugins dir>]
 #
@@ -50,22 +50,22 @@ dotnet build WebMap/WebMap.csproj -c Release -v minimal
 
 # --- package
 V=$(python3 -c "import json;print(json.load(open('manifest.json'))['version_number'])" 2>/dev/null || grep -o '"version_number": *"[^"]*"' manifest.json | cut -d'"' -f4)
-rm -rf dist/pkg "dist/ValheimWebMap-$V.zip"
-# plugins/WebMap/ inside the zip: r2modman, Gale and Thunderstore know that folder and keep
+rm -rf dist/pkg "dist/MuninMap-$V.zip"
+# plugins/MuninMap/ inside the zip: r2modman, Gale and Thunderstore know that folder and keep
 # everything under it together (the web folder included) when they install
-PKG=dist/pkg/plugins/WebMap
+PKG=dist/pkg/plugins/MuninMap
 mkdir -p "$PKG"
-cp WebMap/bin/Release/WebMap.dll WebMap/bin/Release/websocket-sharp.dll "$PKG/"
+cp WebMap/bin/Release/MuninMap.dll WebMap/bin/Release/websocket-sharp.dll "$PKG/"
 # WebP tiles: ImageSharp and the helpers the game doesn't have (it ships System.Memory and Unsafe itself)
 cp WebMap/bin/Release/{SixLabors.ImageSharp,System.Buffers,System.Numerics.Vectors,System.Text.Encoding.CodePages}.dll "$PKG/"
 cp -r WebMap/web "$PKG/web"
 mkdir -p "$PKG/tools" && cp tools/extract_textures.py tools/extract_meshes.py "$PKG/tools/"
 cp manifest.json README.md CHANGELOG.md icon.png LICENSE dist/pkg/
-(cd dist/pkg && zip -qr "../ValheimWebMap-$V.zip" . -x '.*')
-echo "packaged dist/ValheimWebMap-$V.zip"
+(cd dist/pkg && zip -qr "../MuninMap-$V.zip" . -x '.*')
+echo "packaged dist/MuninMap-$V.zip"
 
 if [ -n "$DEPLOY" ]; then
-  mkdir -p "$DEPLOY/WebMap"
-  cp -r "$PKG/." "$DEPLOY/WebMap/"
-  echo "deployed to $DEPLOY/WebMap"
+  mkdir -p "$DEPLOY/MuninMap"
+  cp -r "$PKG/." "$DEPLOY/MuninMap/"
+  echo "deployed to $DEPLOY/MuninMap"
 fi

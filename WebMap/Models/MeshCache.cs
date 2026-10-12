@@ -84,7 +84,7 @@ namespace WebMap.Models
                     return d;
                 }
             }
-            catch (Exception e) { ZLog.LogWarning("WebMap: mesh file " + Path.GetFileName(file) + " unreadable: " + e.Message); return null; }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: mesh file " + Path.GetFileName(file) + " unreadable: " + e.Message); return null; }
         }
     }
 }

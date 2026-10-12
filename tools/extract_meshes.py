@@ -4,7 +4,7 @@
 The mod does this by itself (extract_meshes = true). This is the hand-run
 fallback, and a way to look inside the game files:
 
-  python3 tools/extract_meshes.py <valheim_server_Data> <plugins>/WebMap/map_data/models
+  python3 tools/extract_meshes.py <valheim_server_Data> <plugins>/MuninMap/map_data/models
   python3 tools/extract_meshes.py <valheim_server_Data> --dump Cart,beehive     # print what the files hold
 
 Needs only the standard library. Reads the same models/index.json the mod
