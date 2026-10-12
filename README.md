@@ -1,6 +1,8 @@
-# Munin Map
+<p align="center"><img src="https://raw.githubusercontent.com/cocopuff2u/munin-map/main/icon.png" alt="Munin Map" width="160"></p>
 
-**A live map of your Valheim world that anyone can open in a web browser.**
+<h1 align="center">Munin Map</h1>
+
+<p align="center"><b>A live map of your Valheim world that anyone can open in a web browser.</b></p>
 
 Install it on your dedicated server, then share a link like `http://your-server:3000`.
 Your players don't install anything. It runs only on the server.
@@ -8,7 +10,11 @@ Your players don't install anything. It runs only on the server.
 Named after Munin, one of Odin's two ravens, who flies over the world every
 day and brings back what it saw.
 
-![Munin Map in 3D: a player base by the sea](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/hero-3d.jpg)
+![Munin Map in 2D: a village with players online](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/hero-2d.jpg)
+
+The 2D map, with players, buildings, boats and carts. One click switches to 3D:
+
+![The same kind of view in 3D: a player base by the sea](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/hero-3d.jpg)
 
 ### Based on Valheim WebMap, with a lot more
 
