@@ -60,7 +60,7 @@ cp WebMap/bin/Release/MuninMap.dll WebMap/bin/Release/websocket-sharp.dll "$PKG/
 cp WebMap/bin/Release/{SixLabors.ImageSharp,System.Buffers,System.Numerics.Vectors,System.Text.Encoding.CodePages}.dll "$PKG/"
 cp -r WebMap/web "$PKG/web"
 mkdir -p "$PKG/tools" && cp tools/extract_textures.py tools/extract_meshes.py "$PKG/tools/"
-cp manifest.json README.md CHANGELOG.md icon.png LICENSE dist/pkg/
+cp manifest.json README.md CHANGELOG.md icon.png LICENSE THIRD-PARTY-NOTICES.md dist/pkg/
 (cd dist/pkg && zip -qr "../MuninMap-$V.zip" . -x '.*')
 echo "packaged dist/MuninMap-$V.zip"
 

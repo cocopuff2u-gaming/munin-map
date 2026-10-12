@@ -265,5 +265,7 @@ and its contributors. Thank you all.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). Bundled: Leaflet (BSD-2), three.js (MIT),
-websocket-sharp (MIT), SixLabors.ImageSharp (Apache-2.0).
+MIT. See [LICENSE](LICENSE). The libraries it ships with keep their own
+licences: Leaflet (BSD-2), three.js (MIT), websocket-sharp (MIT),
+SixLabors.ImageSharp (Apache-2.0) and three Microsoft System libraries (MIT),
+given in full in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

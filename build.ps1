@@ -74,7 +74,7 @@ Copy-Item WebMap\bin\Release\SixLabors.ImageSharp.dll, WebMap\bin\Release\System
 Copy-Item WebMap\web $pkg\web -Recurse
 New-Item -ItemType Directory -Force $pkg\tools | Out-Null
 Copy-Item tools\extract_textures.py, tools\extract_meshes.py $pkg\tools\
-Copy-Item manifest.json, README.md, CHANGELOG.md, icon.png, LICENSE dist\pkg\
+Copy-Item manifest.json, README.md, CHANGELOG.md, icon.png, LICENSE, THIRD-PARTY-NOTICES.md dist\pkg\
 if (-not $SkipPackage) {
   $zipOut = "dist\MuninMap-$version.zip"
   if (Test-Path $zipOut) { Remove-Item $zipOut }
