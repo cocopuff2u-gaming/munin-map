@@ -44,8 +44,9 @@ namespace WebMap.Tiles
         private static readonly HashSet<long> haveColor = new HashSet<long>();
         private static readonly HashSet<long> haveHeight = new HashSet<long>();
         private static readonly HashSet<long> haveVeg = new HashSet<long>();
-        // bump when the tile look changes: close-zoom tiles on disk are dropped and re-rendered
-        private const int TILE_FORMAT = 2;
+        // bump when the tile look changes: the tiles it touches are dropped and re-rendered (DropStaleFormat)
+        private const int TILE_FORMAT = 3;
+        private static readonly List<long> redo = new List<long>();   // dropped close-zoom tiles, queued again on Start
         private static readonly ConcurrentDictionary<long, byte[]> memColor = new ConcurrentDictionary<long, byte[]>();   // small zooms only
         private static readonly ConcurrentQueue<Job> mainSampleQueue = new ConcurrentQueue<Job>();
         private static readonly List<string> notify = new List<string>();
@@ -99,8 +100,10 @@ namespace WebMap.Tiles
             ZLog.Log($"WebMap: tile store at {root}: {haveColor.Count} map tiles, {haveHeight.Count} height tiles on disk");
         }
 
-        // Tiles rendered by an older look (format number in tiles/format.txt) are deleted at the
-        // zooms that changed, so they render again; overview tiles (zoom 0-4) are kept.
+        // Tiles rendered by an older look (format number in tiles/format.txt) are deleted where
+        // the look changed, so they render again:
+        //   2  close zooms (5+) of everything; overview tiles (zoom 0-4) are kept
+        //   3  map tiles at every zoom that reach the Ashlands (its lava and ashen sea)
         private static void DropStaleFormat()
         {
             string marker = Path.Combine(root, "format.txt");
@@ -108,15 +111,48 @@ namespace WebMap.Tiles
             try { if (File.Exists(marker)) int.TryParse(File.ReadAllText(marker).Trim(), out have); } catch { }
             if (have == TILE_FORMAT) return;
             int dropped = 0;
-            foreach (string layer in new[] { "map", "veg" })
-                for (int z = 5; z <= TileMath.MAX_ZOOM; z++)
+            for (int z = 0; z <= TileMath.MAX_ZOOM; z++)
+                foreach (string layer in new[] { "map", "veg" })
                 {
+                    bool all = have < 2 && z >= 5;
+                    if (!all && layer != "map") continue;
                     string dir = Path.Combine(root, layer, z.ToString());
                     if (!Directory.Exists(dir)) continue;
-                    try { foreach (string f in TileFiles(dir)) { File.Delete(f); dropped++; } } catch { }
+                    try
+                    {
+                        foreach (string f in TileFiles(dir))
+                            if (all || TouchesAshlands(z, f))
+                            {
+                                File.Delete(f); dropped++;
+                                // close zooms only render on demand: queue these again so nobody waits for them
+                                if (layer == "map" && z > WebMapConfig.PRERENDER_ZOOM && TileName(f, out int tx, out int ty)) redo.Add(TileMath.Key(z, tx, ty));
+                            }
+                    }
+                    catch { }
                 }
             try { File.WriteAllText(marker, TILE_FORMAT.ToString()); } catch { }
-            if (dropped > 0) ZLog.Log($"WebMap: tile look changed, {dropped} close-zoom tiles dropped for re-render");
+            if (dropped > 0) ZLog.Log($"WebMap: tile look changed, {dropped} tiles dropped for re-render");
+        }
+
+        // Whether tile file "x_y.ext" at zoom z reaches the Ashlands: its farthest corner is past the
+        // Ashlands ring (WorldGenerator: 12000 m from (0, 4000), give or take 100 m of wobble)
+        private static bool TouchesAshlands(int z, string file)
+        {
+            if (!TileName(file, out int x, out int y)) return false;
+            TileMath.TileBounds(z, x, y, out float minX, out float minZ, out float maxX, out float maxZ);
+            // farthest corner past the ring, nearest point still inside the world
+            float fx = Math.Max(Math.Abs(minX), Math.Abs(maxX));
+            float fz = Math.Max(Math.Abs(minZ - 4000f), Math.Abs(maxZ - 4000f));
+            float nx = Math.Max(minX, Math.Min(0f, maxX)), nz = Math.Max(minZ, Math.Min(0f, maxZ));
+            return fx * fx + fz * fz > 11850f * 11850f && nx * nx + nz * nz < 10500f * 10500f;
+        }
+
+        private static bool TileName(string file, out int x, out int y)
+        {
+            string n = Path.GetFileNameWithoutExtension(file);
+            int us = n.IndexOf('_');
+            x = y = 0;
+            return us > 0 && int.TryParse(n.Substring(0, us), out x) && int.TryParse(n.Substring(us + 1), out y);
         }
 
         private static void Scan(string layer, HashSet<long> into)
@@ -151,6 +187,10 @@ namespace WebMap.Tiles
                 workers[i].Start();
             }
             EnqueueOverview();
+            // tiles a look change dropped, rendered again in the background after the overview
+            foreach (long k in redo) { TileMath.Unkey(k, out int z, out int x, out int y); Enqueue(z, x, y, 40 + z, onlyIfMissing: true); }
+            if (redo.Count > 0) ZLog.Log($"WebMap: {redo.Count} close-zoom tiles queued to render again");
+            redo.Clear();
             new Thread(BackgroundPasses) { IsBackground = true, Name = "WebMap tile upkeep", Priority = System.Threading.ThreadPriority.Lowest }.Start();
             ZLog.Log($"WebMap: tile workers started ({n} thread(s), main-thread sampling {(mainThreadSampling ? "on" : "off")})");
         }

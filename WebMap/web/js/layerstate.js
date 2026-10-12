@@ -14,7 +14,7 @@ export const layerState = {
   vegHidden: new Set(), // single kinds hidden within a group that is on
   time3d: 'live',       // 3D lighting: 'live' follows the server's clock, or noon/morning/evening/night
   shadows: !matchMedia('(max-width: 720px)').matches,   // real shadows in 3D (off on phones by default)
-  sets: new Map([["dungeons", false], ["tablepins", false]]),   // marker set id -> bool (missing = visible); dungeon entrances and cartography table pins start off (hundreds of them)
+  sets: new Map([["dungeons", false], ["tablepins", false], ["wards", false], ["runestones", false], ["vegvisirs", false], ["beds", false]]),   // marker set id -> bool (missing = visible); dungeon entrances, cartography table pins, wards, runestones, Vegvisirs and beds start off (hundreds of them)
   cats: new Map(),      // location category -> bool (missing = visible)
   listeners: new Set(),
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },

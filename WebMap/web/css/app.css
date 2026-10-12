@@ -190,6 +190,7 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .leaflet-popup-tip { background: var(--bg-2); }
 .leaflet-popup-content { margin: 10px 14px; font: 13px var(--font); }
 .leaflet-popup-content b { display: block; margin-bottom: 2px; }
+.leaflet-popup-content .runetext { margin-top: 6px; width: 280px; max-width: 72vw; max-height: 220px; overflow-y: auto; white-space: pre-line; font-style: italic; line-height: 1.45; color: var(--text); }
 .leaflet-popup-content small { color: var(--muted); }
 .dungeon-state { margin-top: 6px; font-weight: 600; color: var(--muted); }
 .dungeon-state.visited { color: var(--text); }

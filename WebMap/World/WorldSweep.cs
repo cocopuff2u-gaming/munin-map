@@ -154,6 +154,7 @@ namespace WebMap.World
                             Vector3 p = zdo.GetPosition();
                             int pref = zdo.GetPrefab();
                             if (pref == mapTableHash) { try { Fog.MergeMapTable(zdo); } catch { } try { Markers.ObserveMapTable(zdo); } catch { } }
+                            if (Runestones.IsProxy(pref)) { try { Markers.ObserveProxy(zdo, p); } catch { } }
                             if (pref == tombstoneHash) Fog.AddTrace(p);   // where a player died   // recorded maps: exact explored areas (and still a building piece below)
                             if (pref == terrainCompilerHash)
                             {

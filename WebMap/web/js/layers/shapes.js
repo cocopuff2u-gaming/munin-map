@@ -31,6 +31,7 @@ const CACHE_FRAMES = 6;           // ...drawn over this many frames
 const DATA_MS = 250;              // ShapesCanvas.dataChanged: new data on screen drawn at most this often
 const SMALL_FROM = 5.5;           // TreesGL: the small shapes ease in from here to half a level up   // trees are drawn from tile zoom 5 up, like the baked tree tiles were
 const BUILDINGS_MIN_ZOOM = 2, DETAIL_ZOOM = 5;
+const DOT_CELL = 3;                // metres: zoomed out (below DETAIL_ZOOM, 5.7+ m a pixel) one ruin or building dot per this square
 
 // ---------------------------------------------------------------- GL helpers
 
@@ -392,6 +393,37 @@ out vec4 o;
 void main() { o = texture(u_tex, v_uv); }`;
 
 // a dashed line between two world points, a set width in pixels (portal lines, layers/markercanvas.js)
+// A ward's protected ground: a dashed ring like the game's area marker, and a faint fill. The
+// dashes are a fixed number around the circle, so they stay put as the map zooms; a ring too small
+// to show them is drawn solid.
+const RING_VS = `#version 300 es
+in vec2 a_corner;
+uniform vec2 u_c;                 // centre, metres
+uniform float u_r;                // radius, metres
+out vec2 v_p; out float v_R;
+${VIEW_GLSL}
+void main() {
+  float R = u_r * u_view.z;
+  v_p = a_corner * 2.0 * (R + 3.0); v_R = R;
+  gl_Position = toClip(toPx(u_c) + v_p);
+}`;
+const RING_FS = `#version 300 es
+precision highp float;
+in vec2 v_p; in float v_R;
+uniform vec3 u_color;
+uniform float u_alpha, u_fill, u_n;
+out vec4 o;
+void main() {
+  float d = length(v_p);
+  float ring = clamp(1.3 - abs(d - v_R), 0.0, 1.0);
+  float seg = fract(atan(v_p.y, v_p.x) / 6.2831853 * u_n);
+  float dash = smoothstep(0.0, 0.06, seg) * (1.0 - smoothstep(0.55, 0.61, seg));
+  dash = mix(1.0, dash, smoothstep(4.0, 8.0, 6.2831853 * v_R / u_n));   // dashes under ~4 px: a solid line
+  float a = max(ring * dash, clamp(v_R - d + 0.5, 0.0, 1.0) * u_fill) * u_alpha;
+  if (a <= 0.0) discard;
+  o = vec4(u_color * a, a);
+}`;
+
 const LINE_VS = `#version 300 es
 in vec2 a_corner;
 uniform vec2 u_a, u_b;
@@ -466,6 +498,7 @@ export class ShapesCanvas {
     this.guide = compile(gl, EDGE_VS, GUIDE_FS);
     try { this.mist = compile(gl, EDGE_VS, MIST_FS); this.mistBake = compile(gl, CLOUD_BAKE_VS, MIST_BAKE_FS); } catch (e) { this.mist = this.mistBake = null; }
     this.line = compile(gl, LINE_VS, LINE_FS);
+    this.ring = compile(gl, RING_VS, RING_FS);
     this.quadVao = gl.createVertexArray();
     gl.bindVertexArray(this.quadVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
@@ -505,7 +538,9 @@ export class ShapesCanvas {
     const tl = map.layerPointToLatLng(min);
     const ppm = 1 / metersPerPixel(this.zoom);
     this.view = { x: tl.lng, z: tl.lat, ppm, zoom: this.zoom, x1: tl.lng + w / ppm, z0: tl.lat - h / ppm };
-    this.staticDirty = true;
+    // a drag's re-centre (same zoom and size) only moves the still picture: drawStill shifts it
+    const st = this.still;
+    this.staticDirty = this.staticDirty === true || !st || !st.view || st.view.zoom !== this.zoom || st.dpr !== dpr || st.w !== this.canvas.width || st.h !== this.canvas.height ? true : 'move';
     for (const s of this.sets) s.need(this.view, this);
     this.draw();
     if (!map._gliding) this.idleWork();
@@ -652,15 +687,78 @@ export class ShapesCanvas {
     const W = this.canvas.width, H = this.canvas.height;
     const r = this.still || (this.still = { w: 0, h: 0 });
     if (r.w !== W || r.h !== H) { renderTarget(gl, r, W, H); this.staticDirty = true; }
-    if (this.staticDirty) {
+    if (this.staticDirty === 'move' && this.shiftStill(gl, r, v, sets)) {
+      this.staticDirty = false;
+    } else if (this.staticDirty) {
       this.staticDirty = false;   // (before drawing: a layer still fading in asks again)
+      r.view = v; r.min = this.min; r.dpr = this.dpr;
       gl.bindFramebuffer(gl.FRAMEBUFFER, r.fb);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
+      this.record = r.drawn = new Map(); r.partial = new Map();
       for (const s of sets) s.draw(gl, v, this);
+      this.record = null;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    drawPicture(gl, this, r.tex, v);
+    drawPicture(gl, this, this.still.tex, v);
+    return true;
+  }
+
+  // A drag re-centred the canvas: copy the still picture over by the move (whole device pixels, so
+  // an exact copy) into the other picture, then draw the shapes only in the strips it uncovered
+  // (this.cull), plus, over the copied part, the blocks the old picture didn't have (this.skip: a
+  // layer drawn only around the screen, the trees zoomed out, reaches new blocks as it moves).
+  // A re-centre redrew the whole canvas, ~6 screens of trees and ruins in one frame: the catch a
+  // drag had every half screen or so.
+  shiftStill(gl, r, v, sets) {
+    const d = this.dpr, W = r.w, H = r.h;
+    if (!r.view || d % 1 || !r.min) return false;   // (a fractional screen scale can't copy exactly: draw it all)
+    const sx = (r.min.x - this.min.x) * d, sy = (r.min.y - this.min.y) * d;   // where the old picture lands, device pixels (y down)
+    if (Math.abs(sx) >= W * 0.6 || Math.abs(sy) >= H * 0.6) return false;
+    const n = r.other || (r.other = { w: 0, h: 0 });
+    if (n.w !== W || n.h !== H) renderTarget(gl, n, W, H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, n.fb);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const gy = -sy;   // framebuffers count rows from the bottom
+    const x0 = Math.max(0, -sx), x1 = Math.min(W, W - sx), y0 = Math.max(0, -gy), y1 = Math.min(H, H - gy);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, r.fb);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, n.fb);
+    gl.blitFramebuffer(x0, y0, x1, y1, x0 + sx, y0 + gy, x1 + sx, y1 + gy, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, n.fb);
+    // uncovered: a column on one side (full height) and a row on the top or bottom (the rest of the width)
+    const strips = [];
+    if (sx > 0) strips.push([0, 0, sx, H]); else if (sx < 0) strips.push([W + sx, 0, -sx, H]);
+    const cx0 = sx > 0 ? sx : 0, cw = W - Math.abs(sx);
+    if (sy > 0) strips.push([cx0, 0, cw, sy]); else if (sy < 0) strips.push([cx0, H + sy, cw, -sy]);
+    gl.enable(gl.SCISSOR_TEST);
+    this.partial = r.partial || new Map(); this.shiftFailed = false;
+    for (const [px, py, pw, ph] of strips) {   // (px, py: top-left, device pixels, y down)
+      gl.scissor(px, H - py - ph, pw, ph);
+      this.cull = { x: v.x + px / d / v.ppm, x1: v.x + (px + pw) / d / v.ppm, z: v.z - py / d / v.ppm, z0: v.z - (py + ph) / d / v.ppm };
+      for (const s of sets) s.draw(gl, v, this);
+    }
+    this.cull = null;
+    gl.scissor(x0 + sx, y0 + gy, x1 - x0, y1 - y0);   // the copied part
+    this.skip = r.drawn || new Map();
+    this.record = n.drawn = new Map();
+    for (const s of sets) s.draw(gl, v, this);
+    this.skip = this.record = this.partial = null;
+    gl.disable(gl.SCISSOR_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (this.shiftFailed) return false;   // (drawStill draws it all)
+    // blocks the old picture had that are out of the area now stay in the picture, cut off at the
+    // strips: if one comes back, shifting can't finish it (shiftFailed), so it's drawn all again
+    n.partial = new Map();
+    for (const s of sets) {
+      const now = n.drawn.get(s) || new Set(), was = new Set([...((r.drawn && r.drawn.get(s)) || []), ...((r.partial && r.partial.get(s)) || [])]);
+      n.partial.set(s, new Set([...was].filter((g) => !now.has(g))));
+    }
+    // the new picture is now the still one
+    n.other = r; r.other = null;
+    n.view = v; n.min = this.min; n.dpr = d;
+    this.still = n;
     return true;
   }
 
@@ -1043,8 +1141,12 @@ class ChunkShapes extends L.Layer {
         }
       let blk = this.blocks.get(bk);
       if (blk && blk.vaoBig) { gl.deleteVertexArray(blk.vaoBig); blk.vaoBig = null; }
+      // the still picture has this block as it was: a drag mustn't shift it on (shiftStill), the
+      // next draw draws it all (an off-screen block changing doesn't redraw at once, as before)
+      const st = this.sc.still, had = blk && st && st.drawn && st.drawn.get(this);
+      if (had && had.has(blk)) this.sc.staticDirty = true;
       if (!count) {
-        if (blk) { gl.deleteBuffer(blk.buf); gl.deleteVertexArray(blk.vao); blk.count = 0; this.blocks.delete(bk); }   // (count 0: a tree picture being drawn skips it)
+        if (blk) { this.dropDots(gl, blk); gl.deleteBuffer(blk.buf); gl.deleteVertexArray(blk.vao); blk.count = 0; this.blocks.delete(bk); }   // (count 0: a tree picture being drawn skips it)
         continue;
       }
       const all = new Uint8Array(total);
@@ -1064,7 +1166,36 @@ class ChunkShapes extends L.Layer {
       }
       blk.small = small;
       if (small) blk.vaoBig = this.sc.makeVao(this.program(this.sc), blk.buf, this.layout(gl), this.stride, small * this.stride);
+      if (this.dotCell) this.buildDots(gl, blk, all, count);
     }
+  }
+
+  // Zoomed out, ruins and buildings are all the same small dot whatever their size, and the
+  // pieces of one ruin or house pile hundreds of dots on the same few pixels. So each block also
+  // keeps one piece per dotCell metres (per kind of place, so the Layers filter still works), and
+  // drawBlock draws those while this.dots is on: the same picture from a fraction of the shapes.
+  buildDots(gl, blk, all, count) {
+    const f = new Float32Array(all.buffer, all.byteOffset, all.byteLength >> 2), st = this.stride, cell = this.dotCell;
+    const seen = new Set(), keep = [];
+    for (let i = 0; i < count; i++) {
+      const o = i * st;
+      const k = ((Math.floor(f[o >> 2] / cell) + 8192) * 16384 + Math.floor(f[(o >> 2) + 1] / cell) + 8192) * 256 + all[o + st - 1];
+      if (!seen.has(k)) { seen.add(k); keep.push(o); }
+    }
+    this.dropDots(gl, blk);
+    if (keep.length > count * 0.8) return;   // hardly any fewer: draw them all
+    const out = new Uint8Array(keep.length * st);
+    keep.forEach((o, j) => out.set(all.subarray(o, o + st), j * st));
+    blk.dotBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, blk.dotBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, out, gl.STATIC_DRAW);
+    blk.dotVao = this.sc.makeVao(this.program(this.sc), blk.dotBuf, this.layout(gl), st);
+    blk.dotCount = keep.length;
+  }
+  dropDots(gl, blk) {
+    if (!blk.dotBuf) return;
+    gl.deleteBuffer(blk.dotBuf); gl.deleteVertexArray(blk.dotVao);
+    blk.dotBuf = blk.dotVao = null; blk.dotCount = 0;
   }
 
   // Chunk data changed on the server: the next reset fetches what changed, and the old shapes stay
@@ -1115,6 +1246,12 @@ class ChunkShapes extends L.Layer {
 
   // smallFade: how much of the block's first part (its small shapes) to draw, 0 to 1
   drawBlock(gl, g, prog, fade, smallFade) {
+    if (this.dots && g.dotVao) {
+      gl.uniform1f(prog.u.u_fade, fade);
+      gl.bindVertexArray(g.dotVao);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, g.dotCount);
+      return;
+    }
     if (!g.small || smallFade >= 1) {
       gl.uniform1f(prog.u.u_fade, fade);
       gl.bindVertexArray(g.vao);
@@ -1137,9 +1274,21 @@ class ChunkShapes extends L.Layer {
       this.rebuild(gl, moving ? 2 : 16);   // (buffers and vertex arrays only: the layer's program stays in use)
     }
     if (this.sc && this.sc.onScreen && v === this.sc.view) v = screenArea(v);   // mid-zoom: only what is on screen
+    // the still picture: which blocks it has (record), and a drag's re-centre (shiftStill) drawing
+    // only an uncovered strip (cull) or only the blocks the picture lacks (skip)
+    const sc = this.sc, c = sc && sc.cull, skip = sc && sc.skip && (sc.skip.get(this) || new Set());
+    let list = this.blocksIn(v, margin);
+    if (sc && sc.record) sc.record.set(this, new Set(list));
+    const part = sc && sc.partial && sc.partial.get(this);
+    if (part && part.size && list.some((g) => part.has(g))) sc.shiftFailed = true;
+    if (c) {   // (whole blocks are drawn, past the area's edge: so the blocks that reach the strip)
+      const inStrip = new Set(this.blocksIn(c, 0));
+      list = list.filter((g) => inStrip.has(g));
+    }
+    if (skip) list = list.filter((g) => !skip.has(g));
     const now = performance.now();
     let fading = false;
-    for (const g of this.blocksIn(v, margin)) {
+    for (const g of list) {
       const f = Math.min(1, (now - g.born) / FADE_MS);
       if (f < 1) fading = true;
       this.drawBlock(gl, g, prog, f * fade, smallFade);
@@ -1209,7 +1358,7 @@ const materialRgb = (mat) => {
 export class BuildingsGL extends ChunkShapes {
   constructor() {
     super();
-    this.order = 3; this.opacity = 0.95; this.stride = RECT_STRIDE;
+    this.order = 3; this.opacity = 0.95; this.stride = RECT_STRIDE; this.dotCell = DOT_CELL;
     chunks.onChange(() => this.refresh());
   }
   fetchesAt(zoom) { return zoom >= BUILDINGS_MIN_ZOOM - 1; }   // a step early, so zooming in finds it ready
@@ -1234,6 +1383,7 @@ export class BuildingsGL extends ChunkShapes {
   }
   uniforms(gl, p, zoom) {
     const tz = Math.round(zoom);   // switch looks at the same zooms the tiles did
+    this.dots = tz < DETAIL_ZOOM;
     gl.uniform1f(p.u.u_dotPx, tz >= DETAIL_ZOOM ? 0 : tz >= 4 ? 1.2 : 0.9);
     gl.uniform1f(p.u.u_minPx, 1.2);
     gl.uniform1ui(p.u.u_sites, 0xffffffff);
@@ -1273,7 +1423,7 @@ const STONE_MATS = new Set([3, 4, 10]);   // Stone, Black marble, Grausten (icon
 export class RuinsGL extends ChunkShapes {
   constructor() {
     super();
-    this.order = 2; this.stride = RECT_STRIDE;
+    this.order = 2; this.stride = RECT_STRIDE; this.dotCell = DOT_CELL;
     ruins.onChange(() => this.refresh());
     if (ruins.indexRev < 0) ruins.refreshIndex();
     layerState.onChange((k) => { if (k === 'ruinHidden') this.changed(); });
@@ -1300,6 +1450,7 @@ export class RuinsGL extends ChunkShapes {
   }
   uniforms(gl, p, zoom) {
     const tz = Math.round(zoom);
+    this.dots = tz < DETAIL_ZOOM;
     gl.uniform1f(p.u.u_dotPx, tz >= DETAIL_ZOOM ? 0 : tz >= 4 ? 0.9 : 0.7);
     gl.uniform1f(p.u.u_minPx, 1.2);
     let mask = 0;

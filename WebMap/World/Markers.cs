@@ -24,6 +24,18 @@ namespace WebMap.World
         private static List<Portal> buildingPortals;
         private static List<Tomb> buildingTombs;
 
+        // wards (PrivateArea): who placed one, whether it's on, how many may build there
+        private struct Ward { public float x, y, z, r; public string owner; public bool on; public List<string> permitted; }
+        private static List<Ward> wards = new List<Ward>();
+        private static List<Ward> buildingWards;
+        private static List<Runestones.Stone> runes = new List<Runestones.Stone>();
+        private static List<Runestones.Stone> buildingRunes;
+        private struct BedSpot { public float x, y, z; public string owner; }
+        private static List<BedSpot> beds = new List<BedSpot>();
+        private static List<BedSpot> buildingBeds;
+        private static readonly Dictionary<string, bool> isBed = new Dictionary<string, bool>();
+        private static readonly Dictionary<string, float> wardRadius = new Dictionary<string, float>();   // prefab -> radius (0: not a ward)
+
         // pins people shared on cartography tables, per table (re-read only when its data changes)
         private struct TablePin { public float x, y, z; public string name; public int type; public bool check; }
         private sealed class Table { public int sig; public List<TablePin> pins = new List<TablePin>(); }
@@ -143,6 +155,9 @@ namespace WebMap.World
         {
             buildingPortals = new List<Portal>(portals.Count + 8);
             buildingTombs = new List<Tomb>(tombs.Count + 8);
+            buildingWards = new List<Ward>(wards.Count + 8);
+            buildingRunes = new List<Runestones.Stone>(runes.Count + 8);
+            buildingBeds = new List<BedSpot>(beds.Count + 8);
             buildingTables = new HashSet<ZDOID>();
         }
 
@@ -222,21 +237,83 @@ namespace WebMap.World
                 buildingTombs.Add(new Tomb { x = pos.x, y = pos.y, z = pos.z, owner = owner, when = when });
                 return true;
             }
+            if (IsBed(n))
+            {
+                // a claimed bed (Bed.GetOwner / GetOwnerName): the player's spawn point
+                try
+                {
+                    long who = zdo.GetLong(ZDOVars.s_owner, 0L);
+                    string name = zdo.GetString(ZDOVars.s_ownerName, "") ?? "";
+                    if (who != 0L && name.Length > 0) buildingBeds.Add(new BedSpot { x = pos.x, y = pos.y, z = pos.z, owner = name });
+                }
+                catch { }
+                return false;   // still a built piece
+            }
+            float r = WardRadius(n);
+            if (r > 0f && zdo.GetLong(ZDOVars.s_creator, 0L) != 0L)   // (built by a player: the world's own camps and forts carry wards too)
+            {
+                var w = new Ward { x = pos.x, y = pos.y, z = pos.z, r = r, owner = "" };
+                try
+                {
+                    w.owner = zdo.GetString(ZDOVars.s_creatorName, "") ?? ""; w.on = zdo.GetBool(ZDOVars.s_enabled, false);
+                    // the players the owner let build there (PrivateArea.SetPermittedPlayers)
+                    int n2 = Math.Min(20, zdo.GetInt(ZDOVars.s_permitted, 0));
+                    for (int i = 0; i < n2; i++)
+                    {
+                        string who = zdo.GetString("pu_name" + i, "");
+                        if (!string.IsNullOrEmpty(who)) (w.permitted ?? (w.permitted = new List<string>())).Add(who);
+                    }
+                }
+                catch { }
+                buildingWards.Add(w);
+                return false;   // still a built piece (Structures draws it)
+            }
             return false;
+        }
+
+        // Main thread: a location's proxy (its runestones, if it has any)
+        public static void ObserveProxy(ZDO zdo, Vector3 pos)
+        {
+            if (buildingRunes != null) Runestones.Observe(zdo, pos, buildingRunes);
+        }
+
+        private static bool IsBed(string prefab)
+        {
+            if (isBed.TryGetValue(prefab, out bool b)) return b;
+            b = false;
+            try { var go = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(prefab) : null; b = go != null && go.GetComponent<Bed>() != null; } catch { }
+            isBed[prefab] = b;
+            return b;
+        }
+
+        // the protected radius of a ward prefab (the game's guard stone, or a mod's): 0 if it isn't one
+        private static float WardRadius(string prefab)
+        {
+            if (wardRadius.TryGetValue(prefab, out float r)) return r;
+            r = 0f;
+            try
+            {
+                var go = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(prefab) : null;
+                var pa = go != null ? go.GetComponent<PrivateArea>() : null;
+                if (pa != null) r = pa.m_radius;
+            }
+            catch { }
+            wardRadius[prefab] = r;
+            return r;
         }
 
         // Main thread, end of sweep: publish everything.
         // Main thread, end of sweep, a slice per frame (WorldSweep.Due)
         public static IEnumerator Finish()
         {
-            if (buildingPortals != null) { portals = buildingPortals; tombs = buildingTombs; }
+            if (buildingPortals != null) { portals = buildingPortals; tombs = buildingTombs; wards = buildingWards; runes = buildingRunes; beds = buildingBeds; }
             if (buildingTables != null)
             {
                 var gone = new List<ZDOID>();
                 foreach (var id in tables.Keys) if (!buildingTables.Contains(id)) gone.Add(id);
                 foreach (var id in gone) tables.Remove(id);
             }
-            buildingPortals = null; buildingTombs = null; buildingTables = null;
+            buildingPortals = null; buildingTombs = null; buildingWards = null; buildingRunes = null; buildingBeds = null; buildingTables = null;
             var j = new JsonWriter(8192);
             var parts = BuildParts(j, true).GetEnumerator();
             while (true)
@@ -491,6 +568,60 @@ namespace WebMap.World
                 if (!Visible(t.x, t.z)) continue;
                 j.BeginObject().Prop("x", t.x, 1).Prop("z", t.z, 1).Prop("y", t.y, 1).Prop("cat", "tombstone").Prop("icon", "tombstone");
                 j.Prop("label", string.IsNullOrEmpty(t.owner) ? "Tombstone" : t.owner + "'s tombstone").Prop("owner", t.owner).Prop("when", t.when).End();
+            }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- wards and the ground they protect
+            j.BeginObject().Prop("id", "wards").Prop("label", "Wards").Key("markers").BeginArray();
+            foreach (var w in wards)
+            {
+                if (!Visible(w.x, w.z)) continue;
+                j.BeginObject().Prop("x", w.x, 1).Prop("z", w.z, 1).Prop("y", w.y, 1).Prop("cat", "ward").Prop("icon", "ward");
+                j.Prop("label", string.IsNullOrEmpty(w.owner) ? "Ward" : w.owner + "'s ward").Prop("owner", w.owner);
+                j.Prop("r", w.r, 1).Prop("on", w.on);
+                if (w.permitted != null) { j.Key("permitted").BeginArray(); foreach (var who in w.permitted) j.Value(who); j.End(); }
+                j.End();
+            }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- runestones, with what they say
+            j.BeginObject().Prop("id", "runestones").Prop("label", "Runestones").Key("markers").BeginArray();
+            foreach (var r in runes)
+            {
+                if (r.vegvisir || !Visible(r.x, r.z)) continue;
+                j.BeginObject().Prop("x", r.x, 1).Prop("z", r.z, 1).Prop("y", r.y, 1).Prop("cat", "runestone").Prop("icon", r.vegvisir ? "vegvisir" : "runestone");
+                // a Vegvisir: what the game's hover says ("Vegvisir: Eikthyr"), never where it points
+                j.Prop("label", r.vegvisir ? (string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic) : !string.IsNullOrEmpty(r.topic) ? r.topic : r.name).Prop("text", r.text);
+                if (r.vegvisir) j.Prop("vegvisir", true);
+                j.End();
+            }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- Vegvisirs: their own set, named as the game's hover names them
+            j.BeginObject().Prop("id", "vegvisirs").Prop("label", "Vegvisirs").Key("markers").BeginArray();
+            foreach (var r in runes)
+            {
+                if (!r.vegvisir || !Visible(r.x, r.z)) continue;
+                j.BeginObject().Prop("x", r.x, 1).Prop("z", r.z, 1).Prop("y", r.y, 1).Prop("cat", "vegvisir").Prop("icon", "vegvisir");
+                j.Prop("label", string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic).End();
+            }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- player beds (where each one respawns)
+            j.BeginObject().Prop("id", "beds").Prop("label", "Beds").Key("markers").BeginArray();
+            foreach (var b in beds)
+            {
+                if (!Visible(b.x, b.z)) continue;
+                j.BeginObject().Prop("x", b.x, 1).Prop("z", b.z, 1).Prop("y", b.y, 1).Prop("cat", "bed").Prop("icon", "bed");
+                j.Prop("label", b.owner + "'s bed").Prop("owner", b.owner).End();
             }
             j.End().End();
 

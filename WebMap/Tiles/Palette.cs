@@ -36,6 +36,9 @@ namespace WebMap.Tiles
         public static readonly Rgb Mistlands   = new Rgb(96, 92, 108);
         public static readonly Rgb Ashlands    = new Rgb(104, 52, 42);
         public static readonly Rgb AshlandsLava= new Rgb(200, 90, 30);
+        public static readonly Rgb LavaCore    = new Rgb(255, 150, 48);
+        public static readonly Rgb AshSeaShallow = new Rgb(92, 74, 66);
+        public static readonly Rgb AshSeaDeep  = new Rgb(46, 38, 40);
         public static readonly Rgb DeepNorth   = new Rgb(220, 228, 236);
         public static readonly Rgb Sand        = new Rgb(196, 184, 140);
         public static readonly Rgb Shore       = new Rgb(150, 140, 110);

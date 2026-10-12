@@ -48,7 +48,7 @@ export function escape(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({
 export class MarkerLayers {
   constructor(map, opts = {}) {
     this.map = map;
-    this.visible = new Map([['dungeons', false], ['tablepins', false]]);     // set id -> bool; dungeon entrances and table pins start off (a world has hundreds)
+    this.visible = new Map([['dungeons', false], ['tablepins', false], ['wards', false], ['runestones', false], ['vegvisirs', false], ['beds', false]]);     // set id -> bool; dungeon entrances, table pins, wards, runestones, Vegvisirs and beds start off (a world has hundreds)
     this.catVisible = new Map(LOCATION_CATS.map((c) => [c, c !== 'poi']));
     this.sets = [];
     this.pins = new Map();        // pin id -> pin
@@ -111,7 +111,8 @@ export class MarkerLayers {
         // a table pin as the game draws a shared one (markercanvas.js gamePinImage): its grey name too
         const crossSprite = this.gameIcons['pin:Checked'] ? `icons/game/${this.gameIcons['pin:Checked']}.png` : true;
         const gamePin = cat === 'tablepin' ? { checked: m.checked ? crossSprite : false } : undefined;
-        items.push({ x: m.x, z: m.z, icon: m.icon || cat, color: colors[m.icon] || colors[cat] || '#9aa5b5', img: this.gameIcon(m.icon || cat), label, gamePin,
+        items.push({ x: m.x, z: m.z, icon: m.icon || cat, color: cat === 'ward' && !m.on ? colors.wardoff : colors[m.icon] || colors[cat] || '#9aa5b5', img: this.gameIcon(m.icon || cat), label, gamePin,
+          area: cat === 'ward' && m.r ? { r: m.r, on: !!m.on } : undefined,   // the ground a ward protects (MarkerGL draws the ring)
           labelColor: gamePin ? '#d6d6d6' : undefined,
           always: cat === 'spawn' || cat === 'boss' || cat === 'trader' || cat === 'miniboss',   // their labels always show (valheim.tools does the same): never in a tug of war
           open: (ll) => L.popup({ offset: [0, -8] }).setLatLng(ll).setContent(editable ? this.basePopup(m, set) : popupHtml(m, set)).openOn(this.map) });
@@ -260,6 +261,9 @@ function popupHtml(m, set) {
   else if (m.cat === 'portal') extra = `<small>Portal tag: ${escape(m.tag || '(none)')}</small>`;
   else if (m.cat === 'base') extra = `<small>${m.pieces} pieces</small>`;
   else if (m.cat === 'tablepin') extra = m.checked ? '<small>Crossed out on the map</small>' : '';
+  else if (m.cat === 'bed') extra = '<small>Claimed bed (a player keeps old beds too: their spawn is the one they slept in last)</small>';
+  else if (m.cat === 'runestone') extra = m.text ? `<div class="runetext">${escape(m.text)}</div>` : '';
+  else if (m.cat === 'ward') extra = `<small>${m.on ? 'On' : 'Off'} · protects ${Math.round(m.r)} m around</small>` + (m.permitted && m.permitted.length ? `<br><small>Can build here: ${m.permitted.map(escape).join(', ')}</small>` : '');
   else if (m.cat === 'tombstone') extra = `<small>${m.when ? new Date(m.when / 10000 - 62135596800000).toLocaleString() : ''}</small>`;
   else if (m.prefab) extra = `<small>${escape(m.prefab)}${m.placed === false ? ' · not yet generated' : ''}</small>`;
   else if (m.description) extra = `<small>${escape(m.description)}</small>`;

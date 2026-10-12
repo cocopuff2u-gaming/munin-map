@@ -194,10 +194,19 @@ export class GroundGL extends L.Layer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       if (old) gl.deleteTexture(old.tex);
-      // a re-render swaps in place; a new tile fades in over whatever stood in for it
-      this.tex.set(key, { tex, born: old ? 0 : performance.now(), seen: performance.now(), pinned: key.startsWith(`${BASE_ZOOM}/`) });
+      // a re-render swaps in place; a new tile fades in over whatever stood in for it, if it's on
+      // screen (one in the padding just appears: a fade there redrew the map every frame unseen)
+      this.tex.set(key, { tex, born: old || !this.onScreen(key) ? 0 : performance.now(), seen: performance.now(), pinned: key.startsWith(`${BASE_ZOOM}/`) });
     }
     this.evict();
+  }
+
+  onScreen(key) {
+    const map = this._map || (this.sc && this.sc.map);
+    if (!map) return true;
+    const [z, x, y] = key.split('/').map(Number), sp = span(z), b = map.getBounds();
+    const x0 = -WORLD_HALF + x * sp, z1 = WORLD_HALF - y * sp;
+    return x0 < b.getEast() && x0 + sp > b.getWest() && z1 > b.getSouth() && z1 - sp < b.getNorth();
   }
 
   evict() {

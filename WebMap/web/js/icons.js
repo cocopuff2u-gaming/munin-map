@@ -17,6 +17,9 @@ const glyphs = {
   village: '<path d="M3 20V10l5-5 5 5v10z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M13 20V12l4-4 4 4v8z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   ruin: '<path d="M5 20V9h3v3h2V6h4v6h2V9h3v11z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   runestone: '<path d="M8 3h8l2 5-3 13H9L6 8z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 7v9M9.5 10h5" stroke="#111" stroke-width="1.6"/>',
+  bed: '<path d="M3 18V7M3 13h18v5M21 18v-5" fill="none" stroke="COLOR" stroke-width="2.2" stroke-linecap="round"/><path d="M4 13V10.5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2V13z" fill="COLOR"/><path d="M11 13v-2.5a2 2 0 0 1 2-2h5a3 3 0 0 1 3 3V13z" fill="COLOR" opacity=".7"/>',
+  // a Vegvisir: a tall stone with its glowing rune
+  vegvisir: '<path d="M9 2h6l1.5 6L15 22H9L7.5 8z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 6v10M9.5 9l2.5 2.5L14.5 9" fill="none" stroke="#111" stroke-width="1.6"/>',
   wreck: '<path d="M3 14h18l-3 5H6z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 4v10M12 5c4 1 6 4 6 6-3-1-5-1-6-1" fill="none" stroke="#111" stroke-width="1.8"/>',
   poi: '<circle cx="12" cy="12" r="6" fill="COLOR" stroke="#111" stroke-width="1.5"/>',
   portal: '<ellipse cx="12" cy="12" rx="7" ry="9" fill="#111" stroke="COLOR" stroke-width="2.5"/><ellipse cx="12" cy="12" rx="3" ry="5" fill="COLOR"/>',
@@ -30,6 +33,8 @@ const glyphs = {
   fire: '<path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   mine: '<path d="M4 16l6-6 4 4-6 6z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M13 7l4-4 4 4-4 4z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   house: '<path d="M4 11l8-7 8 7v9H4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M10 20v-6h4v6" fill="#111"/>',
+  // a ward (guard stone): a shield with its glowing core
+  ward: '<path d="M12 2.5l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10v-6z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M12 7v9M8.5 10.5h7" stroke="#111" stroke-width="1.8"/>',
   invasion: '<circle cx="12" cy="12" r="9.5" fill="#111" stroke="COLOR" stroke-width="2"/><path d="M10.6 5.5h2.8l-.5 8.5h-1.8z" fill="COLOR"/><circle cx="12" cy="17.3" r="1.6" fill="COLOR"/>',
   player: '<path d="M12 2l8 20-8-5-8 5z" fill="COLOR" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/>',
 };
@@ -41,6 +46,7 @@ export const colors = {
   trader: '#f2c14e', hildir: '#f2c14e', bogwitch: '#9be37a', miniboss: '#ff9d4d', hildir1: '#ff9d4d', hildir2: '#ff9d4d', hildir3: '#ff9d4d', dungeon: '#c9a5ff', cave: '#9fd8ff', camp: '#ff9d4d',
   village: '#e0c39a', ruin: '#bfc7d2', runestone: '#8fd3ff', wreck: '#bfc7d2', poi: '#9aa5b5', portal: '#5ce0e6',
   tombstone: '#d6d6d6', boat: '#8fc7ff', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',
+  ward: '#ffcf5c', wardoff: '#8c8f96', vegvisir: '#6fe0c8', bed: '#e8b4ff',
   invasion: '#ff3b2f', mine: '#c7c7c7', maptable: '#e8d3a3', house: '#9aa5b5', base: '#9aa5b5', custom: '#6fb7ff',   // homes in gray
 };
 

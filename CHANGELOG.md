@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.6
+
+The Ashlands look like they do on the game's map, and dragging the map is smooth. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.
+
+**Map**
+* Lava in the Ashlands: the lava fields and rivers glow orange, from the same mask the game's map paints them with, also in 3D. It comes with the Ashlands height the map already asked the game for, so tiles take no longer to make.
+* The sea turns dark and ashen toward the Ashlands, over the game's own gradient, instead of the orange rim along every Ashlands shore.
+* Wards: every ward a player built, with the ground it protects drawn as a dashed ring like the game's area marker (gold when on, grey when off). Click one for its owner, whether it's on, and who may build there. Their own group in Markers, off until switched on in Layers; explored ground only. The world's own camps and forts carry wards too: those are left out.
+* Runestones on explored ground (the lore stones, the start temple's stones, the ones by the boss altars), with the text a player reads on each, the same text the game picks for that stone: click one to read it. Their own group in Markers, off until switched on in Layers.
+* Vegvisirs on explored ground, named the way the game's hover names them ("Vegvisir: The Elder"), never where they point. Their own group, off until switched on.
+* Which locations hold runestones and Vegvisirs is worked out once in the background (about 3.5 minutes after the first start, the server keeps running) and kept in `map_data/runestones.txt`; later starts just read it.
+* Beds: every claimed bed, with its owner (a player keeps old beds too; the game keeps which one is their spawn on their own computer). Their own group, off until switched on.
+* After the upgrade, only the map tiles that reach the Ashlands are made again, in the background at low priority at server start (close zooms too), so nobody waits for them.
+
+**Smoother dragging**
+* Dragging the map no longer catches every half screen or so. When the map canvas re-centres during a drag, the trees, ruins and buildings already drawn are shifted over and only the uncovered strip is drawn, instead of the whole canvas (~6 screens) in one frame. In the test browser the worst frame of a drag went from 0.6 s (7 s zoomed far out) to under 0.1 s.
+* Markers no longer redraw the whole map on every frame of a drag (they are already drawn out past the screen), and map tiles that arrive off screen just appear instead of fading in unseen, which redrew the map every frame. A drag over loaded ground now draws nothing until it ends.
+* Zoomed out, ruins and buildings are drawn from one dot per 3 m square instead of one per piece (the pieces of one ruin piled hundreds of dots on the same pixels): the same picture from about a sixth of the shapes.
+
 ## 2.2.5
 
 Mistlands mist, invasions, shouts and weather on the map, raids and invasions on Discord, and a better phone view. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.

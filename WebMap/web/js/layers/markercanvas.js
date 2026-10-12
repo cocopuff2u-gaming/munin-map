@@ -5,6 +5,7 @@
 
 import { iconSvg, colors } from '../icons.js';
 import { ShapesCanvas } from './shapes.js';
+import { metersPerPixel } from '../crs.js';
 
 const LABEL_FONT = '600 11px';
 const iconCache = new Map();   // "name|color" -> canvas with the icon and its drop shadow, or 'loading'
@@ -180,7 +181,8 @@ export class MarkerCanvas extends L.Layer {
     this.canvas = L.DomUtil.create('canvas', 'leaflet-zoom-animated marker-canvas', map.getPane('markerPane'));
     this.canvas.style.pointerEvents = 'none';
     this.font = getComputedStyle(document.body).fontFamily || 'sans-serif';
-    map.on('move viewreset resize moveend', this.draw, this);
+    map.on('viewreset resize moveend', this.draw, this);
+    map.on('move', this.onMove, this);
     map.on('zoomanim', this.onZoomAnim, this);
     map.on('mousemove', this.onMouseMove, this);
     map.on('mouseout', this.onMouseOut, this);
@@ -189,13 +191,19 @@ export class MarkerCanvas extends L.Layer {
   }
 
   onRemove(map) {
-    map.off('move viewreset resize moveend', this.draw, this);
+    map.off('viewreset resize moveend', this.draw, this);
+    map.off('move', this.onMove, this);
     map.off('zoomanim', this.onZoomAnim, this);
     map.off('mousemove', this.onMouseMove, this);
     map.off('mouseout', this.onMouseOut, this);
     map.off('click', this.onClick, this);
     this.canvas.remove();
   }
+
+  // A drag: the WebGL canvas moves with the map and has every marker on it out to its padding, so
+  // nothing to draw (it re-centres itself when needed); only the 2D fallback follows the screen.
+  // (Redrawing on every move redrew the whole map canvas each frame of a drag.)
+  onMove() { if (!this.gl) this.draw(); }
 
   // Leaflet's own animated zooms (keyboard): scale the last picture along, like its vector renderer
   onZoomAnim(e) {
@@ -236,6 +244,20 @@ export class MarkerCanvas extends L.Layer {
     g.setTransform(dpr, 0, 0, dpr, (at.x - whole.x) * dpr, (at.y - whole.y) * dpr);
     g.clearRect(-2, -2, size.x + 4, size.y + 4);
     const redraw = () => this.draw();
+
+    // wards' protected ground (MarkerGL draws the same)
+    const ppm = 1 / metersPerPixel(map.getZoom());
+    for (const it of this.src.items) {
+      if (!it.area || it.area.r * ppm < 6) continue;
+      const c = map.latLngToContainerPoint([it.z, it.x]), R = it.area.r * ppm;
+      if (c.x < -R || c.y < -R || c.x > size.x + R || c.y > size.y + R) continue;
+      g.save();
+      g.strokeStyle = g.fillStyle = it.area.on ? colors.ward : colors.wardoff;
+      g.beginPath(); g.arc(c.x, c.y, R, 0, Math.PI * 2);
+      g.globalAlpha = it.area.on ? 0.07 : 0.04; g.fill();
+      g.globalAlpha = it.area.on ? 0.85 : 0.6; g.lineWidth = 1.5; g.setLineDash([2 * Math.PI * R / 40 * 0.55, 2 * Math.PI * R / 40 * 0.45]); g.stroke();
+      g.restore();
+    }
 
     // portal lines under everything
     if (this.src.lines.length) {
@@ -425,6 +447,25 @@ class MarkerGL extends L.Layer {
       gl.uniform1f(p.u.u_width, 1.5); gl.uniform1f(p.u.u_on, 4); gl.uniform1f(p.u.u_off, 6); gl.uniform1f(p.u.u_alpha, 0.6);
       gl.uniform1f(p.u.u_zoom, v.zoom); gl.uniform1f(p.u.u_ppm, v.ppm);
       for (const [x1, z1, x2, z2] of src.lines) { gl.uniform2f(p.u.u_a, x1, z1); gl.uniform2f(p.u.u_b, x2, z2); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
+    }
+
+    // wards: the ground each protects, under everything (only once the ring is big enough to read)
+    const rings = src.items.filter((it) => it.area && it.area.r * v.ppm >= 6);
+    if (rings.length) {
+      const p = sc.ring;
+      sc.setView(p);
+      gl.bindVertexArray(sc.quadVao);
+      gl.uniform1f(p.u.u_n, 40);
+      for (const it of rings) {
+        const R = it.area.r * v.ppm, [x, y] = toPx(it.x, it.z);
+        if (x < -R - 4 || y < -R - 4 || x > W + R + 4 || y > H + R + 4) continue;
+        const c = parseInt((it.area.on ? colors.ward : colors.wardoff).slice(1), 16);
+        gl.uniform3f(p.u.u_color, (c >> 16) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255);
+        gl.uniform1f(p.u.u_alpha, it.area.on ? 0.85 : 0.6);
+        gl.uniform1f(p.u.u_fill, it.area.on ? 0.07 : 0.04);
+        gl.uniform2f(p.u.u_c, it.x, it.z); gl.uniform1f(p.u.u_r, it.area.r);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
     }
 
     const p = sc.tex;

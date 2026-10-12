@@ -37,6 +37,7 @@ namespace WebMap.Tiles
         private readonly float[] h = new float[S * S];
         private readonly ushort[] biome = new ushort[S * S];
         private readonly byte[] forest = new byte[S * S];   // 0..255 forest density
+        private readonly byte[] lava = new byte[S * S];     // 0..255 Ashlands lava, the game's own map mask
         private byte[] rgb;                            // T*T*3
         private byte[] veg;                            // T*T*4, the vegetation overlay (zoom >= 5), straight alpha
 
@@ -74,11 +75,13 @@ namespace WebMap.Tiles
                     float r2 = wx * wx + wz * wz;
                     if (r2 > 10500f * 10500f)
                     {
-                        h[i] = -100f; biome[i] = Palette.B_OCEAN; forest[i] = 0;
+                        h[i] = -100f; biome[i] = Palette.B_OCEAN; forest[i] = 0; lava[i] = 0;
                         continue;
                     }
                     Heightmap.Biome b = wg.GetBiome(wx, wz);
-                    float height = wg.GetBiomeHeight(b, wx, wz, out Color _);
+                    float height = wg.GetBiomeHeight(b, wx, wz, out Color mask);
+                    // the Ashlands height comes with its lava mask (alpha), the one Minimap.GetMaskColor paints
+                    lava[i] = b == Heightmap.Biome.AshLands ? (byte)(Mathf.Clamp01(mask.a) * 255f) : (byte)0;
                     if (detail) height += TerrainPatches.DeltaAt(wx, wz);
                     h[i] = height;
                     biome[i] = (ushort)(int)b;
@@ -162,7 +165,12 @@ namespace WebMap.Tiles
                         float t = Mathf.Clamp01(depth / 28f);
                         t = (float)Math.Sqrt(t);
                         Palette.Rgb water = Palette.Rgb.Lerp(Palette.WaterShallow, Palette.WaterDeep, t);
-                        if (b == Palette.B_ASHLANDS && depth < 6f) water = Palette.Rgb.Lerp(Palette.AshlandsLava, water, Mathf.Clamp01(depth / 6f));
+                        // the sea turns dark and ashen toward the Ashlands, over the game's own gradient
+                        if (wx * wx + wz * wz < 10500f * 10500f)
+                        {
+                            float ash = Mathf.Clamp01(WorldGenerator.GetAshlandsOceanGradient(wx, wz));
+                            if (ash > 0f) water = Palette.Rgb.Lerp(water, Palette.Rgb.Lerp(Palette.AshSeaShallow, Palette.AshSeaDeep, t), ash);
+                        }
                         // ground shows through in the shallows
                         float see = Mathf.Clamp01(1f - depth / 3.5f) * 0.45f;
                         c = Palette.Rgb.Lerp(water, c, see);
@@ -186,12 +194,28 @@ namespace WebMap.Tiles
                     // steep rock faces in the mountains lose their snow
                     c = c.Scale(shade);
 
+                    // lava glows, so it goes on after the shading: a hot core, darker crusted edges
+                    if (lava[i] > 8 && hh >= wl)
+                    {
+                        float l = lava[i] / 255f;
+                        float a = Edge(0.03f, 0.45f, l);
+                        Palette.Rgb hot = Palette.Rgb.Lerp(Palette.AshlandsLava, Palette.LavaCore, Edge(0.35f, 0.9f, l));
+                        c = Palette.Rgb.Lerp(c, hot.Scale(0.85f + 0.2f * shade), a);
+                    }
+
                     int o = (py * T + px) * 3;
                     rgb[o] = c.r; rgb[o + 1] = c.g; rgb[o + 2] = c.b;
                 }
             }
 
             if (zoom >= 5) { veg = new byte[T * T * 4]; BakeVegetation(); }
+        }
+
+        // 0 below lo, 1 above hi, smooth between (Unity's Mathf.SmoothStep interpolates instead)
+        private static float Edge(float lo, float hi, float v)
+        {
+            float t = Mathf.Clamp01((v - lo) / (hi - lo));
+            return t * t * (3f - 2f * t);
         }
 
         private Palette.Rgb Ground(int b, float hh, int i)
