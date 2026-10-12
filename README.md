@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/cocopuff2u/munin-map/main/package/icon.png" alt="Munin Map" width="160"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/package/icon.png" alt="Munin Map" width="160"></p>
 
 <h1 align="center">Munin Map</h1>
 
@@ -10,11 +10,11 @@ Your players don't install anything. It runs only on the server.
 Named after Munin, one of Odin's two ravens, who flies over the world every
 day and brings back what it saw.
 
-![Munin Map in 2D: a village with players online](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/hero-2d.jpg)
+![Munin Map in 2D: a village with players online](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/hero-2d.jpg)
 
 The 2D map, with players, buildings, boats and carts. One click switches to 3D:
 
-![The same kind of view in 3D: a player base by the sea](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/hero-3d.jpg)
+![The same kind of view in 3D: a player base by the sea](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/hero-3d.jpg)
 
 ### Based on Valheim WebMap, with a lot more
 
@@ -60,17 +60,17 @@ and a lot more information on the map:
 
 | | |
 |---|---|
-| ![The whole explored world](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/overview.jpg) | ![A base up close, buildings and trees](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/base-2d.jpg) |
+| ![The whole explored world](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/overview.jpg) | ![A base up close, buildings and trees](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/base-2d.jpg) |
 | The whole explored world | A base up close |
-| ![Player card with health, gear and stats](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/players.jpg) | ![Stats panel](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/stats.jpg) |
+| ![Player card with health, gear and stats](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/players.jpg) | ![Stats panel](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/stats.jpg) |
 | Players and the player card | Stats |
-| ![A player village in 3D](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/village-3d.jpg) | ![Events feed](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/events.jpg) |
+| ![A player village in 3D](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/village-3d.jpg) | ![Events feed](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/events.jpg) |
 | 3D view | Events |
-| ![Lava in the Ashlands](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/ashlands.jpg) | ![Mist over the Mistlands](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/mist.jpg) |
+| ![Lava in the Ashlands](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/ashlands.jpg) | ![Mist over the Mistlands](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/mist.jpg) |
 | The Ashlands | The Mistlands |
-| ![Wards and the ground they protect](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/wards.jpg) | ![Reading a runestone](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/runestone.jpg) |
+| ![Wards and the ground they protect](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/wards.jpg) | ![Reading a runestone](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/runestone.jpg) |
 | Wards | Runestones |
-| ![Layers panel](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/layers.jpg) | ![On a phone](https://raw.githubusercontent.com/cocopuff2u/munin-map/main/docs/screenshots/phone.jpg) |
+| ![Layers panel](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/layers.jpg) | ![On a phone](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/phone.jpg) |
 | Switch layers on and off | On a phone |
 
 ---
@@ -84,7 +84,7 @@ Most server hosts have a one-click option for BepInEx.
 ### Step by step
 
 1. **Download** `MuninMap-<version>.zip` from
-   [Releases](https://github.com/cocopuff2u/munin-map/releases/latest).
+   [Releases](https://github.com/cocopuff2u-gaming/munin-map/releases/latest).
 2. **Unzip it.** Inside is a `plugins/MuninMap` folder.
 3. **Copy** the `MuninMap` folder into your server's `BepInEx/plugins` folder,
    so you end up with:
@@ -241,7 +241,7 @@ in it. That secret lets you:
 | The page looks wrong after an update | Press Ctrl+Shift+R once. If you use Cloudflare, purge its cache. |
 | `!pin` in chat does nothing | The game only sends chat through the server when two or more players are online. Right-click the map instead; that always works. |
 
-Still stuck? [Open an issue](https://github.com/cocopuff2u/munin-map/issues)
+Still stuck? [Open an issue](https://github.com/cocopuff2u-gaming/munin-map/issues)
 and attach `BepInEx/LogOutput.log`.
 
 ---

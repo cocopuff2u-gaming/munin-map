@@ -1,7 +1,7 @@
 {
     "name": "MuninMap",
     "version_number": "3.0.0",
-    "website_url": "https://github.com/cocopuff2u/munin-map",
+    "website_url": "https://github.com/cocopuff2u-gaming/munin-map",
     "description": "Live web map of your world, server only. Based on Valheim WebMap with a lot more: 2D and 3D, players, bases, portals, wards, runestones, lava, mist, stats.",
     "dependencies": [
         "denikson-BepInExPack_Valheim-5.4.2350"
