@@ -8,8 +8,9 @@
 // (the zoom-2 tiles are always loaded, so there is always one). New tiles fade in over that, so
 // nothing is ever blank and nothing pops.
 
-import { ShapesCanvas, screenArea, CLOUD_EXTENT } from './shapes.js';
+import { ShapesCanvas, screenArea, CLOUD_EXTENT, MIST_RES } from './shapes.js';
 import { on } from '../net.js';
+import { fetchMist, MIST_BLOCKS } from '../mist.js';
 import { OUTSIDE_RIM, worldTile, WORLD_HALF } from '../crs.js';
 
 const MAX_ZOOM = 7, TILE = 256;
@@ -569,6 +570,128 @@ export class BiomeGL extends L.Layer {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
       gl.uniform1f(p.u.u_alpha, 1);
+    }
+    gl.bindVertexArray(null);
+  }
+}
+
+// The Mistlands mist, the way the game's map has it: the server's mask (data/mist.png, explored
+// ground only, from the game's own map mask), drawn over trees and buildings and under the fog.
+// A player wearing a Wisplight clears it around them, as far as the wisp does in game (the server
+// sends each one's range as "wisp"). Hidden players clear nothing here, like they show nothing.
+export class MistGL extends L.Layer {
+  constructor() {
+    super();
+    this.order = 8.5; this.on = false; this.wisps = [];
+    on('players', (f) => this.setWisps((f.data && f.data.players) || []));
+  }
+  onAdd(map) { this.sc = ShapesCanvas.for(map); this.sc.add(this); if (this.on) this.later(); }
+  later() {
+    if (this.tex || this.waiting) return;
+    this.waiting = true;
+    const go = () => { this.waiting = false; this.refresh(); };
+    if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 1500);
+  }
+  onRemove() { this.sc.remove(this); }
+  need() {}
+  setOn(v) {
+    this.on = v;
+    clearInterval(this.timer);
+    // asked for once the page is idle and at low priority (a few tens of KB), so it never holds up
+    // the map tiles; again every two minutes as exploration grows (a 304 when it hasn't)
+    if (v) { this.later(); this.timer = setInterval(() => this.refresh(), 120000); }
+    if (this.sc) this.sc.redraw();
+  }
+  setWisps(players) {
+    const w = players.filter((p) => p.wisp > 0 && p.x !== undefined && !p.dead).slice(0, 16).map((p) => [p.x, p.z, p.wisp]);
+    const key = w.join(';');
+    if (key === this.wispKey) return;
+    this.wispKey = key; this.wisps = w;
+    if (this.on && this.sc) this.sc.redraw();
+  }
+  async refresh() {
+    if (!this.sc || !this.sc.mist || !this.sc.mistBake) return;
+    try {
+      const got = await fetchMist(this.tag);
+      if (!got) return;   // the same mask: the baked mist stands
+      this.tag = got.tag; this.blocks = got.blocks;
+      const bmp = got.bmp;
+      this.bake(bmp);
+      this.sc.redraw();
+    } catch (e) { /* try again next time */ }
+  }
+  // the mist worked out once into a MIST_RES texture over the world's square (row 0 the south edge)
+  bake(bmp) {
+    const sc = this.sc, gl = sc.gl, p = sc.mistBake;
+    for (let u = 0; u < 4; u++) { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, null); }
+    gl.activeTexture(gl.TEXTURE0);
+    const mask = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, mask);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (!this.tex) {
+      this.tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, MIST_RES, MIST_RES);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tex, 0);
+    gl.viewport(0, 0, MIST_RES, MIST_RES);
+    gl.disable(gl.BLEND);
+    gl.useProgram(p.p);
+    gl.bindTexture(gl.TEXTURE_2D, mask);
+    gl.uniform1i(p.u.u_mask, 0);
+    gl.uniform1f(p.u.u_extent, WORLD_HALF);
+    gl.bindVertexArray(sc.quadVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+    gl.enable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    gl.deleteTexture(mask);
+    gl.viewport(0, 0, sc.canvas.width, sc.canvas.height);
+  }
+  draw(gl, v, sc) {
+    const p = sc.mist;
+    if (!this.on || !this.tex || !p) return;
+    const H = WORLD_HALF;
+    sc.setView(p);
+    gl.bindVertexArray(sc.quadVao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.uniform1i(p.u.u_mist, 0);
+    gl.uniform1f(p.u.u_half, H);
+    gl.uniform1f(p.u.u_mpp, 1 / v.ppm);
+    const a = this.wispBuf || (this.wispBuf = new Float32Array(64));
+    a.fill(0);
+    this.wisps.forEach((w, i) => { a[i * 4] = w[0]; a[i * 4 + 1] = w[1]; a[i * 4 + 2] = w[2]; });
+    gl.uniform4fv(p.u['u_wisp[0]'], a);
+    gl.uniform1i(p.u.u_nwisp, this.wisps.length);
+    // only the blocks of the world with mist in them, and of those only what is on screen: the
+    // shader runs per pixel drawn, and most views have no Mistlands in them at all
+    const B = MIST_BLOCKS, span = (2 * H) / B, bl = this.blocks;
+    const c0 = Math.max(0, Math.floor((v.x + H) / span)), c1 = Math.min(B - 1, Math.floor((v.x1 + H) / span));
+    const r0 = Math.max(0, Math.floor((H - v.z) / span)), r1 = Math.min(B - 1, Math.floor((H - v.z0) / span));
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (!bl[r * B + c]) continue;
+        let e = c;
+        while (e < c1 && bl[r * B + e + 1]) e++;   // a run of them in the row: one rectangle
+        const x0 = Math.max(v.x, -H + c * span), x1 = Math.min(v.x1, -H + (e + 1) * span);
+        const zt = Math.min(v.z, H - r * span), zb = Math.max(v.z0, H - (r + 1) * span);
+        gl.uniform4f(p.u.u_rect, x0, zt, x1 - x0, zt - zb);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        c = e;
+      }
     }
     gl.bindVertexArray(null);
   }

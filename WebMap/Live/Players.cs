@@ -20,7 +20,7 @@ namespace WebMap.Live
         public struct Snapshot
         {
             public long id, playerId; public string key, name, biome;
-            public float x, y, z, yaw, health, maxHealth, stamina, eitr;
+            public float x, y, z, yaw, health, maxHealth, stamina, eitr, wisp;
             public bool hasPos, tracked, hidden, dead, pvp, inBed, hasWeather;
             public Weather.Now weather;
             public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility (prefab names, "" when empty)
@@ -53,6 +53,39 @@ namespace WebMap.Live
                 itemNames = d;
             }
             return itemNames.TryGetValue(hash, out string n) ? n : "";
+        }
+
+        // How far a utility item (the Wisplight) clears the Mistlands mist around its wearer: its
+        // status effect's ball (SE_Demister) has a particle force field, and the mist stays out of its
+        // end range (ParticleMist). 0 for anything else. Read off the prefab by name, as the server
+        // build doesn't reference Unity's particle module.
+        private static readonly Dictionary<int, float> wispRange = new Dictionary<int, float>();
+        public static float WispRange(int itemHash)
+        {
+            if (itemHash == 0) return 0f;
+            if (wispRange.TryGetValue(itemHash, out float r)) return r;
+            r = 0f;
+            try
+            {
+                var go = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(itemHash) : null;
+                var se = go != null ? go.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_equipStatusEffect as SE_Demister : null;
+                if (se != null)
+                {
+                    r = 6f;
+                    if (se.m_ballPrefab != null)
+                        foreach (var c in se.m_ballPrefab.GetComponentsInChildren<Component>(true))
+                        {
+                            if (c == null || c.GetType().Name != "ParticleSystemForceField") continue;
+                            var p = c.GetType().GetProperty("endRange");
+                            if (p != null) r = Convert.ToSingle(p.GetValue(c, null));
+                            break;
+                        }
+                    ZLog.Log($"WebMap: {go.name} clears the mist for {r:F1} m");
+                }
+            }
+            catch { }
+            wispRange[itemHash] = r;
+            return r;
         }
 
         public static string Json => json;
@@ -93,6 +126,7 @@ namespace WebMap.Live
                     s.eitr = zdo.GetFloat(hashEitr, -1f);
                     s.gear = new string[hashGear.Length];
                     for (int g = 0; g < hashGear.Length; g++) { try { s.gear[g] = ItemName(zdo.GetInt(hashGear[g], 0)); } catch { s.gear[g] = ""; } }
+                    try { s.wisp = WispRange(zdo.GetInt(hashGear[hashGear.Length - 1], 0)); } catch { }
                     s.dead = zdo.GetBool(hashDead, false);
                     try { s.playerId = zdo.GetLong(ZDOVars.s_playerID, 0L); } catch { }
                     s.pvp = zdo.GetBool(hashPvp, false);
@@ -145,6 +179,7 @@ namespace WebMap.Live
                 if (s.hasPos)
                 {
                     j.Prop("x", s.x, 1).Prop("z", s.z, 1).Prop("y", s.y, 1).Prop("yaw", s.yaw, 0).Prop("biome", s.biome ?? "");
+                    if (s.wisp > 0f) j.Prop("wisp", s.wisp, 1);
                     if (s.hasWeather) j.Prop("weather", s.weather.name).Prop("windDeg", s.weather.windDeg, 0).Prop("wind", s.weather.wind, 2);
                 }
                 j.End();

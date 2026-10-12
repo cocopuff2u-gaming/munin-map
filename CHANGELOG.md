@@ -2,9 +2,10 @@
 
 ## 2.2.5
 
-Invasions, shouts and weather on the map, raids and invasions on Discord, and a better phone view. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.
+Mistlands mist, invasions, shouts and weather on the map, raids and invasions on Discord, and a better phone view. Upgrading: replace the whole `BepInEx/plugins/WebMap` folder; your `map_data` and config are kept. Press Ctrl+Shift+R once in the browser.
 
 **Map**
+* Mistlands mist, like the game's map: the Mistlands are covered in mist (from the game's own map mask, explored ground only), and a player wearing a Wisplight clears it around them. In 3D it lies over the ground with tall things showing through. A switch in Layers turns it off. It loads after the map, at low priority, and is drawn only where there is mist.
 * Invasions (the game's long-running events, e.g. a Jotun Invasion) drawn like the game's map draws them: the red area and the pulsing "!" with the invasion's name, over the fog. Click one (or a raid) for when it ends, its size and who is near it. They have their own group in Markers and a switch in Layers.
 * Invasions starting and ending are in Events (with a filter chip) and pop up as notices.
 * Shouts show on the map where they were shouted for 10 seconds, with the game's shout pin, for players who share their position.

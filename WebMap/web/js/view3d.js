@@ -18,6 +18,7 @@ import { materialColors, colors as iconColors } from './icons.js';
 import { layerState } from './layerstate.js';
 import { WORLD_HALF, MAX_ZOOM, TILE, metersPerPixel, chunkOf, worldTile, WORLD_SIZE, CHUNKS } from './crs.js';
 import { fetchTerrarium } from './png.js';
+import { fetchMist, mistIn } from './mist.js';
 
 const RINGS = [                   // zoom -> load within this distance of the target (metres)
   { z: 7, dist: 640, segs: 128 },
@@ -65,6 +66,9 @@ function tinyLoose(info) {
   const b = info.b;
   return Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) < 0.8;
 }
+
+// Mistlands mist (View3D.mistMaterial): layers over the ground, this many metres apart
+const MIST_LIFT = 4.5, MIST_LAYERS = 3, MIST_SEGS = 32;
 
 export class View3D {
   constructor(canvas, config) {
@@ -125,6 +129,7 @@ export class View3D {
     this.scene.add(water);
 
     this.terrain = new Map();     // key -> {mesh, ready, z, x, y, heights}
+    this.mist = this.mistMaterial();   // the Mistlands mist over the ground (attachMist)
     this.structures = new Map();  // chunk key -> group   (fallback path: footprint boxes)
     this.veg = new Map();         // chunk key -> group   (fallback path: shapes)
     this.objChunks = new Map();   // chunk key -> group   (model path: every world object, real meshes)
@@ -257,8 +262,10 @@ export class View3D {
     this.rebuildMarkers();
     this.rebuildPins();
     this.refreshFog();
+    this.refreshMist();
     clearInterval(this.fogTimer);
-    this.fogTimer = setInterval(() => this.refreshFog(), 20000);
+    this.fogTicks = 0;
+    this.fogTimer = setInterval(() => { this.refreshFog(); if (++this.fogTicks % 6 === 0) this.refreshMist(); }, 20000);
     this.update();
     this.loop();
   }
@@ -275,6 +282,7 @@ export class View3D {
     this.pinSprites.visible = S.pins;
     if (key === 'buildings' || key === 'buildingsOpacity' || key === 'all') this.applyBuildings();
     if (key === 'shadows') this.lighting.setShadows(S.shadows);
+    if (key === 'mist') { this.mist.visible = S.mist; if (S.mist) this.refreshMist(); }
     if (key === 'time3d') this.lastDayFraction = null;
     if (key === 'labels') { this.rebuildMarkers(); this.rebuildPins(); }
     if (key === 'sets' || key === 'cats') this.applyMarkerVisibility();
@@ -301,6 +309,115 @@ export class View3D {
       s.visible = layerState.setVisible(m.set) && (m.set !== 'locations' || layerState.catVisible(m.cat || 'custom'))
         && Math.hypot(s.position.x - tx, -s.position.z - tz) <= MARKER_DIST;
     }
+  }
+
+  // ---------------------------------------------------------------- Mistlands mist
+  // As in game, the mist lies over the Mistlands' ground: MIST_LAYERS see-through copies of each
+  // terrain tile with mist in it, a few metres apart above the ground, patchy, where the server's
+  // mask (data/mist.png) has it. One instanced draw a tile, only for tiles that have mist. A player
+  // with a Wisplight clears a ball around them, as far as the wisp does in game.
+  mistMaterial() {
+    const wisps = Array.from({ length: 16 }, () => new THREE.Vector4());
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uMask: { value: null }, uNoise: { value: this.detailTexture() }, uHalf: { value: WORLD_HALF },
+        uColor: { value: new THREE.Color(0.8, 0.82, 0.86) }, uWisp: { value: wisps }, uNWisp: { value: 0 },
+      },
+      vertexShader: `
+varying vec3 vW; varying float vLayer;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vLayer = float(gl_InstanceID);
+  w.y += ${MIST_LIFT.toFixed(1)} * (vLayer + 0.6);
+  vW = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`,
+      fragmentShader: `
+uniform sampler2D uMask, uNoise; uniform float uHalf; uniform vec3 uColor; uniform vec4 uWisp[16]; uniform int uNWisp;
+varying vec3 vW; varying float vLayer;
+void main() {
+  vec2 w = vec2(vW.x, -vW.z);   // world x, z (scene Z is -z)
+  float m = texture2D(uMask, vec2(w.x / (2.0 * uHalf) + 0.5, 0.5 - w.y / (2.0 * uHalf))).r;
+  if (m < 0.004) discard;
+  vec2 nn = texture2D(uNoise, w / 150.0 + vLayer * 0.31).rg;   // blotches and finer mottling, one read
+  float n = nn.r * 0.7 + nn.g * 0.3;
+  float a = smoothstep(0.0, 0.6, m) * smoothstep(0.2, 0.75, n) * (0.6 - vLayer * 0.1);
+  for (int i = 0; i < 16; i++) {
+    if (i >= uNWisp) break;
+    float r = uWisp[i].w;
+    a *= smoothstep(r * 0.55, r, distance(vW, uWisp[i].xyz));
+  }
+  if (a < 0.004) discard;
+  gl_FragColor = vec4(uColor, a);
+}`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    });
+    mat.visible = layerState.mist;
+    return mat;
+  }
+
+  // the mask asked for when the view shows (and every two minutes): a few tens of KB, low priority
+  async refreshMist() {
+    if (!layerState.mist || this.mistLoading) return;
+    this.mistLoading = true;
+    try {
+      const got = await fetchMist(this.mistTag);
+      if (!got) return;
+      this.mistTag = got.tag; this.mistBlocks = got.blocks;
+      const t = new THREE.Texture(got.bmp);
+      t.flipY = false; t.colorSpace = THREE.NoColorSpace; t.generateMipmaps = false;
+      t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+      t.needsUpdate = true;
+      const old = this.mist.uniforms.uMask.value;
+      this.mist.uniforms.uMask.value = t;
+      if (old) old.dispose();
+      for (const e of this.terrain.values()) this.attachMist(e);
+      this.invalidate();
+    } catch (e) { /* try again next time */ }
+    finally { this.mistLoading = false; }
+  }
+
+  // a tile's mist layers, as a child of its mesh (shown, hidden and dropped with it)
+  attachMist(e) {
+    if (!e.mesh || e.mistMesh !== undefined || !this.mistBlocks) return;
+    const span = TILE * metersPerPixel(e.z);
+    if (!mistIn(this.mistBlocks, -WORLD_HALF + e.x * span, WORLD_HALF - e.y * span, span, WORLD_HALF)) return;
+    const im = new THREE.InstancedMesh(this.mistGeometry(e.mesh.geometry, e.segs, span), this.mist, MIST_LAYERS);
+    im.frustumCulled = false;   // lifted in the shader: the tile's own bounds would cull it early
+    im.renderOrder = 5;
+    e.mistMesh = im;
+    e.mesh.add(im);
+  }
+
+  // The mist doesn't need the ground's detail: a MIST_SEGS x MIST_SEGS sheet from the tile's own
+  // heights, each point the highest ground around it so a coarse sheet doesn't dip into ridges.
+  // Drawn three times over a hundred tiles, the full mesh made the mist mostly vertex work.
+  mistGeometry(src, segs, span) {
+    const n = Math.min(MIST_SEGS, segs), k = segs / n, W = segs + 2, pos = src.attributes.position.array;
+    const hAt = (cx, cy) => pos[((Math.min(Math.max(cy, 0), segs) + 1) * (W + 1) + Math.min(Math.max(cx, 0), segs) + 1) * 3 + 1];
+    const geo = new THREE.PlaneGeometry(span, span, n, n);
+    geo.rotateX(-Math.PI / 2);
+    const p = geo.attributes.position, r = Math.ceil(k / 2);
+    for (let i = 0; i < p.count; i++) {
+      const ix = i % (n + 1), iy = Math.floor(i / (n + 1)), cx = Math.round(ix * k), cy = Math.round(iy * k);
+      let h = -Infinity;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) h = Math.max(h, hAt(cx + dx, cy + dy));
+      p.setY(i, h);
+    }
+    geo.deleteAttribute('normal'); geo.deleteAttribute('uv');
+    return geo;
+  }
+
+  // where the Wisplights are (from the players feed)
+  setWisps(list) {
+    const u = this.mist.uniforms, out = u.uWisp.value;
+    let n = 0;
+    for (const p of list || []) {
+      if (!(p.wisp > 0) || p.x === undefined || p.dead || n >= 16) continue;
+      const y = (p.y ?? this.heightAt(p.x, p.z) ?? this.waterLevel) + 2;   // the wisp floats over the head
+      out[n++].set(p.x, y, -p.z, p.wisp);
+    }
+    if (n !== u.uNWisp.value || n) { u.uNWisp.value = n; this.invalidate(); }
   }
 
   // The explored mask as a texture the ground shader darkens with (north = top row, like /data/fog.png).
@@ -452,6 +569,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     this.reportPose(now);
     this.fitLabels();
     this.tickLighting(dt);
+    this.mist.uniforms.uColor.value.setRGB(0.8, 0.82, 0.86).multiplyScalar(Math.max(0.18, this.lighting.hemi.intensity));
     // shadows: only when what casts them or the light changed, or the shadow box moved (orbiting
     // around the same spot leaves the shadow map as it is)
     const half = Math.min(1400, Math.max(120, cam.distanceTo(tgt) * 0.9));
@@ -673,6 +791,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     mesh.renderOrder = z;
     entry.mesh = mesh; entry.ready = true;
     this.scene.add(mesh);
+    this.attachMist(entry);
     this.scheduleUpdate();
   }
 
@@ -680,6 +799,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     const t = this.terrain.get(key);
     if (!t) return;
     this.terrain.delete(key);
+    if (t.mistMesh) t.mistMesh.geometry.dispose();
     if (t.mesh) { this.scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mesh.material.map?.dispose(); t.mesh.material.dispose(); }
   }
 
@@ -1045,6 +1165,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
       e.group.rotation.y = -(p.yaw || 0) * Math.PI / 180;
       if (this.followId === p.id) this.glideTo(p.x, p.z);
     }
+    this.setWisps(list);
     if (list && list.length) this.invalidate(true);   // players moved
     for (const [id, e] of this.players) if (!seen.has(id)) { this.playerGroup.remove(e.group); this.players.delete(id); }
     if (this.followId !== null && !seen.has(this.followId)) this.followId = null;

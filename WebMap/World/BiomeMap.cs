@@ -19,6 +19,8 @@ namespace WebMap.World
         private const int FORMAT = 1;
         public static volatile byte[] Png;                  // the whole world, null until ready
         private static byte[] cells;                        // index into Order per cell (255: none), for masking by the fog
+        private static byte[] mist;                         // GRID x GRID, how thick the Mistlands mist is (0..255)
+        private static byte[] mistPng; private static int mistAt = -1; private static DateTime mistTime;
         private static byte[] masked; private static int maskedAt = -1; private static DateTime maskedTime;
         private static readonly object maskLock = new object();
         private static List<Label> labels = new List<Label>();
@@ -57,7 +59,9 @@ namespace WebMap.World
                         LoadLabels(lines);
                         string raw = Path.Combine(Path.GetDirectoryName(path), "biomes.cells");
                         byte[] c = File.Exists(raw) ? File.ReadAllBytes(raw) : null;
-                        if (c != null && c.Length == SIZE * SIZE) { cells = c; Png = File.ReadAllBytes(path); return; }
+                        string mp = Path.Combine(Path.GetDirectoryName(path), "biomes.mist");
+                        byte[] m = File.Exists(mp) ? File.ReadAllBytes(mp) : null;
+                        if (c != null && c.Length == SIZE * SIZE && m != null && m.Length == GRID * GRID) { cells = c; mist = m; Png = File.ReadAllBytes(path); Warm(); return; }
                     }
                 }
             }
@@ -70,6 +74,8 @@ namespace WebMap.World
             yield return new WaitForSeconds(5f);
             var started = Time.realtimeSinceStartup;
             var cells = new byte[SIZE * SIZE];   // index into Order (255: none)
+            var mist = new byte[GRID * GRID];
+            int mf = SIZE / GRID;
             float span = (float)TileMath.WORLD_SIZE / SIZE, half = TileMath.WORLD_HALF;
             var index = new Dictionary<int, byte>();
             for (int i = 0; i < Order.Length; i++) index[Order[i]] = (byte)i;
@@ -83,6 +89,8 @@ namespace WebMap.World
                     if (wx * wx + wz * wz < 10500f * 10500f)
                         try { b = (int)WorldGenerator.instance.GetBiome(wx, wz); } catch { }
                     cells[row * SIZE + col] = index.TryGetValue(b, out byte k) ? k : (byte)255;
+                    if (b == Palette.B_MISTLANDS && row % mf == mf / 2 && col % mf == mf / 2)
+                        try { mist[(row / mf) * GRID + col / mf] = MistAt(wx, wz); } catch { }
                 }
                 if (row % 24 == 23) yield return null;   // a few rows a frame: the server keeps running smoothly
             }
@@ -99,6 +107,7 @@ namespace WebMap.World
             {
                 File.WriteAllBytes(path, png);
                 File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(path), "biomes.cells"), cells);   // the grid itself, for masking by the fog
+                File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(path), "biomes.mist"), mist);
                 var sb = new System.Text.StringBuilder();
                 sb.Append(FORMAT).Append(' ').Append(SIZE).Append(' ').Append(TileMath.WORLD_SIZE).Append('\n');
                 foreach (var l in found) sb.Append(l.name).Append('\t').Append(l.x.ToString("F0")).Append('\t').Append(l.z.ToString("F0")).Append('\t').Append(l.area.ToString("F0")).Append('\n');
@@ -107,7 +116,9 @@ namespace WebMap.World
             catch (Exception e) { ZLog.LogWarning("WebMap: biomes.png: " + e.Message); }
             labels = found;
             BiomeMap.cells = cells;
+            BiomeMap.mist = mist;
             Png = png;
+            Warm();
             ZLog.Log($"WebMap: biome map built ({SIZE}x{SIZE}, {found.Count} named regions) in {Time.realtimeSinceStartup - started:F1} s");
         }
 
@@ -216,6 +227,54 @@ namespace WebMap.World
                 }
                 grid = g; gridAt = now; gridTime = DateTime.UtcNow;
                 return grid;
+            }
+        }
+
+        // the page's mist picture made ahead on a pool thread, so the first page to ask doesn't wait for it
+        private static void Warm() => System.Threading.ThreadPool.QueueUserWorkItem(_ => { try { MistPngFor(); } catch { } });
+
+        // How thick the mist is on the game's own map at a Mistlands spot (Minimap.GetMaskColor, its
+        // green): all of it, thinning to none where the forest factor runs from 1.1 to 1.3.
+        private static byte MistAt(float wx, float wz)
+        {
+            float ff = WorldGenerator.GetForestFactor(new Vector3(wx, 0f, wz));
+            float t = Mathf.Clamp01((ff - 1.1f) / 0.2f);
+            return (byte)Mathf.RoundToInt((1f - t * t * (3f - 2f * t)) * 255f);
+        }
+
+        // The mist as a GRID x GRID gray picture for the page (row 0 the north edge), explored ground
+        // only like the others, remade at most once a minute as exploration grows. Mostly black: a few KB.
+        public static byte[] MistPngFor()
+        {
+            if (mist == null) return null;
+            lock (maskLock)
+            {
+                int now = Fog.ExploredCells;
+                if (mistPng != null && (WebMapConfig.REVEAL_ALL || now == mistAt || (DateTime.UtcNow - mistTime).TotalSeconds < 60)) return mistPng;
+                int f = SIZE / GRID;
+                float span = (float)TileMath.WORLD_SIZE / SIZE, half = TileMath.WORLD_HALF;
+                // explored cells, grown by two (~40 m) so the mist runs on under the fog's soft edge
+                // instead of stopping in steps short of it
+                var seen = new bool[GRID * GRID];
+                for (int y = 0; y < GRID; y++)
+                {
+                    float wz = half - (y * f + f / 2 + 0.5f) * span;
+                    for (int x = 0; x < GRID; x++)
+                    {
+                        if (mist[y * GRID + x] == 0 || (!WebMapConfig.REVEAL_ALL && !Fog.IsExplored(-half + (x * f + f / 2 + 0.5f) * span, wz))) continue;
+                        for (int dy = -2; dy <= 2; dy++)
+                            for (int dx = -2; dx <= 2; dx++)
+                            {
+                                int yy = y + dy, xx = x + dx;
+                                if (yy >= 0 && xx >= 0 && yy < GRID && xx < GRID) seen[yy * GRID + xx] = true;
+                            }
+                    }
+                }
+                var g = new byte[GRID * GRID];
+                for (int i = 0; i < g.Length; i++) if (seen[i]) g[i] = mist[i];
+                mistPng = Util.Png.Encode(g, GRID, GRID, Util.Png.Format.Gray8);
+                mistAt = now; mistTime = DateTime.UtcNow;
+                return mistPng;
             }
         }
 

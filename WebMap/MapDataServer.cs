@@ -558,6 +558,12 @@ namespace WebMap
                     if (g == null) { NotFound(res); return true; }
                     return Bytes(e, g, "application/octet-stream", "no-cache", compressible: true);
                 }
+                case "mist.png":
+                {
+                    var png = BiomeMap.MistPngFor();   // explored ground only (unless reveal_all)
+                    if (png == null) { NotFound(res); return true; }
+                    return Bytes(e, png, "image/png", "no-cache", etag: ETagOf(png));
+                }
                 case "biomes.png":
                 {
                     var png = BiomeMap.PngFor();   // explored ground only (unless reveal_all)

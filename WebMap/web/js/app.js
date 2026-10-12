@@ -10,7 +10,7 @@ import { FogLayer } from './layers/fog.js';
 import { StructuresLayer } from './layers/structures.js';
 import { RuinsLayer } from './layers/ruins.js';
 import { webgl2Available, TreesGL, RuinsGL, BuildingsGL } from './layers/shapes.js';
-import { GroundGL, FogGL, WorldEdgeGL, GuideGL, BiomeGL } from './layers/ground.js';
+import { GroundGL, FogGL, WorldEdgeGL, GuideGL, BiomeGL, MistGL } from './layers/ground.js';
 import { SmoothZoom, SmoothZoomControl } from './smoothzoom.js';
 import { MarkerLayers, escape } from './layers/markers.js';
 import { PlayersLayer } from './layers/players.js';
@@ -151,7 +151,7 @@ class App {
     this.applyConfig(this.config);
     this.layers.fog = new FogLayer(this.map, this.config, { gl: this.gl });
     // gray past the world's edge, over the fog (which stays black inside the circle)
-    if (this.gl) { new FogGL(this.layers.fog).addTo(this.map); new WorldEdgeGL(WORLD_RADIUS).addTo(this.map); this.biomes = new BiomeGL().addTo(this.map); }
+    if (this.gl) { new FogGL(this.layers.fog).addTo(this.map); new WorldEdgeGL(WORLD_RADIUS).addTo(this.map); this.biomes = new BiomeGL().addTo(this.map); this.mist = new MistGL().addTo(this.map); }
     else this.addWorldEdgeMask();
     this.baseImage = new BaseWorldImage(this.map, 'tiles/map/{z}/{x}/{y}.png', this.gl ? { fog: this.layers.fog, radius: WORLD_RADIUS } : {});
     this.layers.ruins = (this.gl ? new RuinsGL() : new RuinsLayer()).addTo(this.map);   // world-generated structures, under player builds

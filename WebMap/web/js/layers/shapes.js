@@ -279,6 +279,50 @@ vec3 clouds(vec2 w) {
   return c * mix(0.55, 1.0, smoothstep(0.98, 1.25, length(w) / u_radius));
 }` + EDGE_MAIN;
 
+// The Mistlands mist (layers/ground.js MistGL): the server's mask of where the game's own map has
+// it (World/BiomeMap), light grey and patchy, with a clearing around each Wisplight. The mist itself
+// (mask, patches, colour) is worked out once into a texture whenever the mask changes (MIST_BAKE_FS,
+// MistGL.bake), so drawing it is one texture read a pixel, like the fog; the noise worked out per
+// pixel each frame made a frame ~40% dearer on a slow GPU.
+export const MIST_RES = 2048;
+const MIST_BAKE_FS = `#version 300 es
+precision highp float;
+in vec2 v_w;
+uniform sampler2D u_mask;
+uniform float u_extent;
+out vec4 o;
+float hash2(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), u.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+void main() {
+  float m = texture(u_mask, vec2(v_w.x / (2.0 * u_extent) + 0.5, 0.5 - v_w.y / (2.0 * u_extent))).r;
+  if (m < 0.004) { o = vec4(0.0); return; }
+  float n = vnoise(v_w / 220.0) * 0.55 + vnoise(v_w / 70.0 + 7.3) * 0.3 + vnoise(v_w / 23.0 + 3.1) * 0.15;
+  float a = smoothstep(0.0, 0.6, m) * (0.8 + 0.18 * n);
+  o = vec4(mix(vec3(0.66, 0.67, 0.72), vec3(0.88, 0.89, 0.92), n) * a, a);
+}`;
+const MIST_FS = `#version 300 es
+precision highp float;
+in vec2 v_w;
+uniform sampler2D u_mist;
+uniform float u_half, u_mpp;
+uniform vec4 u_wisp[16];   // x, z, radius (metres), unused
+uniform int u_nwisp;
+out vec4 o;
+void main() {
+  vec4 c = texture(u_mist, v_w / (2.0 * u_half) + 0.5);
+  if (c.a < 0.004) discard;
+  float k = 1.0;
+  for (int i = 0; i < 16; i++) {
+    if (i >= u_nwisp) break;
+    float r = max(u_wisp[i].z, 28.0 * u_mpp);   // never smaller than a clearing you can see round the marker
+    k *= smoothstep(r * 0.5, r + 2.0 * u_mpp, distance(v_w, u_wisp[i].xy));
+  }
+  o = c * k;
+}`;
+
 // The 256 m chunk grid and the distance rings around the spawn, worked out per pixel over the
 // whole canvas (layers/ground.js GuideGL): no geometry to rebuild as the zoom changes, so they cost
 // the same at any zoom. Lines are a set width in pixels, anti-aliased.
@@ -420,6 +464,7 @@ export class ShapesCanvas {
     try { this.edgeSpace = compile(gl, EDGE_VS, EDGE_SPACE_FS); } catch (e) { this.edgeSpace = null; }
     try { this.cloudBake = compile(gl, CLOUD_BAKE_VS, CLOUD_BAKE_FS); } catch (e) { this.cloudBake = null; }
     this.guide = compile(gl, EDGE_VS, GUIDE_FS);
+    try { this.mist = compile(gl, EDGE_VS, MIST_FS); this.mistBake = compile(gl, CLOUD_BAKE_VS, MIST_BAKE_FS); } catch (e) { this.mist = this.mistBake = null; }
     this.line = compile(gl, LINE_VS, LINE_FS);
     this.quadVao = gl.createVertexArray();
     gl.bindVertexArray(this.quadVao);

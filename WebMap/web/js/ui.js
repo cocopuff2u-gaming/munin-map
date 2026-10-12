@@ -115,6 +115,10 @@ export class Sidebar {
       world.append(style, keyEl);
       if (S.mapStyle === 'biomes') apply();
     }
+    if (this.app.mist) {
+      world.append(row(MIST_SVG, 'Mistlands mist', 'Cleared by a Wisplight', S.mist, (v) => { this.app.mist.setOn(v); S.set('mist', v); }));
+      this.app.mist.setOn(S.mist);
+    }
     world.append(row(ico('house', '#c9a26b'), 'Buildings', 'Player builds, coloured by material', S.buildings, (v) => { if (v) L.structures.addTo(this.app.map); else L.structures.remove(); S.set('buildings', v); }));
     // a row with a switch, and under its arrow a checklist ([[id, name, swatch]]) of what can be hidden one by one
     const groupRow = (icon, label, desc, on, onToggle, kinds, hidden, key) => {
@@ -641,6 +645,7 @@ const SVG = (d) => `<svg viewBox="0 0 24 24" style="fill:none" stroke="currentCo
 const TREE_SVG = SVG('<path d="M12 3 6 12h3l-4 6h14l-4-6h3z" fill="#4f8a3a" stroke="#2c5234"/><path d="M12 18v3" stroke="#7a5a3a"/>');
 const BUSH_SVG = SVG('<circle cx="12" cy="13" r="7" fill="#466e32" stroke="#2f4d22"/><circle cx="9.5" cy="11" r="1.6" fill="#4e64cc" stroke="none"/><circle cx="14" cy="14.5" r="1.6" fill="#c43a4a" stroke="none"/><circle cx="13.5" cy="10" r="1.4" fill="#e4a840" stroke="none"/>');
 const BIOME_SVG = SVG('<rect x="3" y="3" width="9" height="9" fill="#86ba48" stroke="none"/><rect x="12" y="3" width="9" height="9" fill="#dec458" stroke="none"/><rect x="3" y="12" width="9" height="9" fill="#2e5c38" stroke="none"/><rect x="12" y="12" width="9" height="9" fill="#d6dce4" stroke="none"/><rect x="3" y="3" width="18" height="18" rx="2"/>');
+const MIST_SVG = SVG('<path d="M3 9h12M6 13h15M3 17h11" stroke="#b4b8c4"/><circle cx="18" cy="8" r="2.4" fill="#9fd8ff" stroke="#5aa8e0"/>');
 const MUSHROOM_SVG = SVG('<path d="M4 12a8 7 0 0 1 16 0z" fill="#d6423a" stroke="#8e2a24"/><circle cx="9" cy="9" r="1.2" fill="#fff" stroke="none"/><circle cx="14" cy="8" r="1" fill="#fff" stroke="none"/><path d="M10 12v6a2 2 0 0 0 4 0v-6" fill="#efe6d2" stroke="#bfb39a"/>');
 const SHRUB_SVG = SVG('<circle cx="9" cy="14" r="5" fill="#466e32" stroke="#2f4d22"/><circle cx="15" cy="12" r="6" fill="#4f7a38" stroke="#2f4d22"/>');
 const ORE_SVG = SVG('<path d="M4 18l3-8 5-3 5 3 3 8z" fill="#5a5a56" stroke="#3e3e3a"/><circle cx="9" cy="13" r="1.6" fill="#d07a40" stroke="none"/><circle cx="14" cy="11" r="1.4" fill="#c8d2de" stroke="none"/><circle cx="14.5" cy="15.5" r="1.3" fill="#d07a40" stroke="none"/>');
