@@ -71,15 +71,8 @@ namespace MuninMap.Live
                 var se = go != null ? go.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_equipStatusEffect as SE_Demister : null;
                 if (se != null)
                 {
-                    r = 6f;
-                    if (se.m_ballPrefab != null)
-                        foreach (var c in se.m_ballPrefab.GetComponentsInChildren<Component>(true))
-                        {
-                            if (c == null || c.GetType().Name != "ParticleSystemForceField") continue;
-                            var p = c.GetType().GetProperty("endRange");
-                            if (p != null) r = Convert.ToSingle(p.GetValue(c, null));
-                            break;
-                        }
+                    r = se.m_ballPrefab != null ? Demisters.RangeOf(se.m_ballPrefab) : 0f;
+                    if (r <= 0f) r = 6f;
                     ZLog.Log($"MuninMap: {go.name} clears the mist for {r:F1} m");
                 }
             }

@@ -564,6 +564,7 @@ namespace MuninMap
                     if (png == null) { NotFound(res); return true; }
                     return Bytes(e, png, "image/png", "no-cache", etag: ETagOf(png));
                 }
+                case "mistclear.json": return Text(e, Demisters.Json(), "application/json", nocache: true);
                 case "biomes.png":
                 {
                     var png = BiomeMap.PngFor();   // explored ground only (unless reveal_all)

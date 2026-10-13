@@ -230,6 +230,20 @@ namespace MuninMap.World
             }
         }
 
+        // any mist on the game's map within r metres of (x, z)
+        public static bool HasMist(float x, float z, float r)
+        {
+            var m = mist;
+            if (m == null) return false;
+            float cell = (float)TileMath.WORLD_SIZE / GRID, half = TileMath.WORLD_HALF;
+            int x0 = Mathf.FloorToInt((x - r + half) / cell), x1 = Mathf.FloorToInt((x + r + half) / cell);
+            int y0 = Mathf.FloorToInt((half - z - r) / cell), y1 = Mathf.FloorToInt((half - z + r) / cell);
+            for (int y = Math.Max(0, y0); y <= Math.Min(GRID - 1, y1); y++)
+                for (int xx = Math.Max(0, x0); xx <= Math.Min(GRID - 1, x1); xx++)
+                    if (m[y * GRID + xx] != 0) return true;
+            return false;
+        }
+
         // the page's mist picture made ahead on a pool thread, so the first page to ask doesn't wait for it
         private static void Warm() => System.Threading.ThreadPool.QueueUserWorkItem(_ => { try { MistPngFor(); } catch { } });
 

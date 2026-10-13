@@ -116,7 +116,7 @@ export class Sidebar {
       if (S.mapStyle === 'biomes') apply();
     }
     if (this.app.mist) {
-      world.append(row(MIST_SVG, 'Mistlands mist', 'Cleared by a Wisplight', S.mist, (v) => { this.app.mist.setOn(v); S.set('mist', v); }));
+      world.append(row(MIST_SVG, 'Mistlands mist', 'Cleared by Wisplights, Dvergr lanterns and mist torches', S.mist, (v) => { this.app.mist.setOn(v); S.set('mist', v); }));
       this.app.mist.setOn(S.mist);
     }
     world.append(row(ico('house', '#c9a26b'), 'Buildings', 'Player builds, coloured by material', S.buildings, (v) => { if (v) L.structures.addTo(this.app.map); else L.structures.remove(); S.set('buildings', v); }));

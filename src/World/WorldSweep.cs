@@ -133,6 +133,7 @@ namespace MuninMap.World
             StructureMap.Begin();
             ForestMap.Begin();
             WorldObjects.Begin();
+            Demisters.Begin();
             var changedZones = new HashSet<long>();
 
             yield return Pause(); Resume();
@@ -165,7 +166,8 @@ namespace MuninMap.World
                             {
                                 long creator = 0L;
                                 try { creator = zdo.GetLong(ZDOVars.s_creator, 0L); } catch { }
-                                Dungeons.Observe(zdo, pref, p, creator);   // inside a dungeon (and the gates at their doors)
+                                Dungeons.Observe(zdo, pref, p, creator);
+                                Demisters.Observe(pref, p);   // Dvergr lanterns: clearings in the mist   // inside a dungeon (and the gates at their doors)
                                 // the 3D object data (and the model export it requests) only matters with 3D on
                                 if (MuninConfig.ENABLE_3D) WorldObjects.Observe(zdo, pref, p, creator);
                                 int lx = Mathf.RoundToInt(p.x / pixel + half);
@@ -217,7 +219,7 @@ namespace MuninMap.World
             yield return Step("buildings", Structures.Finish());
             int changedChunks = Structures.LastChanged;
             yield return Step("ruins", Ruins.Finish());
-            Vehicles.Finish(); Dungeons.Finish();
+            Vehicles.Finish(); Dungeons.Finish(); Demisters.Finish();
             yield return Step("markers", Markers.Finish());
             yield return Step("structure map", Once(StructureMap.Finish));
             StructureMap.LastScanned = seen;
