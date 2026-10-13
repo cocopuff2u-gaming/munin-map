@@ -36,21 +36,48 @@ namespace MuninMap.World
         // The sweep's share of a server frame. Players' movement runs on the same thread, so a frame
         // that takes 100 ms is a 100 ms hitch for everyone near the server: the walk and the work after
         // it (sorting a million trees, building chunk JSON) stop for the next frame when their time is
-        // up. With nobody on, a much bigger share: there is nobody to lag.
+        // up.
         private static readonly System.Diagnostics.Stopwatch slice = new System.Diagnostics.Stopwatch();
         private static double budgetMs = 4.0, longestMs, stepMs;
         private static string part = "", longestPart = "";   // what the sweep was doing in its longest frame
-        public static bool Due => slice.Elapsed.TotalMilliseconds >= budgetMs;
+        // garbage collections: the runtime stops everything to collect, which lands in whatever frame is running
+        private static int gcAtResume, gcFrames;
+        private static bool longestGc;
+        private static int gcAtEnd = -1;
+        private static float endTime;
+        public static bool Due { get { NewFrame(); return slice.Elapsed.TotalMilliseconds >= budgetMs; } }
+        // A slice is this frame's share. Unity may resume the sweep a frame later than it paused (after a
+        // step finishes), so a new frame always starts a new slice: the frame in between isn't the sweep's.
+        private static int sliceFrame;
+        private static void NewFrame()
+        {
+            if (Time.frameCount == sliceFrame) return;
+            slice.Restart(); sliceFrame = Time.frameCount; gcAtResume = GC.CollectionCount(0);
+        }
         // after a yield: the next frame starts a fresh slice
-        public static void Resume() { slice.Restart(); }
+        public static void Resume() { slice.Restart(); sliceFrame = Time.frameCount; gcAtResume = GC.CollectionCount(0); }
         private static void EndSlice()
         {
+            NewFrame();
             double ms = slice.Elapsed.TotalMilliseconds;
             if (ms > stepMs) stepMs = ms;
-            if (ms > longestMs) { longestMs = ms; longestPart = part; }
+            bool gc = GC.CollectionCount(0) != gcAtResume;
+            if (gc) gcFrames++;
+            if (ms > longestMs) { longestMs = ms; longestPart = part; longestGc = gc; }
         }
         // a yield for the steps that run between: `if (WorldSweep.Due) yield return WorldSweep.Pause();`
         public static object Pause() { EndSlice(); return null; }
+
+        // A fingerprint of a zone's or chunk's contents that doesn't depend on their order: each
+        // item's own hash, mixed, then summed. Comparing it says whether anything changed without
+        // sorting the list first; only what changed gets sorted and copied.
+        public static long Mix(int v)
+        {
+            uint x = unchecked((uint)v);
+            x ^= x >> 16; x = unchecked(x * 0x7feb352d); x ^= x >> 15; x = unchecked(x * 0x846ca68b); x ^= x >> 16;
+            return x;
+        }
+        public static int Fold(long sum, int count) => unchecked((int)(sum ^ (sum >> 32)) * 31 + count);
 
         public static IEnumerator Loop()
         {
@@ -100,7 +127,9 @@ namespace MuninMap.World
             sweeping = true;
             var started = DateTime.UtcNow;
             float t0 = Time.realtimeSinceStartup;
-            longestMs = 0; part = "list";
+            longestMs = 0; part = "list"; gcFrames = 0; longestGc = false;
+            int gcStart = GC.CollectionCount(0), frameStart = Time.frameCount;
+            string between = gcAtEnd >= 0 ? $"; {gcStart - gcAtEnd} garbage collections in the {Time.realtimeSinceStartup - endTime:0}s since the last sweep" : "";
             slice.Restart();
 
             // The game keeps every object in a list per 64 m sector (portals in a list of their own):
@@ -116,11 +145,7 @@ namespace MuninMap.World
 
             int size = MuninConfig.TEXTURE_SIZE, half = size / 2, pixel = MuninConfig.PIXEL_SIZE;
             int perFrame = Math.Max(500, MuninConfig.SWEEP_ZDOS_PER_FRAME);
-            // nobody connected (e.g. right after a restart): nobody to lag either, so sweep in big slices
-            int peers = 0;
-            try { peers = ZNet.instance != null ? ZNet.instance.GetPeers().Count : 0; } catch { }
-            /*TESTONLY*/
-            budgetMs = Math.Max(1.0, MuninConfig.SWEEP_FRAME_MS); /*TESTONLY*/
+            budgetMs = Math.Max(1.0, MuninConfig.SWEEP_FRAME_MS);
             yield return Pause(); Resume();
 
             part = "start";
@@ -135,6 +160,7 @@ namespace MuninMap.World
             WorldObjects.Begin();
             Demisters.Begin();
             var changedZones = new HashSet<long>();
+            var mapTables = new List<ZDO>();
 
             yield return Pause(); Resume();
 
@@ -154,7 +180,7 @@ namespace MuninMap.World
                         {
                             Vector3 p = zdo.GetPosition();
                             int pref = zdo.GetPrefab();
-                            if (pref == mapTableHash) { try { Fog.MergeMapTable(zdo); } catch { } try { Markers.ObserveMapTable(zdo); } catch { } }
+                            if (pref == mapTableHash) mapTables.Add(zdo);   // read after the walk, a slice at a time
                             if (Runestones.IsProxy(pref)) { try { Markers.ObserveProxy(zdo, p); } catch { } }
                             if (pref == tombstoneHash) Fog.AddTrace(p);   // where a player died   // recorded maps: exact explored areas (and still a building piece below)
                             if (pref == terrainCompilerHash)
@@ -214,6 +240,34 @@ namespace MuninMap.World
                 if (steps.Elapsed.TotalMilliseconds >= 20) took.Add($"{name} {steps.Elapsed.TotalMilliseconds:0}/{stepMs:0.0}ms");
             }
             IEnumerator Once(Action a) { a(); yield break; }
+            // cartography tables: their explored map and pins, each table unpacked once and only when it changed
+            IEnumerator MapTables(List<ZDO> tables)
+            {
+                foreach (var zdo in tables)
+                {
+                    if (Due) yield return null;
+                    byte[] raw;
+                    try { raw = zdo.GetByteArray(ZDOVars.s_data); } catch { continue; }
+                    bool fog = Fog.TableChanged(zdo, raw), pins = Markers.ObserveMapTable(zdo, raw);
+                    if (!fog && !pins) continue;
+                    // unpacking 4 MB took most of a frame: done on a worker thread, the game waits for nothing
+                    var unpack = System.Threading.Tasks.Task.Run(() => Utils.Decompress(raw));
+                    while (!unpack.IsCompleted) yield return null;
+                    byte[] data;
+                    try { data = unpack.Result; } catch (Exception e) { ZLog.LogWarning("MuninMap: map table not readable: " + (e.InnerException ?? e).Message); continue; }
+                    if (pins) Markers.ReadTablePins(zdo, data);
+                    if (fog)
+                    {
+                        var merge = Fog.MergeMapTable(zdo, data);
+                        while (true)
+                        {
+                            try { if (!merge.MoveNext()) break; } catch (Exception e) { ZLog.LogWarning("MuninMap: map table: " + e.Message); break; }
+                            yield return null;
+                        }
+                    }
+                }
+            }
+            yield return Step("map tables", MapTables(mapTables));
             yield return Step("traces", Once(() => Fog.RevealTraces()));
             yield return Step("trees", Vegetation.Finish(changedZones));
             yield return Step("buildings", Structures.Finish());
@@ -250,7 +304,9 @@ namespace MuninMap.World
             ZLog.Log($"MuninMap: world sweep #{Sweeps}: {seen} objects in {LastSweepSeconds:0.0}s -> {Structures.Total} pieces ({changedChunks} chunks changed), "
                    + $"{Vegetation.LastTrees} trees, {Vegetation.LastRocks} rocks, {TerrainPatches.Count} terraformed zones, {rerendered} zones re-rendered, "
                    + $"{WorldObjects.Total} 3D objects ({changedObjectChunks} chunks changed), {Models.ModelStore.QueueLength} models to export; "
-                   + $"longest frame {longestMs:0.0}ms in {longestPart}" + (took.Count > 0 ? " (" + string.Join(", ", took) + ")" : ""));
+                   + $"longest frame {longestMs:0.0}ms in {longestPart}{(longestGc ? " (with a garbage collection)" : "")}, {GC.CollectionCount(0) - gcStart} garbage collections ({gcFrames} in sweep frames), server at {(Time.frameCount - frameStart) / Math.Max(0.1, LastSweepSeconds):0} fps" + (took.Count > 0 ? " (" + string.Join(", ", took) + ")" : ""));
+            if (between.Length > 0) ZLog.Log("MuninMap: sweep #" + Sweeps + between);
+            gcAtEnd = GC.CollectionCount(0); endTime = Time.realtimeSinceStartup;
             Live.Stats.OnSweep();
             MapDataServer.getInstance()?.BroadcastWorldRevision();
         }

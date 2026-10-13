@@ -64,9 +64,13 @@ namespace MuninMap.World
         // building pieces per creator (a player's id) from the last sweep: the stats' "pieces built"
         public static Dictionary<long, int> Builders { get; private set; } = new Dictionary<long, int>();
 
+        // kept from one sweep to the next and only emptied: less garbage, fewer collection pauses
+        private static readonly Dictionary<int, List<Piece>> pool = new Dictionary<int, List<Piece>>();
+
         public static void Begin()
         {
-            building = new Dictionary<int, List<Piece>>(chunks.Count + 16);
+            foreach (var l in pool.Values) l.Clear();
+            building = pool;
             byPrefab = new Dictionary<int, int>();
             byMaterial = new Dictionary<int, int>();
             byCreator = new Dictionary<long, int>();
@@ -106,19 +110,25 @@ namespace MuninMap.World
             {
                 if (WorldSweep.Due) yield return null;   // the rest next frame
                 var list = kv.Value;
-                list.Sort((a, b) => a.z != b.z ? a.z.CompareTo(b.z) : a.x.CompareTo(b.x));
-                int h = 17;
+                if (list.Count == 0) continue;   // nothing there this sweep
+                long sum = 0;
                 foreach (var p in list)
-                    h = unchecked(h * 31 + (int)(p.x * 10) * 7 + (int)(p.z * 10) * 13 + (int)(p.y * 10) * 3 + p.yaw * 101 + p.prefab);
+                    sum += WorldSweep.Mix(unchecked((int)(p.x * 10) * 7 + (int)(p.z * 10) * 13 + (int)(p.y * 10) * 3 + p.yaw * 101 + p.prefab));
+                int h = WorldSweep.Fold(sum, list.Count);
                 seen.Add(kv.Key);
                 if (chunkHash.TryGetValue(kv.Key, out int old) && old == h) continue;
+                list.Sort((a, b) => a.z != b.z ? a.z.CompareTo(b.z) : a.x.CompareTo(b.x));
                 chunkHash[kv.Key] = h;
                 int cx = kv.Key / 4096, cz = kv.Key % 4096;
                 var pieces = list.ToArray();
                 // rev is a hash of the content, not a counter, so it means the same bytes across
                 // restarts and browsers may cache data/.../cx_cz.json?h=rev for good
-                int rev = (int)(TileStore.Fnv1a(Encoding.UTF8.GetBytes(BuildChunkJson(cx, cz, 0, pieces))) & 0x7fffffff);
-                chunks[kv.Key] = new Chunk { rev = rev, count = pieces.Length, pieces = pieces, json = BuildChunkJson(cx, cz, rev, pieces) };
+                // built once, a slice at a time: a big base's chunk (13 000 pieces) took 360 ms in one frame
+                var built = new string[1];
+                var json = BuildChunkJson(cx, cz, pieces, built);
+                while (json.MoveNext()) yield return null;
+                int rev = (int)(TileStore.Fnv1a(Encoding.UTF8.GetBytes(built[0])) & 0x7fffffff);
+                chunks[kv.Key] = new Chunk { rev = rev, count = pieces.Length, pieces = pieces, json = WithRev(built[0], rev) };
                 changed++;
             }
             foreach (int key in new List<int>(chunks.Keys))
@@ -252,16 +262,27 @@ namespace MuninMap.World
         public static string StatsJson => statsJson;
 
         // [x, z, y, yaw, sx, sz, h, mat, prefabIdx] per piece; prefab names once per chunk.
-        private static string BuildChunkJson(int cx, int cz, int rev, Piece[] pieces)
+        // the chunk as built with rev 0 (what rev is a hash of), with the real rev written in
+        private static string WithRev(string json, int rev)
+        {
+            const string zero = "\"rev\":0,";
+            int at = json.IndexOf(zero, StringComparison.Ordinal);
+            return at < 0 ? json : json.Substring(0, at) + "\"rev\":" + rev.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + json.Substring(at + zero.Length);
+        }
+
+        // the chunk's JSON with rev 0, into result[0]; pauses for the next frame when the sweep's share is used up
+        private static System.Collections.IEnumerator BuildChunkJson(int cx, int cz, Piece[] pieces, string[] result)
         {
             var names = new Dictionary<int, int>();
             var nameList = new List<string>();
             var j = new JsonWriter(pieces.Length * 48 + 256);
             j.BeginObject();
-            j.Prop("cx", cx).Prop("cz", cz).Prop("rev", rev).Prop("count", pieces.Length);
+            j.Prop("cx", cx).Prop("cz", cz).Prop("rev", 0).Prop("count", pieces.Length);
             j.Key("pieces").BeginArray();
+            int i = 0;
             foreach (var p in pieces)
             {
+                if ((++i & 127) == 0 && WorldSweep.Due) yield return null;
                 if (!names.TryGetValue(p.prefab, out int idx))
                 {
                     idx = nameList.Count; names[p.prefab] = idx;
@@ -277,7 +298,7 @@ namespace MuninMap.World
             foreach (var n in nameList) j.Value(n);
             j.End();
             j.End();
-            return j.ToString();
+            result[0] = j.ToString();
         }
 
         private static string BuildIndex()

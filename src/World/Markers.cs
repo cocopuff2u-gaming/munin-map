@@ -164,19 +164,24 @@ namespace MuninMap.World
         // Main thread: a cartography table. Its data (Minimap.GetSharedMapData, compressed) is the
         // explored grid (Fog reads that), then the pins: int count, then each: long owner, string name,
         // Vector3 pos, int type, bool checked, string author (version 3 on).
-        public static void ObserveMapTable(ZDO zdo)
+        // A table seen by the sweep; true when its pins changed and need reading (ReadTablePins)
+        public static bool ObserveMapTable(ZDO zdo, byte[] raw)
         {
-            if (buildingTables == null) return;
+            if (buildingTables == null) return false;
             buildingTables.Add(zdo.m_uid);
-            byte[] raw = zdo.GetByteArray(ZDOVars.s_data);
             int sig = raw == null || raw.Length == 0 ? 0 : raw.Length * 31 + raw[raw.Length / 2] * 7 + raw[raw.Length - 1];
-            if (tables.TryGetValue(zdo.m_uid, out Table t) && t.sig == sig) return;
-            t = new Table { sig = sig };
-            tables[zdo.m_uid] = t;
-            if (sig == 0) return;
+            if (tables.TryGetValue(zdo.m_uid, out Table t) && t.sig == sig) return false;
+            tables[zdo.m_uid] = new Table { sig = sig };
+            return sig != 0;
+        }
+
+        // the table's pins, from its recorded map (data: unpacked)
+        public static void ReadTablePins(ZDO zdo, byte[] data)
+        {
+            if (!tables.TryGetValue(zdo.m_uid, out Table t)) return;
             try
             {
-                var pkg = new ZPackage(Utils.Decompress(raw));
+                var pkg = new ZPackage(data);
                 int version = pkg.ReadInt();
                 if (version < 2) return;   // before pins were shared
                 int n = pkg.ReadInt();
@@ -437,8 +442,34 @@ namespace MuninMap.World
         }
 
         // slice: pause (yield) when the sweep's frame is used up (WorldSweep.Due), from Finish
+        // The game's locations by kind (0 boss altars, 1 mini-boss lairs, 2 dungeons, 3 traders), in one
+        // pass with each prefab name's kind remembered: the four loops each used to read every location's
+        // name, the world's thousands of them, in one go (about 28 ms a sweep)
+        private static readonly Dictionary<string, int> locationKinds = new Dictionary<string, int>();
+        private static List<ZoneSystem.LocationInstance>[] LocationsByKind()
+        {
+            var lists = new List<ZoneSystem.LocationInstance>[4];
+            for (int i = 0; i < 4; i++) lists[i] = new List<ZoneSystem.LocationInstance>();
+            var zs = ZoneSystem.instance;
+            if (zs == null) return lists;
+            foreach (var li in zs.m_locationInstances.Values)
+            {
+                string name = li.m_location?.m_prefabName;
+                if (name == null) continue;
+                if (!locationKinds.TryGetValue(name, out int kinds))
+                {
+                    kinds = (BossName(name) != null ? 1 : 0) | (MiniBossName(name, out _) != null ? 2 : 0)
+                          | (DungeonName(name, out _) != null ? 4 : 0) | (TraderName(name, out _) != null ? 8 : 0);
+                    locationKinds[name] = kinds;
+                }
+                for (int i = 0; i < 4; i++) if ((kinds & (1 << i)) != 0) lists[i].Add(li);
+            }
+            return lists;
+        }
+
         private static IEnumerable<object> BuildParts(JsonWriter j, bool slice)
         {
+            var locs = LocationsByKind();   // altars, lairs, dungeons, traders: each loop below visits only its own
             j.BeginObject();
             j.Prop("rev", rev + 1);
             j.Key("sets").BeginArray();
@@ -448,9 +479,7 @@ namespace MuninMap.World
             j.BeginObject().Prop("id", "bosses").Prop("label", "Boss altars").Key("markers").BeginArray();
             try
             {
-                var zs = ZoneSystem.instance;
-                if (zs != null)
-                    foreach (var li in zs.m_locationInstances.Values)
+                    foreach (var li in locs[0])
                     {
                         string name = li.m_location?.m_prefabName;
                         string boss = BossName(name);
@@ -468,9 +497,7 @@ namespace MuninMap.World
             j.BeginObject().Prop("id", "minibosses").Prop("label", "Mini-boss lairs").Key("markers").BeginArray();
             try
             {
-                var zs = ZoneSystem.instance;
-                if (zs != null)
-                    foreach (var li in zs.m_locationInstances.Values)
+                    foreach (var li in locs[1])
                     {
                         string name = li.m_location?.m_prefabName;
                         string mb = MiniBossName(name, out string icon);
@@ -488,9 +515,7 @@ namespace MuninMap.World
             j.BeginObject().Prop("id", "dungeons").Prop("label", "Dungeons").Key("markers").BeginArray();
             try
             {
-                var zs = ZoneSystem.instance;
-                if (zs != null)
-                    foreach (var li in zs.m_locationInstances.Values)
+                    foreach (var li in locs[2])
                     {
                         string name = li.m_location?.m_prefabName;
                         string dg = DungeonName(name, out string icon);
@@ -519,9 +544,7 @@ namespace MuninMap.World
             j.BeginObject().Prop("id", "traders").Prop("label", "Traders").Key("markers").BeginArray();
             try
             {
-                var zs = ZoneSystem.instance;
-                if (zs != null)
-                    foreach (var li in zs.m_locationInstances.Values)
+                    foreach (var li in locs[3])
                     {
                         string name = li.m_location?.m_prefabName;
                         string trader = TraderName(name, out string icon);

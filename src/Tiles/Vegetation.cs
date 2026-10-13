@@ -56,9 +56,14 @@ namespace MuninMap.Tiles
             return pts;
         }
 
+        // the sweep's lists, kept from one sweep to the next and only emptied, so a sweep over a
+        // million trees and rocks doesn't leave a million points' worth of garbage behind
+        private static readonly Dictionary<long, List<Point>> pool = new Dictionary<long, List<Point>>();
+
         public static void Begin()
         {
-            building = new Dictionary<long, List<Point>>(zones.Count + 64);
+            foreach (var l in pool.Values) l.Clear();
+            building = pool;
         }
 
         // Main thread. Returns true when the prefab is vegetation (so callers can stop classifying it).
@@ -86,16 +91,19 @@ namespace MuninMap.Tiles
             {
                 if (WorldSweep.Due) yield return null;   // the rest next frame
                 var list = kv.Value;
-                list.Sort((a, b) => a.z != b.z ? a.z.CompareTo(b.z) : a.x.CompareTo(b.x));   // stable hash & nicer draw order
-                int h = 17;
+                if (list.Count == 0) continue;   // nothing there this sweep
+                long sum = 0;
                 foreach (var p in list)
                 {
-                    h = unchecked(h * 31 + (int)(p.x * 4) * 7 + (int)(p.z * 4) * 13 + (int)p.kind * 101 + (int)(p.size * 8));
+                    sum += WorldSweep.Mix(unchecked((int)(p.x * 4) * 7 + (int)(p.z * 4) * 13 + (int)p.kind * 101 + (int)(p.size * 8)));
                     if (Palette.Base(p.kind) == Palette.Veg.Rock || Palette.Base(p.kind) == Palette.Veg.Ore) rocks++;
                     else if (!Palette.IsLowPlant(p.kind)) trees++;
                 }
+                int h = WorldSweep.Fold(sum, list.Count);
                 seen.Add(kv.Key);
-                if (!zoneHash.TryGetValue(kv.Key, out int old) || old != h) changed.Add(kv.Key);
+                if (zoneHash.TryGetValue(kv.Key, out int old) && old == h && zones.ContainsKey(kv.Key)) continue;
+                changed.Add(kv.Key);
+                list.Sort((a, b) => a.z != b.z ? a.z.CompareTo(b.z) : a.x.CompareTo(b.x));   // nicer draw order
                 zones[kv.Key] = list.ToArray();
                 zoneHash[kv.Key] = h;
             }

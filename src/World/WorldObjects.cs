@@ -49,7 +49,9 @@ namespace MuninMap.World
             switch (c) { case Cat.Piece: return "piece"; case Cat.Tree: return "tree"; case Cat.Bush: return "bush"; case Cat.Rock: return "rock"; case Cat.Other: return "other"; default: return "skip"; }
         }
 
-        public static void Begin() { building = new Dictionary<int, List<Obj>>(chunks.Count + 16); }
+        // kept from one sweep to the next and only emptied: less garbage, fewer collection pauses
+        private static readonly Dictionary<int, List<Obj>> pool = new Dictionary<int, List<Obj>>();
+        public static void Begin() { foreach (var l in pool.Values) l.Clear(); building = pool; }
 
         private static bool Enabled(Cat c)
         {
@@ -131,13 +133,15 @@ namespace MuninMap.World
             {
                 if (WorldSweep.Due) yield return null;   // the rest next frame
                 var list = kv.Value;
+                if (list.Count == 0) continue;   // nothing there this sweep
                 total += list.Count;
-                list.Sort((a, b) => a.prefab != b.prefab ? a.prefab.CompareTo(b.prefab) : a.x != b.x ? a.x.CompareTo(b.x) : a.z.CompareTo(b.z));
-                int h = 17;
+                long sum = 0;
                 foreach (var o in list)
-                    h = unchecked(h * 31 + o.prefab + (int)(o.x * 10) * 7 + (int)(o.z * 10) * 13 + (int)(o.y * 10) * 3 + (int)(o.qy * 1000) * 101 + (int)(o.sx * 100));
+                    sum += WorldSweep.Mix(unchecked(o.prefab + (int)(o.x * 10) * 7 + (int)(o.z * 10) * 13 + (int)(o.y * 10) * 3 + (int)(o.qy * 1000) * 101 + (int)(o.sx * 100)));
+                int h = WorldSweep.Fold(sum, list.Count);
                 seen.Add(kv.Key);
                 if (chunkHash.TryGetValue(kv.Key, out int old) && old == h) continue;
+                list.Sort((a, b) => a.prefab != b.prefab ? a.prefab.CompareTo(b.prefab) : a.x != b.x ? a.x.CompareTo(b.x) : a.z.CompareTo(b.z));
                 chunkHash[kv.Key] = h;
                 int rev = (chunks.TryGetValue(kv.Key, out var prev) ? prev.rev : 0) + 1;
                 chunks[kv.Key] = new Chunk { rev = rev, objs = list.ToArray() };

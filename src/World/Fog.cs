@@ -140,21 +140,24 @@ namespace MuninMap.World
         // players who recorded there had uncovered, merged in once per new version of each table.
         private static readonly System.Collections.Generic.Dictionary<ZDOID, int> tableSeen = new System.Collections.Generic.Dictionary<ZDOID, int>();
         public static int MapTablesRead { get; private set; }
-        public static int MergeMapTable(ZDO zdo)
+        // A table's recorded map changed since it was last merged (raw: its stored bytes, still packed)
+        public static bool TableChanged(ZDO zdo, byte[] raw)
         {
-            if (mask == null || zdo == null) return 0;
-            byte[] raw;
-            try { raw = zdo.GetByteArray(ZDOVars.s_data); } catch { return 0; }
-            if (raw == null || raw.Length == 0) return 0;
+            if (mask == null || zdo == null || raw == null || raw.Length == 0) return false;
             int sig = raw.Length * 31 + raw[raw.Length / 2] * 7 + raw[raw.Length - 1];
-            if (tableSeen.TryGetValue(zdo.m_uid, out int old) && old == sig) return 0;
+            if (tableSeen.TryGetValue(zdo.m_uid, out int old) && old == sig) return false;
             tableSeen[zdo.m_uid] = sig;
-            byte[] data;
-            try { data = Utils.Decompress(raw); } catch (Exception e) { ZLog.LogWarning("MuninMap: map table not readable: " + e.Message); return 0; }
-            if (data == null || data.Length < 8) return 0;
+            return true;
+        }
+
+        // Merges a table's recorded map (data: unpacked), a slice per frame: 4 million cells at once
+        // held the game up for over 100 ms on the first sweep after a start
+        public static System.Collections.IEnumerator MergeMapTable(ZDO zdo, byte[] data)
+        {
+            if (mask == null || data == null || data.Length < 8) yield break;
             int n = BitConverter.ToInt32(data, 4);
             int tsize = (int)Math.Round(Math.Sqrt(n));
-            if (tsize * tsize != n || data.Length < 8 + n) { ZLog.LogWarning($"MuninMap: map table has {n} cells, not a square map"); return 0; }
+            if (tsize * tsize != n || data.Length < 8 + n) { ZLog.LogWarning($"MuninMap: map table has {n} cells, not a square map"); yield break; }
             // the game's grid: tsize cells, each (world diameter / tsize) wide, centred on the origin
             float tpx = (half * 2f * pixelSize) / tsize;
             int revealed = 0;
@@ -162,6 +165,7 @@ namespace MuninMap.World
             {
                 for (int i = 0; i < n; i++)
                 {
+                    if ((i & 0xFFFF) == 0 && WorldSweep.Due) yield return null;
                     if (data[8 + i] == 0 || mask[i] != 0) continue;
                     mask[i] = 255; exploredCount++; revealed++;
                     TileStore.OnExplored((i % size - half) * pixelSize, (i / size - half) * pixelSize);
@@ -172,6 +176,7 @@ namespace MuninMap.World
                 // a different grid size: each of its explored cells clears the matching area here
                 for (int i = 0; i < n; i++)
                 {
+                    if ((i & 0x3FFF) == 0 && WorldSweep.Due) yield return null;
                     if (data[8 + i] == 0) continue;
                     float wx = (i % tsize - tsize / 2) * tpx, wz = (i / tsize - tsize / 2) * tpx;
                     revealed += Reveal(wx, wz, tpx * 0.75f);
@@ -182,7 +187,6 @@ namespace MuninMap.World
                 try { var cells = new byte[n]; Buffer.BlockCopy(data, 8, cells, 0, n); File.WriteAllBytes(Path.Combine(global::MuninMap.MuninMap.worldDataPath, $"maptable_{zdo.GetPosition().x:F0}_{zdo.GetPosition().z:F0}.bin"), cells); } catch { }
             MapTablesRead++;
             ZLog.Log($"MuninMap: cartography table at {zdo.GetPosition().x:F0}, {zdo.GetPosition().z:F0}: {revealed} newly explored cells from the recorded map");
-            return revealed;
         }
 
         // ---- player traces: everything players built, sailed, drove or left (pieces, ships, carts,

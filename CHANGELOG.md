@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.0.2
+
+**Smoother servers.** The map's world check (the sweep, every 2 minutes) no longer makes the game stall. Measured on a world of 2.9 million objects:
+
+| | 3.0.1 | 3.0.2 |
+|---|---|---|
+| Slowest frame, first check after a restart | 360-470 ms | about 110 ms |
+| Slowest frame, every check after that | 30-70 ms | about 23 ms |
+| Garbage collection pauses caused by each check | 2 | 0 |
+| Time a check takes | 107 s | 88 s |
+
+* A big base no longer stalls the server: its map data is built a slice at a time instead of in one go (one chunk with 13 000 pieces took 360 ms), and built once instead of twice.
+* Map tables are read in slices, and unpacked once (it was twice) on a background thread.
+* Trees, rocks, buildings and 3D objects only redo the parts of the world that changed, and reuse their memory between checks instead of throwing a million entries away each time.
+* Boss altars, mini-boss lairs, dungeons and traders are found in one pass over the world's locations instead of four.
+* The log line after each check now says how many garbage collections it caused and the server's frame rate, and its "longest frame" is measured correctly (it used to count a whole server frame, 33 ms, that wasn't the map's).
+* The map data, markers and fog come out exactly as before, so nothing needs redrawing and browsers keep what they cached.
+
+**Upgrading:** replace `MuninMap.dll` and restart the server.
+
 ## 3.0.1
 
 **Fixes**

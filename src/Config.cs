@@ -249,8 +249,8 @@ namespace MuninMap
 
             SWEEP_FRAME_MS = config.Bind("Sweep", "frame_ms",
                 MuninConfig.SWEEP_FRAME_MS,
-                "Milliseconds of each game frame the sweep may use while players are on (the game runs a frame every 20 ms). "
-                + "Lower keeps the game smoother, higher finishes sooner. With nobody on it takes up to 50.").Value;
+                "Milliseconds of each game frame the sweep may use (a dedicated server runs about 30 frames a second, 33 ms each). "
+                + "Lower keeps the game smoother, higher finishes sooner.").Value;
 
             REVEAL_ALL = config.Bind("Markers", "reveal_all",
                 MuninConfig.REVEAL_ALL,
