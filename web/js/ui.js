@@ -400,7 +400,7 @@ export class Sidebar {
       const rows = ps.map((pl) => `<tr class="${pl.online ? 'on' : ''}" data-x="${pl.lastX ?? ''}" data-z="${pl.lastZ ?? ''}">
         <td>${escape(pl.name)}</td><td class="num">${fmtDuration(pl.playtime)}</td><td class="num">${pl.deaths}</td>
         <td class="num">${fmtDist(pl.distance)}</td><td class="num">${(pl.built || 0).toLocaleString()}</td><td class="num" title="${escape(pl.lastSeen)}">${pl.online ? 'now' : fmtAgo(pl.lastSeen).replace(' ago', '').replace('just now', 'now')}</td></tr>`).join('');
-      const table = el(`<div style="overflow:auto"><table class="stats"><thead><tr><th>Name</th><th class="num" title="Play time">Played</th><th class="num" title="Deaths">Died</th><th class="num" title="Distance walked">Walked</th><th class="num" title="Building pieces of theirs standing in the world">Built</th><th class="num" title="Last seen">Seen</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+      const table = el(`<div style="overflow:auto"><table class="stats"><thead><tr><th>Name</th><th class="num" title="Play time since the map first saw them">Played</th><th class="num" title="Deaths">Died</th><th class="num" title="Distance walked">Walked</th><th class="num" title="Everything they ever built that still stands in this world, from before the map was installed too">Built</th><th class="num" title="Last seen">Seen</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       for (const tr of table.querySelectorAll('tbody tr'))
         if (tr.dataset.x) { tr.style.cursor = 'pointer'; tr.addEventListener('click', () => this.app.goTo(+tr.dataset.x, +tr.dataset.z, 6)); }
       p.append(table);
@@ -408,7 +408,7 @@ export class Sidebar {
     const boards = [
       ['playtime', 'Never logs off', 'most time played', (v) => fmtDuration(v)],
       ['distance', 'Wanderer', 'farthest walked', (v) => fmtDist(v)],
-      ['built', 'Master builder', 'most pieces standing', (v) => v.toLocaleString() + ' pieces'],
+      ['built', 'Master builder', 'most pieces standing (all time)', (v) => v.toLocaleString() + ' pieces'],
       ['revealed', 'Pathfinder', 'most map revealed', (v) => v.toLocaleString() + ' cells'],
       ['bossKills', 'Slayer', 'most boss kills', (v) => v + (v === 1 ? ' boss' : ' bosses')],
       ['raids', 'Raid veteran', 'most raids weathered', (v) => v + (v === 1 ? ' raid' : ' raids')],

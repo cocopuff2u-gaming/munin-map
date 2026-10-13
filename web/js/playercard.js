@@ -61,13 +61,13 @@ export class PlayerCard {
     const cell = (v, label, title = '') => `<div${title ? ` title="${escape(title)}"` : ''}><b>${v}</b><span>${label}</span></div>`;
     const km2 = (cells) => { const a = (cells || 0) * 144 / 1e6; return a >= 10 ? a.toFixed(0) + ' km²' : a.toFixed(1) + ' km²'; };   // explored cells are 12 m
     const life = st ? `<div class="pc-stats">
-        ${cell(fmtDuration(st.playtime), 'played')}
+        ${cell(fmtDuration(st.playtime), 'played', 'Since the map first saw them')}
         ${cell(st.sessions, 'visits')}
         ${cell(st.deaths, 'deaths')}
         ${cell(fmtDist(st.distance), 'walked')}
         ${cell(st.portalTrips ?? 0, 'portal trips')}
         ${cell(km2(st.revealed), 'map revealed', 'New ground this player uncovered on the map')}
-        ${cell((st.built || 0).toLocaleString(), 'pieces built', 'Building pieces of theirs standing in the world')}
+        ${cell((st.built || 0).toLocaleString(), 'pieces standing', 'Everything they ever built that still stands in this world, from before the map was installed too')}
         ${cell(st.bossKills || 0, 'boss kills')}
         ${cell(st.raids || 0, 'raids weathered')}
         ${cell(st.finds || 0, 'finds', 'Boss altars, traders and mini-boss lairs they were first to find')}
