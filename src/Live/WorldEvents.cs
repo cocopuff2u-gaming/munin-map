@@ -148,6 +148,7 @@ namespace MuninMap.Live
         // counts as found and players the map already knows count as having been everywhere the
         // world has been explored: only what happens from now on is news.
         private static List<World.Markers.Findable> findables;
+        private static int findablesAge;
         private static readonly HashSet<string> found = new HashSet<string>();
         private static readonly HashSet<string> seededKinds = new HashSet<string>();   // kinds of find already tracked: a new kind (an update added it) starts quietly too
         private static readonly Dictionary<string, string[]> foundInfo = new Dictionary<string, string[]>();   // key -> [when (UTC), who]; none for what was found before tracking
@@ -246,7 +247,8 @@ namespace MuninMap.Live
         {
             if (!loaded) Load();
             bool changed = false;
-            if (findables == null || findables.Count == 0) findables = World.Markers.Findables();
+            // read again now and then: locations get built as people explore, and world tools move them
+            if (findables == null || findables.Count == 0 || ++findablesAge >= 10) { findables = World.Markers.Findables(); findablesAge = 0; }
             bool anyFound = false;
             foreach (var f in findables)
             {

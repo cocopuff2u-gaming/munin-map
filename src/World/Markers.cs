@@ -391,6 +391,12 @@ namespace MuninMap.World
             return null;
         }
 
+        // A location the game has actually put in the world. The registry also holds the spots it has
+        // only planned (in zones nobody has been to yet), and `genloc` (or a world upgrade tool) clears
+        // those and plans them again elsewhere, which used to drop phantom altars and traders onto
+        // explored ground. Ground a player has walked is generated, so a real one there is built.
+        public static bool Built(ZoneSystem.LocationInstance li) => li.m_placed;
+
         // Boss altars and traders, the locations people "find" (Live.WorldEvents reports each the
         // moment its ground is explored). Main thread.
         public struct Findable { public string key, label, kind; public Vector3 pos; }
@@ -405,7 +411,7 @@ namespace MuninMap.World
                 string label = BossName(name), kind = "boss";
                 if (label == null) { label = TraderName(name, out _); kind = "trader"; }
                 if (label == null) { label = MiniBossName(name, out _); kind = "miniboss"; }
-                if (label == null) continue;
+                if (label == null || !Built(li)) continue;
                 list.Add(new Findable { key = name + "@" + Mathf.RoundToInt(li.m_position.x) + "," + Mathf.RoundToInt(li.m_position.z), label = label, kind = kind, pos = li.m_position });
             }
             return list;
@@ -448,7 +454,7 @@ namespace MuninMap.World
                     {
                         string name = li.m_location?.m_prefabName;
                         string boss = BossName(name);
-                        if (boss == null || !Visible(li.m_position.x, li.m_position.z)) continue;
+                        if (boss == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
                         j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
                          .Prop("cat", "boss").Prop("icon", "boss").Prop("label", boss).Prop("prefab", name).End();
                     }
@@ -468,7 +474,7 @@ namespace MuninMap.World
                     {
                         string name = li.m_location?.m_prefabName;
                         string mb = MiniBossName(name, out string icon);
-                        if (mb == null || !Visible(li.m_position.x, li.m_position.z)) continue;
+                        if (mb == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
                         j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
                          .Prop("cat", "miniboss").Prop("icon", icon).Prop("label", mb).Prop("prefab", name).End();
                     }
@@ -488,7 +494,7 @@ namespace MuninMap.World
                     {
                         string name = li.m_location?.m_prefabName;
                         string dg = DungeonName(name, out string icon);
-                        if (dg == null || !Visible(li.m_position.x, li.m_position.z)) continue;
+                        if (dg == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
                         j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
                          .Prop("cat", "dungeon").Prop("icon", icon).Prop("label", dg).Prop("prefab", name);
                         var d = Dungeons.Get(li.m_position);   // what is known of its inside (none: never generated)
@@ -519,7 +525,7 @@ namespace MuninMap.World
                     {
                         string name = li.m_location?.m_prefabName;
                         string trader = TraderName(name, out string icon);
-                        if (trader == null || !Visible(li.m_position.x, li.m_position.z)) continue;
+                        if (trader == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
                         j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
                          .Prop("cat", "trader").Prop("icon", icon).Prop("label", trader).Prop("prefab", name).End();
                     }
