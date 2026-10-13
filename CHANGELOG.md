@@ -1,8 +1,27 @@
 # Changelog
 
-## Unreleased
+## 3.0.1
 
-* Stats are kept per character. They were keyed by the Steam (or Xbox) account alone, so a second character on the same account took over the first one's stats under its own name. Existing stats go to the character last seen on that account; other characters start fresh.
+**Fixes**
+* **Stats are kept per character.** They used to be tied to the Steam (or Xbox) account, so switching to another character on the same account carried over the first character's stats under the new name. Each character now has its own stats. Existing stats go to the character last seen on that account, and other characters start fresh.
+* **No more phantom altars, traders or dungeons.** Valheim also keeps spots where it plans to put locations later, and `genloc` or world upgrade tools (like Upgrade World) move those spots around. Any that landed on explored ground showed up as new finds, duplicate markers and "found" events. Now a location counts only once the game has actually built it in the world. Already-recorded phantom finds drop off the map and the Discoveries list, but their old "found" events stay in the feed.
+
+**New**
+* **Mist clears around Dvergr lanterns and Mistlands torches,** like in the game, in both 2D and 3D:
+
+  | Object | Range |
+  |---|---|
+  | Dvergr lantern | 15 m |
+  | Large Dvergr lantern | 30 m |
+  | Ruined Dvergr lantern | 10 m |
+  | Mistlands torch | 24 m |
+
+  The ranges are read from the game files.
+
+**Clearer wording**
+* "Pieces built" is now "pieces standing". It counts everything a character ever built that still stands in the world, including from before the map was installed, while play time only counts from when the map first saw them. That's why a new player can show a minute played and hundreds of pieces.
+
+**Upgrading:** replace `MuninMap.dll`, restart the server, and hard-refresh the page (Ctrl+Shift+R).
 
 ## 3.0.0
 
