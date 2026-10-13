@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+* Stats are kept per character. They were keyed by the Steam (or Xbox) account alone, so a second character on the same account took over the first one's stats under its own name. Existing stats go to the character last seen on that account; other characters start fresh.
+
 ## 3.0.0
 
 Valheim WebMap is now **Munin Map**, with its own home at https://github.com/cocopuff2u-gaming/munin-map. It's based on Valheim WebMap, with a lot more tweaks and information: a smoother GPU-drawn map, lower upload, lava, mist, raids and invasions, wards, runestones, Vegvisirs, beds, dungeon contents, and more stats and events.

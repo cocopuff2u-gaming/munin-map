@@ -52,12 +52,17 @@ namespace MuninMap.Live
 
         public static string Json => json;
 
+        // old key -> new key for entries moved over on load (Live/WorldEvents keeps the same keys)
+        private static readonly Dictionary<string, string> rekeyed = new Dictionary<string, string>();
+        public static string Rekey(string key) => key != null && rekeyed.TryGetValue(key, out string k) ? k : key;
+
         private static string StatsPath => Path.Combine(MuninMap.worldDataPath ?? "", "stats.json");
 
         public static void Load()
         {
             players.Clear();
             onlineHistory.Clear();
+            rekeyed.Clear();
             try
             {
                 if (!File.Exists(StatsPath)) return;
@@ -82,7 +87,17 @@ namespace MuninMap.Live
                         };
                         var bs = JsonParser.Arr(d, "biomes");
                         if (bs != null) foreach (var b in bs) if (b is string bn) s.biomes.Add(bn);
-                        if (!string.IsNullOrEmpty(s.key)) players[s.key] = s;
+                        if (string.IsNullOrEmpty(s.key)) continue;
+                        // up to 3.0.0 the key was the platform id alone, so every character on an
+                        // account shared one entry: it goes to the character last seen with it
+                        if (!s.key.StartsWith("name:") && s.key.IndexOf('/') < 0 && !string.IsNullOrEmpty(s.name))
+                        {
+                            string nk = s.key + "/" + s.name;
+                            rekeyed[s.key] = nk;
+                            s.key = nk;
+                            dirty = true;
+                        }
+                        players[s.key] = s;
                     }
                 raidsTotal = (int)JsonParser.Num(doc, "raids"); nightsSlept = (int)JsonParser.Num(doc, "nightsSlept");
                 bossKillsTotal = (int)JsonParser.Num(doc, "bossKills"); peakOnline = (int)JsonParser.Num(doc, "peakOnline");

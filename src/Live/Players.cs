@@ -91,14 +91,16 @@ namespace MuninMap.Live
         public static string Json => json;
         public static List<Snapshot> Current => current;
 
-        // A stable identity for stats: the platform user id when the socket knows it, else the name.
+        // A stable identity for stats: one per character, so the platform user id (when the socket
+        // knows it) and the character's name, as one account can have several characters. Else
+        // just the name.
         public static string KeyOf(ZNetPeer peer)
         {
             if (peer == null) return "";
             if (keyByPeer.TryGetValue(peer.m_uid, out string k)) return k;
             string key = null;
             try { key = peer.m_rpc?.GetSocket()?.GetHostName(); } catch { }
-            if (string.IsNullOrEmpty(key)) key = "name:" + peer.m_playerName;
+            key = string.IsNullOrEmpty(key) ? "name:" + peer.m_playerName : key + "/" + peer.m_playerName;
             keyByPeer[peer.m_uid] = key;
             return key;
         }

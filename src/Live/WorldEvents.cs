@@ -161,6 +161,7 @@ namespace MuninMap.Live
             loaded = true;
             seeding = !File.Exists(StatePath);
             if (seeding) return;
+            bool rekeyed = false;
             try
             {
                 foreach (var line in File.ReadAllLines(StatePath))
@@ -168,10 +169,16 @@ namespace MuninMap.Live
                     var t = line.Split('\t');
                     if (t.Length >= 2 && t[0] == "found") { found.Add(t[1]); if (t.Length >= 4) foundInfo[t[1]] = new[] { t[2], t[3] }; }
                     else if (t.Length == 2 && t[0] == "kind") seededKinds.Add(t[1]);
-                    else if (t.Length == 3 && t[0] == "biomes") biomes[t[1]] = new HashSet<string>(t[2].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+                    else if (t.Length == 3 && t[0] == "biomes")
+                    {
+                        string k = Stats.Rekey(t[1]);
+                        if (k != t[1]) rekeyed = true;
+                        biomes[k] = new HashSet<string>(t[2].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+                    }
                 }
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: world events state: " + e.Message); }
+            if (rekeyed) Save();
         }
 
         private static void Save()
