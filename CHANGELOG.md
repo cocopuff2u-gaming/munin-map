@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.0.5
+
+* **Ping from the web map.** Middle-click the map, or use the Ping button in the right-click pin form, to ping a spot. Players in game see it like a map ping, as "Name (web)", and so does everyone else on the web map. One ping every 10 seconds per visitor; turn it off with the new `web_pings` setting.
+* **Portals, boats and carts stay current.** They used to move only when the world sweep came round. Now they update every 15 seconds, and newly built boats and carts show up within that time too.
+* **Alt biomes.** A new "Alt biomes" layer (off by default) stripes the biome variants, like Rockless Mistlands or Ruin Black Forest, coloured by their base biome. The cursor readout names the variant.
+* **Sortable player list.** Click a column header in the Stats player table to sort by it, and again to reverse. The map remembers your choice.
+* World modifiers that change a rate now read as a percent of normal.
+* Trees and other objects no longer jump into place when you switch who you're following.
+* The clearing a Wisplight makes in the mist stays the same size at every zoom.
+
+**Upgrading:** replace `MuninMap.dll` and restart the server. The biome map is rebuilt once on the first start.
+
+## 3.0.4
+
+* **Still one DLL, built the usual way.** The libraries the map uses (websocket-sharp, ImageSharp and three System libraries ImageSharp needs) used to be packed inside `MuninMap.dll` and unpacked into memory as the server started. Now they are merged into it when it's built (ILRepack), like most Valheim mods do: nothing is unpacked, and they can't clash with another mod's copy of the same library.
+* **Munin Map leaves other mods alone.** With Valheim WebMap installed too, it used to switch itself off, and on a first start it moved WebMap's map folder into its own. Now it only warns that both are installed, and says in the log where an old WebMap map is, for you to move by hand (see "Coming from Valheim WebMap" in the README). WebMap's settings are still taken over by themselves, from the config folder.
+* The README no longer opens with WebMap: what Munin Map does comes first, and the credits are at the end. Its links work on mod sites too.
+* The map itself, its settings and its data are the same as 3.0.2.
+
+**Upgrading:** replace `MuninMap.dll` and restart the server.
+
 ## 3.0.2
 
 **Smoother servers.** The map's world check (the sweep, every 2 minutes) no longer makes the game stall. Measured on a world of 2.9 million objects:

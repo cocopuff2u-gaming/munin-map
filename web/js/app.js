@@ -10,7 +10,7 @@ import { FogLayer } from './layers/fog.js';
 import { StructuresLayer } from './layers/structures.js';
 import { RuinsLayer } from './layers/ruins.js';
 import { webgl2Available, TreesGL, RuinsGL, BuildingsGL } from './layers/shapes.js';
-import { GroundGL, FogGL, WorldEdgeGL, GuideGL, BiomeGL, MistGL } from './layers/ground.js';
+import { GroundGL, FogGL, WorldEdgeGL, GuideGL, BiomeGL, AltBiomeGL, MistGL } from './layers/ground.js';
 import { SmoothZoom, SmoothZoomControl } from './smoothzoom.js';
 import { MarkerLayers, escape } from './layers/markers.js';
 import { PlayersLayer } from './layers/players.js';
@@ -151,7 +151,7 @@ class App {
     this.applyConfig(this.config);
     this.layers.fog = new FogLayer(this.map, this.config, { gl: this.gl });
     // gray past the world's edge, over the fog (which stays black inside the circle)
-    if (this.gl) { new FogGL(this.layers.fog).addTo(this.map); new WorldEdgeGL(WORLD_RADIUS).addTo(this.map); this.biomes = new BiomeGL().addTo(this.map); this.mist = new MistGL().addTo(this.map); }
+    if (this.gl) { new FogGL(this.layers.fog).addTo(this.map); new WorldEdgeGL(WORLD_RADIUS).addTo(this.map); this.biomes = new BiomeGL().addTo(this.map); this.altBiomes = new AltBiomeGL().addTo(this.map); this.mist = new MistGL().addTo(this.map); }
     else this.addWorldEdgeMask();
     this.baseImage = new BaseWorldImage(this.map, 'tiles/map/{z}/{x}/{y}.png', this.gl ? { fog: this.layers.fog, radius: WORLD_RADIUS } : {});
     this.layers.ruins = (this.gl ? new RuinsGL() : new RuinsLayer()).addTo(this.map);   // world-generated structures, under player builds
@@ -159,6 +159,12 @@ class App {
     this.layers.markers = new MarkerLayers(this.map, { gl: this.gl });
     // right click (long press on a phone) places a pin, unless the server turned web pins off
     this.map.on('contextmenu', (e) => { if (this.config?.web_pins !== false) this.layers.markers.openPinEditor(e.latlng); });
+    // middle click: ping the spot, shown in game like a player's ping (Server/WebPing.cs); the pin
+    // form has a Ping button too, for touch screens
+    const box = this.map.getContainer();
+    box.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });   // no auto-scroll
+    box.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); this.webPing(this.map.mouseEventToLatLng(e)); } });
+    this.layers.markers.onPing = (latlng, name) => this.webPing(latlng, name);
     this.layers.players = new PlayersLayer(this.map);
     this.layers.raid = new RaidLayer(this.map, this.layers.markers);
     this.layers.players.onFollow = (id) => { if (this.view3d) this.view3d.follow(id); };
@@ -513,6 +519,23 @@ class App {
       status.textContent = e.message || String(e);
       console.warn('export', e);
     } finally { go.disabled = false; }
+  }
+
+  // POST /api/ping as the name pins are made under (asked the first time); once every 10 s
+  async webPing(latlng, name) {
+    if (this.config?.web_pings === false) return;
+    const { x, z } = fromLatLng(latlng);
+    if (!name) { try { name = localStorage.getItem('munin-pin-name') || ''; } catch (e) { /* no storage */ } }
+    if (!name) {
+      name = (window.prompt('Your name, shown in game with the ping') || '').trim();
+      if (!name) return;
+      try { localStorage.setItem('munin-pin-name', name); } catch (e) { /* this visit only */ }
+    }
+    try {
+      const r = await fetch('api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, name }) });
+      if (r.status === 429) { const j = await r.json().catch(() => ({})); this.toast(`Wait ${j.wait || 10} s to ping again`); }
+      else if (!r.ok) this.toast('Could not ping');
+    } catch (e) { this.toast('Could not ping'); }
   }
 
   toast(msg) {

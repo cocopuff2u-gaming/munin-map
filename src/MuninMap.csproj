@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>3.0.2</Version>
+    <Version>3.0.5</Version>
     <OutputType>Library</OutputType>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>9.0</LangVersion>
@@ -20,20 +20,14 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3"><PrivateAssets>all</PrivateAssets></PackageReference>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <!-- merges the libraries into MuninMap.dll after the build (ILRepack.targets) -->
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.44.2"><PrivateAssets>all</PrivateAssets></PackageReference>
   </ItemGroup>
   <!-- the web app rides inside the DLL too, so the map still works when a mod manager or a
        hand install drops the web folder. Files on disk next to the DLL win when present. -->
   <ItemGroup>
     <EmbeddedResource Include="..\web\**\*" Exclude="..\web\**\.*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
-  <!-- one DLL: the libraries that would be copied next to it (websocket-sharp, ImageSharp and the
-       System DLLs it needs) are embedded as deps/<name>.dll instead and loaded by Util/Deps.cs.
-       System.Memory and Unsafe are left out: the game has its own. -->
-  <Target Name="EmbedDeps" AfterTargets="ResolveAssemblyReferences" BeforeTargets="CoreCompile">
-    <ItemGroup>
-      <EmbeddedResource Include="@(ReferenceCopyLocalPaths)" Condition="'%(Extension)' == '.dll' and '%(Filename)' != 'System.Memory' and '%(Filename)' != 'System.Runtime.CompilerServices.Unsafe'" LogicalName="deps/%(Filename)%(Extension)" />
-    </ItemGroup>
-  </Target>
   <ItemGroup>
     <Publicize Include="assembly_valheim" />
     <Publicize Include="assembly_utils" />
@@ -53,7 +47,7 @@
     <Reference Include="steamworks"><HintPath>..\libs\valheim\com.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="WebsocketSharp"><HintPath>..\libs\websocket-sharp.dll</HintPath></Reference>
     <Reference Include="System.IO.Compression" />
-    <!-- lossless WebP tiles (Apache-2.0); embedded in MuninMap.dll with its helper DLLs (EmbedDeps) -->
+    <!-- lossless WebP tiles (Apache-2.0); merged into MuninMap.dll with its helper DLLs (ILRepack.targets) -->
     <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
   </ItemGroup>
 </Project>

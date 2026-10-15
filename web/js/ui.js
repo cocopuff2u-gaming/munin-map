@@ -115,6 +115,14 @@ export class Sidebar {
       world.append(style, keyEl);
       if (S.mapStyle === 'biomes') apply();
     }
+    if (this.app.altBiomes) {
+      // the game's biome variants, striped in a colour each, with a key of the ones this world has
+      const keyEl = el('<div class="biome-key" hidden></div>');
+      const A = this.app.altBiomes;
+      A.onKey = (k) => { keyEl.replaceChildren(...k.map(([n, c]) => el(`<span><i style="background:${c}"></i>${escape(n)}</span>`))); };
+      world.append(row(BIOME_SVG, 'Alt biomes', 'Biome variants like Ruin Black Forest, striped in their biome colour', S.altBiomes, (v) => { A.setOn(v); keyEl.hidden = !v; S.set('altBiomes', v); }), keyEl);
+      if (S.altBiomes) { A.setOn(true); keyEl.hidden = false; }
+    }
     if (this.app.mist) {
       world.append(row(MIST_SVG, 'Mistlands mist', 'Cleared by Wisplights, Dvergr lanterns and mist torches', S.mist, (v) => { this.app.mist.setOn(v); S.set('mist', v); }));
       this.app.mist.setOn(S.mist);
@@ -397,10 +405,24 @@ export class Sidebar {
     p.append(el(`<h3>Players <span class="count">${ps.length}</span></h3>`));
     if (!ps.length) p.append(el('<div class="empty">Nobody has played since the map was installed.</div>'));
     else {
-      const rows = ps.map((pl) => `<tr class="${pl.online ? 'on' : ''}" data-x="${pl.lastX ?? ''}" data-z="${pl.lastZ ?? ''}">
+      // sorted by the column clicked (again: the other way round), remembered in this browser
+      const [sk, sdir] = this.playerSort();
+      const val = (pl) => sk === 'name' ? (pl.name || '').toLowerCase() : sk === 'seen' ? (pl.online ? '~' : pl.lastSeen || '') : (pl[sk] || 0);
+      const sorted = ps.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * sdir; });
+      const rows = sorted.map((pl) => `<tr class="${pl.online ? 'on' : ''}" data-x="${pl.lastX ?? ''}" data-z="${pl.lastZ ?? ''}">
         <td>${escape(pl.name)}</td><td class="num">${fmtDuration(pl.playtime)}</td><td class="num">${pl.deaths}</td>
         <td class="num">${fmtDist(pl.distance)}</td><td class="num">${(pl.built || 0).toLocaleString()}</td><td class="num" title="${escape(pl.lastSeen)}">${pl.online ? 'now' : fmtAgo(pl.lastSeen).replace(' ago', '').replace('just now', 'now')}</td></tr>`).join('');
-      const table = el(`<div style="overflow:auto"><table class="stats"><thead><tr><th>Name</th><th class="num" title="Play time since the map first saw them">Played</th><th class="num" title="Deaths">Died</th><th class="num" title="Distance walked">Walked</th><th class="num" title="Everything they ever built that still stands in this world, from before the map was installed too">Built</th><th class="num" title="Last seen">Seen</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+      const table = el(`<div style="overflow:auto"><table class="stats"><thead><tr><th data-sort="name">Name</th><th class="num" data-sort="playtime" title="Play time since the map first saw them">Played</th><th class="num" data-sort="deaths" title="Deaths">Died</th><th class="num" data-sort="distance" title="Distance walked">Walked</th><th class="num" data-sort="built" title="Everything they ever built that still stands in this world, from before the map was installed too">Built</th><th class="num" data-sort="seen" title="Last seen">Seen</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+      for (const th of table.querySelectorAll('th[data-sort]')) {
+        const k = th.dataset.sort;
+        if (k === sk) th.textContent += sdir < 0 ? ' ▾' : ' ▴';
+        th.addEventListener('click', () => {
+          const box = [p, p.parentElement], ys = box.map((b) => b && b.scrollTop);   // stay where the table is
+          this.setPlayerSort(k, k === sk ? -sdir : k === 'name' ? 1 : -1);
+          this.renderStats(statsStore.data);
+          box.forEach((b, i) => { if (b) b.scrollTop = ys[i]; });
+        });
+      }
       for (const tr of table.querySelectorAll('tbody tr'))
         if (tr.dataset.x) { tr.style.cursor = 'pointer'; tr.addEventListener('click', () => this.app.goTo(+tr.dataset.x, +tr.dataset.z, 6)); }
       p.append(table);
@@ -548,6 +570,14 @@ export class Sidebar {
     if (!img) return `<span class="ico">${iconSvg(name, color)}</span>`;
     return `<span class="ico game${bare ? ' bare' : ''}" style="--ring:${color || '#c8cdd6'}"><img src="${img}" alt=""></span>`;
   }
+
+  // the stats panel's player table order: [column, 1 up or -1 down]; play time, most first, by default
+  playerSort() {
+    if (!this.pSort) { try { this.pSort = JSON.parse(localStorage.getItem('munin-player-sort')); } catch (e) { /* the default */ } }
+    if (!Array.isArray(this.pSort) || this.pSort.length !== 2) this.pSort = ['playtime', -1];
+    return this.pSort;
+  }
+  setPlayerSort(k, dir) { this.pSort = [k, dir]; try { localStorage.setItem('munin-player-sort', JSON.stringify(this.pSort)); } catch (e) { /* this visit only */ } }
 
   setLogKey(k) { try { if (k) localStorage.setItem('munin-admin-key', k); else localStorage.removeItem('munin-admin-key'); } catch (e) { /* this visit only */ } this.logKey = k; }
   getLogKey() { if (this.logKey === undefined) { try { this.logKey = localStorage.getItem('munin-admin-key') || ''; } catch (e) { this.logKey = ''; } } return this.logKey; }
@@ -699,7 +729,8 @@ function modifierText(name, val) {
   const label = MODIFIERS[name] || name.replace(/_/g, ' ');
   if (!val) return [label, name];
   const n = Number(val);
-  const shown = Number.isFinite(n) && name.endsWith('rate') || ['playerdamage', 'enemydamage', 'enemyspeedsize'].includes(name) ? `${n}%` : val;
+  // a scale on the game's normal amount (skill loss 15: 15% of what a death normally costs), not a share of the whole
+  const shown = Number.isFinite(n) && name.endsWith('rate') || ['playerdamage', 'enemydamage', 'enemyspeedsize'].includes(name) ? `${n}% of normal` : val;
   return [`${label}: ${shown}`, `${name} ${val}`];
 }
 

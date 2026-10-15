@@ -318,10 +318,39 @@ void main() {
   float k = 1.0;
   for (int i = 0; i < 16; i++) {
     if (i >= u_nwisp) break;
-    float r = max(u_wisp[i].z, 28.0 * u_mpp);   // never smaller than a clearing you can see round the marker
+    float r = u_wisp[i].z;   // the wisp's own range in metres, the same at every zoom
     k *= smoothstep(r * 0.5, r + 2.0 * u_mpp, distance(v_w, u_wisp[i].xy));
   }
   o = c * k;
+}`;
+
+// The game's alt biomes (its biome variants, layers/ground.js AltBiomeGL): diagonal stripes over
+// the server's biome grid (data/biomes.grid, values from u_base up) in their biome's colour (u_lut:
+// a colour per grid value), a steady width on screen at any zoom, soft edges from the four nearest cells.
+export const ALT_COLOURS = { Meadows: '#f2f25a', 'Black Forest': '#3ce07a', Swamp: '#ff6a3d', Mountain: '#4cc3ff',
+  Plains: '#ffb020', Mistlands: '#c79cff', Ashlands: '#ff5ca8', 'Deep North': '#5af2e0' };
+const ALT_FS = `#version 300 es
+precision highp float;
+in vec2 v_w;
+uniform sampler2D u_grid, u_lut;
+uniform float u_half, u_mpp, u_base, u_alpha;
+out vec4 o;
+float idAt(ivec2 c) { c = clamp(c, ivec2(0), ivec2(1023)); return floor(texelFetch(u_grid, c, 0).r * 255.0 + 0.5); }
+void main() {
+  vec2 g = vec2(v_w.x / (2.0 * u_half) + 0.5, 0.5 - v_w.y / (2.0 * u_half)) * 1024.0 - 0.5;
+  ivec2 c0 = ivec2(floor(g)); vec2 f = fract(g);
+  float a = idAt(c0), b = idAt(c0 + ivec2(1, 0)), c = idAt(c0 + ivec2(0, 1)), d = idAt(c0 + ivec2(1, 1));
+  float m = mix(mix(step(u_base, a), step(u_base, b), f.x), mix(step(u_base, c), step(u_base, d), f.x), f.y);
+  float cov = smoothstep(0.3, 0.7, m);
+  if (cov <= 0.0) discard;
+  float id = f.x < 0.5 ? (f.y < 0.5 ? a : c) : (f.y < 0.5 ? b : d);   // the nearest cell's variant
+  if (id < u_base) id = max(max(a, b), max(c, d));
+  vec3 col = texelFetch(u_lut, ivec2(int(id), 0), 0).rgb;
+  float period = max(14.0 * u_mpp, 18.0);   // ~14 px apart on screen, never closer than 18 m
+  float s = abs(fract((v_w.x + v_w.y) / period) - 0.5) * 2.0;
+  float stripe = 1.0 - smoothstep(0.45, 0.45 + 3.0 * u_mpp / period, s);
+  float alpha = (0.18 + 0.62 * stripe) * cov * u_alpha;
+  o = vec4(col * alpha, alpha);
 }`;
 
 // The 256 m chunk grid and the distance rings around the spawn, worked out per pixel over the
@@ -496,6 +525,7 @@ export class ShapesCanvas {
     try { this.edgeSpace = compile(gl, EDGE_VS, EDGE_SPACE_FS); } catch (e) { this.edgeSpace = null; }
     try { this.cloudBake = compile(gl, CLOUD_BAKE_VS, CLOUD_BAKE_FS); } catch (e) { this.cloudBake = null; }
     this.guide = compile(gl, EDGE_VS, GUIDE_FS);
+    try { this.alt = compile(gl, EDGE_VS, ALT_FS); } catch (e) { this.alt = null; }
     try { this.mist = compile(gl, EDGE_VS, MIST_FS); this.mistBake = compile(gl, CLOUD_BAKE_VS, MIST_BAKE_FS); } catch (e) { this.mist = this.mistBake = null; }
     this.line = compile(gl, LINE_VS, LINE_FS);
     this.ring = compile(gl, RING_VS, RING_FS);
@@ -713,7 +743,12 @@ export class ShapesCanvas {
   shiftStill(gl, r, v, sets) {
     const d = this.dpr, W = r.w, H = r.h;
     if (!r.view || d % 1 || !r.min) return false;   // (a fractional screen scale can't copy exactly: draw it all)
-    const sx = (r.min.x - this.min.x) * d, sy = (r.min.y - this.min.y) * d;   // where the old picture lands, device pixels (y down)
+    // where the old picture lands, device pixels (y down), from where the two views are in the
+    // world: a glide (smoothzoom.js glideTo, a follow) moves the map without moving the map pane,
+    // so the canvas's layer position (min) stays put while the world under it doesn't
+    const fx = (r.view.x - v.x) * v.ppm * d, fy = (v.z - r.view.z) * v.ppm * d;
+    const sx = Math.round(fx), sy = Math.round(fy);
+    if (Math.abs(fx - sx) > 0.01 || Math.abs(fy - sy) > 0.01) return false;   // not whole pixels: draw it all
     if (Math.abs(sx) >= W * 0.6 || Math.abs(sy) >= H * 0.6) return false;
     const n = r.other || (r.other = { w: 0, h: 0 });
     if (n.w !== W || n.h !== H) renderTarget(gl, n, W, H);

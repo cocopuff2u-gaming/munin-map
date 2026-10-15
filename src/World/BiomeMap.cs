@@ -16,10 +16,15 @@ namespace MuninMap.World
     internal static class BiomeMap
     {
         public const int SIZE = 2048;                      // ~10.5 m a cell
-        private const int FORMAT = 1;
+        private const int FORMAT = 2;   // 2: + the alt biomes (biomes.alt, biomes.altnames)
         public static volatile byte[] Png;                  // the whole world, null until ready
         private static byte[] cells;                        // index into Order per cell (255: none), for masking by the fog
         private static byte[] mist;                         // GRID x GRID, how thick the Mistlands mist is (0..255)
+        // The game's alt biomes (its biome variants: "Ruin Black Forest", "Root Black Forest"...):
+        // per cell, 0 or 1 + an index into altNames, the game's own name for that variant
+        private static byte[] alt;
+        private static List<string> altNames = new List<string>();
+        public const int ALT_BASE = 32;                     // biomes.grid: values from here are alt biomes
         private static byte[] mistPng; private static int mistAt = -1; private static DateTime mistTime;
         private static byte[] masked; private static int maskedAt = -1; private static DateTime maskedTime;
         private static readonly object maskLock = new object();
@@ -61,7 +66,12 @@ namespace MuninMap.World
                         byte[] c = File.Exists(raw) ? File.ReadAllBytes(raw) : null;
                         string mp = Path.Combine(Path.GetDirectoryName(path), "biomes.mist");
                         byte[] m = File.Exists(mp) ? File.ReadAllBytes(mp) : null;
-                        if (c != null && c.Length == SIZE * SIZE && m != null && m.Length == GRID * GRID) { cells = c; mist = m; Png = File.ReadAllBytes(path); Warm(); return; }
+                        string ap = Path.Combine(Path.GetDirectoryName(path), "biomes.alt"), an = Path.Combine(Path.GetDirectoryName(path), "biomes.altnames");
+                        byte[] a = File.Exists(ap) ? File.ReadAllBytes(ap) : null;
+                        if (c != null && c.Length == SIZE * SIZE && m != null && m.Length == GRID * GRID && a != null && a.Length == SIZE * SIZE && File.Exists(an))
+                        {
+                            cells = c; mist = m; alt = a; altNames = new List<string>(File.ReadAllLines(an)); Png = File.ReadAllBytes(path); Warm(); return;
+                        }
                     }
                 }
             }
@@ -72,7 +82,14 @@ namespace MuninMap.World
         private static IEnumerator Build(string path, string meta)
         {
             yield return new WaitForSeconds(5f);
+            // the alt biomes are worked out by the game after the world loads: wait for them (a while at most)
+            for (int i = 0; i < 120 && !AltReady(); i++) yield return new WaitForSeconds(1f);
+            bool altOk = AltReady();
+            if (!altOk) ZLog.LogWarning("MuninMap: the game's alt biomes were not ready: the biome map is built without them");
             var started = Time.realtimeSinceStartup;
+            var alt = new byte[SIZE * SIZE];
+            var altNames = new List<string>();
+            var altOf = new Dictionary<BiomeSector, byte>();   // a sector's alt index + 1 (0: none)
             var cells = new byte[SIZE * SIZE];   // index into Order (255: none)
             var mist = new byte[GRID * GRID];
             int mf = SIZE / GRID;
@@ -89,6 +106,8 @@ namespace MuninMap.World
                     if (wx * wx + wz * wz < 10500f * 10500f)
                         try { b = (int)WorldGenerator.instance.GetBiome(wx, wz); } catch { }
                     cells[row * SIZE + col] = index.TryGetValue(b, out byte k) ? k : (byte)255;
+                    if (altOk && b != Palette.B_NONE && b != Palette.B_OCEAN)
+                        try { alt[row * SIZE + col] = AltOf(WorldGenerator.instance.GetBiomeSector(wx, wz), altOf, altNames); } catch { }
                     if (b == Palette.B_MISTLANDS && row % mf == mf / 2 && col % mf == mf / 2)
                         try { mist[(row / mf) * GRID + col / mf] = MistAt(wx, wz); } catch { }
                 }
@@ -108,6 +127,8 @@ namespace MuninMap.World
                 File.WriteAllBytes(path, png);
                 File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(path), "biomes.cells"), cells);   // the grid itself, for masking by the fog
                 File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(path), "biomes.mist"), mist);
+                File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(path), "biomes.alt"), alt);
+                File.WriteAllLines(Path.Combine(Path.GetDirectoryName(path), "biomes.altnames"), altNames);
                 var sb = new System.Text.StringBuilder();
                 sb.Append(FORMAT).Append(' ').Append(SIZE).Append(' ').Append(TileMath.WORLD_SIZE).Append('\n');
                 foreach (var l in found) sb.Append(l.name).Append('\t').Append(l.x.ToString("F0")).Append('\t').Append(l.z.ToString("F0")).Append('\t').Append(l.area.ToString("F0")).Append('\n');
@@ -117,9 +138,47 @@ namespace MuninMap.World
             labels = found;
             BiomeMap.cells = cells;
             BiomeMap.mist = mist;
+            BiomeMap.alt = alt; BiomeMap.altNames = altNames;
             Png = png;
             Warm();
-            ZLog.Log($"MuninMap: biome map built ({SIZE}x{SIZE}, {found.Count} named regions) in {Time.realtimeSinceStartup - started:F1} s");
+            ZLog.Log($"MuninMap: biome map built ({SIZE}x{SIZE}, {found.Count} named regions, {altNames.Count} kinds of alt biome: {string.Join(", ", altNames)}) in {Time.realtimeSinceStartup - started:F1} s");
+        }
+
+        private static bool AltReady()
+        {
+            try { var d = WorldGenerator.instance?.m_world?.m_biomeData; return d != null && d.IsReady; } catch { return false; }
+        }
+
+        // a sector's alt biome, numbered by its name (sectors with the same variants share one)
+        private static byte AltOf(BiomeSector sec, Dictionary<BiomeSector, byte> altOf, List<string> names)
+        {
+            if (sec == null || sec.AltBiomes == null || sec.AltBiomes.Count == 0) return 0;
+            if (altOf.TryGetValue(sec, out byte id)) return id;
+            string name = AltName(sec);
+            int i = names.IndexOf(name);
+            if (i < 0 && names.Count < 255 - ALT_BASE) { names.Add(name); i = names.Count - 1; }
+            id = i < 0 ? (byte)0 : (byte)(i + 1);
+            altOf[sec] = id;
+            return id;
+        }
+
+        // the variant's name as the game's world tools list it ("Ruin Black Forest"; "Bones" gets its
+        // biome: "Bones Swamp"), several on one sector joined: "Root Black Forest, Ruin Black Forest".
+        // (The game's own GetName() adds words a dedicated server has no text for, so it gives just
+        // the biome there.)
+        private static string AltName(BiomeSector sec)
+        {
+            string biome = Palette.BiomeName((int)sec.Biome);
+            var parts = new List<string>();
+            foreach (var a in sec.AltBiomes)
+            {
+                string n = (a.m_name ?? "").Trim();
+                if (n.Length == 0) continue;
+                if (n.IndexOf(biome, StringComparison.OrdinalIgnoreCase) < 0) n += " " + biome;
+                if (!parts.Contains(n)) parts.Add(n);
+            }
+            parts.Sort(StringComparer.OrdinalIgnoreCase);
+            return parts.Count > 0 ? string.Join(", ", parts.ToArray()) : biome;
         }
 
         // the big regions of each biome (not the ocean): connected cells on a coarser grid, each named at
@@ -199,7 +258,7 @@ namespace MuninMap.World
         }
 
         // The same, as a grid of biome numbers for the page's "biome under the cursor": GRID x GRID
-        // bytes, row 0 the north edge, each Order index + 1 (0: unexplored or off the world). The
+        // bytes, row 0 the north edge, each Order index + 1, or ALT_BASE + an alt biome (0: unexplored or off the world). The
         // page reads it as is (decoding the picture there meant a canvas read-back, slow in some
         // browsers); it compresses to a few tens of KB.
         public const int GRID = 1024;
@@ -222,7 +281,8 @@ namespace MuninMap.World
                     {
                         int cx = x * f + f / 2, k = cells[cy * SIZE + cx];
                         if (k == 255 || (!MuninConfig.REVEAL_ALL && !Fog.IsExplored(-half + (cx + 0.5f) * span, wz))) continue;
-                        g[y * GRID + x] = (byte)(k + 1);
+                        int a = alt != null ? alt[cy * SIZE + cx] : 0;
+                        g[y * GRID + x] = a > 0 ? (byte)(ALT_BASE + a - 1) : (byte)(k + 1);
                     }
                 }
                 grid = g; gridAt = now; gridTime = DateTime.UtcNow;
@@ -314,6 +374,9 @@ namespace MuninMap.World
                 if (!MuninConfig.REVEAL_ALL && !Fog.IsExplored(l.x, l.z)) continue;
                 j.BeginObject().Prop("name", l.name).Prop("x", l.x, 0).Prop("z", l.z, 0).Prop("area", l.area, 0).End();
             }
+            // the alt biomes by name: biomes.grid value ALT_BASE + i is alt[i]
+            j.End().Prop("altBase", ALT_BASE).Key("alt").BeginArray();
+            foreach (var n in altNames) j.Value(n);
             j.End().Key("colours").BeginObject();
             foreach (int b in Order) { var c = Colour(b); j.Prop(Palette.BiomeName(b), $"#{c.r:x2}{c.g:x2}{c.b:x2}"); }
             j.End().End();

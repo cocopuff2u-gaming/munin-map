@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- one DLL: the libraries Munin Map uses (websocket-sharp, ImageSharp and the System DLLs it
+     needs) are merged into MuninMap.dll at build time and made internal, so they are part of the
+     mod's own code and can't clash with another mod's copy. The game has its own System.Memory
+     and Unsafe, so those stay out. -->
+<Project>
+  <Target Name="ILRepacker" AfterTargets="Build">
+    <ItemGroup>
+      <InputAssemblies Include="$(OutputPath)$(AssemblyName).dll" />
+      <InputAssemblies Include="$(OutputPath)websocket-sharp.dll" />
+      <InputAssemblies Include="$(OutputPath)SixLabors.ImageSharp.dll" />
+      <InputAssemblies Include="$(OutputPath)System.Buffers.dll" />
+      <InputAssemblies Include="$(OutputPath)System.Numerics.Vectors.dll" />
+      <InputAssemblies Include="$(OutputPath)System.Text.Encoding.CodePages.dll" />
+      <LibraryPath Include="$(OutputPath)" />
+      <LibraryPath Include="..\libs\valheim" />
+      <LibraryPath Include="..\libs\BepInEx\core" />
+    </ItemGroup>
+    <ILRepack Parallel="true" Internalize="true" DebugInfo="true" LibraryPath="@(LibraryPath)"
+              InputAssemblies="@(InputAssemblies)" TargetKind="Dll" LogFile="$(OutputPath)ilrepack.log"
+              OutputFile="$(OutputPath)$(AssemblyName).dll" />
+  </Target>
+</Project>

@@ -401,6 +401,25 @@ namespace MuninMap
                     string id = MuninMap.PlacePin(owner, f.TryGetValue("type", out object to) ? to as string : "dot", name, new Vector3(x, 0, z), f.TryGetValue("text", out object txo) ? txo as string : "");
                     return Text(e, "{\"id\":\"" + id + "\",\"owner\":\"" + owner + "\"}", "application/json", nocache: true);
                 }
+                case "/api/ping":
+                {
+                    // ping the map from the web page, shown in game (WebPing). Body: JSON {x,z,name}
+                    if (!post) return false;
+                    if (!WEB_PINGS && !Authorized(req)) return Text(e, "{\"error\":\"web pings are off\"}", "application/json", nocache: true, status: 403);
+                    string body;
+                    using (var sr = new StreamReader(req.InputStream, Encoding.UTF8)) body = sr.ReadToEnd();
+                    Dictionary<string, object> f;
+                    try { f = JsonParser.Parse(body) as Dictionary<string, object>; } catch { f = null; }
+                    if (f == null || !f.TryGetValue("x", out object xo) || !f.TryGetValue("z", out object zo)) return Text(e, "{\"error\":\"need x and z\"}", "application/json", nocache: true, status: 400);
+                    float x = Convert.ToSingle(xo, CultureInfo.InvariantCulture), z = Convert.ToSingle(zo, CultureInfo.InvariantCulture);
+                    float half = Tiles.TileMath.WORLD_SIZE / 2f;
+                    if (float.IsNaN(x) || float.IsNaN(z) || Mathf.Abs(x) > half || Mathf.Abs(z) > half) return Text(e, "{\"error\":\"off the map\"}", "application/json", nocache: true, status: 400);
+                    string name = MuninMap.CleanPinText(f.TryGetValue("name", out object no) ? no as string : null, 16);
+                    if (name.Length == 0) name = "Someone";
+                    int wait = WebPing.Try(req.RemoteEndPoint?.Address?.ToString() ?? "?", x, z, name);
+                    if (wait > 0) return Text(e, "{\"error\":\"wait\",\"wait\":" + wait + "}", "application/json", nocache: true, status: 429);
+                    return Text(e, "{\"ok\":true}", "application/json", nocache: true);
+                }
                 case "/api/base":
                 {
                     // rename or hide an auto-detected base. Body: JSON {x,z,label} or {x,z,hidden:true};

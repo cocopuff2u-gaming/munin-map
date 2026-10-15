@@ -18,7 +18,7 @@ namespace MuninMap
     {
         internal enum Kind { None, Boat, Cart }
 
-        private struct Entry { public Kind kind; public string name; public float x, z; }
+        private struct Entry { public ZDOID id; public Kind kind; public string name; public float x, z; }
 
         private static readonly Dictionary<int, Kind> kindCache = new Dictionary<int, Kind>();
         private static readonly Dictionary<int, string> nameCache = new Dictionary<int, string>();
@@ -49,13 +49,60 @@ namespace MuninMap
 
         private static readonly HashSet<ZDOID> seen = new HashSet<ZDOID>();   // a boat can be met twice in a sweep (WorldSweep)
 
-        public static void Begin() { found.Clear(); seen.Clear(); }
+        private static bool sweeping;   // found is being filled (Begin to Finish)
+        private static bool swept;      // a sweep has finished: found is the world's list
+        private static readonly HashSet<ZDOID> arrived = new HashSet<ZDOID>();   // new since the sweep, for Refresh
+
+        // A boat or cart a player just built: every object a player's game sends the server passes
+        // ZDOMan.AddIfPortal (RPC_ZDOData, main thread), so a look at its prefab there (one cached
+        // lookup) catches new ones for the next Refresh instead of the next sweep.
+        [HarmonyLib.HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddIfPortal))]
+        private static class ArrivePatch
+        {
+            private static void Postfix(ZDO zdo, int prefabHash)
+            {
+                if (!swept || sweeping || prefabHash == 0 || zdo == null || ZNetScene.instance == null) return;
+                if (Classify(prefabHash) == Kind.None || seen.Contains(zdo.m_uid)) return;
+                if (arrived.Count < 256) arrived.Add(zdo.m_uid);
+            }
+        }
+        public static void Begin() { found.Clear(); seen.Clear(); arrived.Clear(); sweeping = true; }
+
+        // Between sweeps (World.Markers.LiveLoop): where the boats and carts the last sweep found are
+        // now, and which are gone. True when any moved (more than a couple of metres) or went.
+        public static bool Refresh()
+        {
+            if (!swept || sweeping || ZDOMan.instance == null) return false;
+            bool changed = false;
+            foreach (var id in arrived)
+            {
+                var z = ZDOMan.instance.GetZDO(id);
+                if (z == null || !z.IsValid() || z.GetLong(ZDOVars.s_creator, 0L) == 0L) continue;   // built by a player, like the sweep counts them
+                int pref = z.GetPrefab();
+                var kind = Classify(pref);
+                if (kind == Kind.None) continue;
+                Observe(id, pref, kind, z.GetPosition());
+                changed = true;
+            }
+            arrived.Clear();
+            for (int i = found.Count - 1; i >= 0; i--)
+            {
+                var e = found[i];
+                var z = ZDOMan.instance.GetZDO(e.id);
+                if (z == null || !z.IsValid()) { seen.Remove(e.id); found.RemoveAt(i); changed = true; continue; }
+                var p = z.GetPosition();
+                if (Mathf.Abs(p.x - e.x) < 2f && Mathf.Abs(p.z - e.z) < 2f) continue;
+                e.x = p.x; e.z = p.z; found[i] = e; changed = true;
+            }
+            if (changed) Publish();
+            return changed;
+        }
 
         public static void Observe(ZDOID id, int prefabHash, Kind kind, Vector3 pos)
         {
             if (!seen.Add(id)) return;
             nameCache.TryGetValue(prefabHash, out string name);
-            found.Add(new Entry { kind = kind, name = name ?? "", x = pos.x, z = pos.z });
+            found.Add(new Entry { id = id, kind = kind, name = name ?? "", x = pos.x, z = pos.z });
         }
 
         // The structures layer is drawn under the fog mask by the page, so builds in
@@ -64,7 +111,9 @@ namespace MuninMap
         // not reported at all, rather than merely not drawn.
         private static bool Explored(float x, float z) => MuninConfig.REVEAL_ALL || World.Fog.IsExplored(x, z);
 
-        public static void Finish()
+        public static void Finish() { sweeping = false; swept = true; Publish(); }
+
+        private static void Publish()
         {
             int boats = 0, carts = 0;
             var sb = new StringBuilder();

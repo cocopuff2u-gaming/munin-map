@@ -18,6 +18,7 @@ namespace MuninMap
         public static float SAVE_FOG_TEXTURE_INTERVAL = 30f;
         public static int MAX_PINS_PER_USER = 50;
         public static bool WEB_PINS = true;
+        public static bool WEB_PINGS = true;
         public static bool WEB_EDIT_BASES = true;
         public static int BASE_MIN_PIECES = 30;
         public static int BASE_MIN_PER_CELL = 6;
@@ -127,6 +128,10 @@ namespace MuninMap
                 MuninConfig.WEB_PINS,
                 "Let people place and remove their own pins from the web page (right click or long press the map). Chat pins (!pin) only reach the server while two or more players are online, so this is the way that always works.").Value;
 
+            WEB_PINGS = config.Bind("User", "web_pings",
+                MuninConfig.WEB_PINGS,
+                "Let people ping the map from the web page (middle click), shown in game like a player's ping, once every 10 seconds each.").Value;
+
             WEB_EDIT_BASES = config.Bind("User", "web_edit_bases",
                 MuninConfig.WEB_EDIT_BASES,
                 "Let people rename or hide the auto-detected player bases from the web page (click a base marker). Off: only the token holder can, through the API.").Value;
@@ -145,7 +150,7 @@ namespace MuninMap
 
             TILE_WEBP = config.Bind("Server", "tile_webp",
                 MuninConfig.TILE_WEBP,
-                "Store map and overlay tiles as lossless WebP: same picture, 25-35% less upload per tile. New tiles are served as PNG at once and converted in the background. Browsers without WebP still get PNG. ImageSharp is built into MuninMap.dll.").Value;
+                "Store map and overlay tiles as lossless WebP: same picture, 25-35% less upload per tile. New tiles are served as PNG at once and converted in the background. Browsers without WebP still get PNG. ImageSharp is merged into MuninMap.dll.").Value;
 
             SERVER_PORT = config.Bind("Server", "server_port",
                 MuninConfig.SERVER_PORT,
@@ -344,6 +349,7 @@ namespace MuninMap
             config["explore_radius"] = EXPLORE_RADIUS;
             config["max_messages"] = MAX_MESSAGES;
             config["web_pins"] = WEB_PINS;
+            config["web_pings"] = WEB_PINGS;
             config["web_edit_bases"] = WEB_EDIT_BASES;
             config["max_pins_per_user"] = MAX_PINS_PER_USER;
             config["always_map"] = ALWAYS_MAP;

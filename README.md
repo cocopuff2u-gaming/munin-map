@@ -16,10 +16,10 @@ The 2D map, with players, buildings, boats and carts. One click switches to 3D:
 
 ![The same kind of view in 3D: a player base by the sea](https://raw.githubusercontent.com/cocopuff2u-gaming/munin-map/main/docs/screenshots/hero-3d.jpg)
 
-### Based on Valheim WebMap, with a lot more
+### What's on it
 
-Munin Map is based on [Valheim WebMap](#credits), with a lot more tweaks
-and a lot more information on the map:
+Munin Map shows the whole world as your players explore it, live, and keeps
+the server light while it does:
 
 * **Smoother and lighter**: the map is drawn on the graphics card, so dragging
   and zooming stay smooth. Tiles are smaller (WebP), so the server uploads far
@@ -35,8 +35,6 @@ and a lot more information on the map:
 * **More control**: switch each kind of marker, tree and ruin on or off, rename
   bases from the page, and read the server log from the page.
 
-> **Coming from Valheim WebMap?** Your map, settings and markers move over by
-> themselves. See [Moving from Valheim WebMap](#moving-from-valheim-webmap).
 
 ---
 
@@ -113,7 +111,7 @@ with the zip. It puts the files in the right place.
 Set `BEPINEX=true`, put the `MuninMap` folder in
 `/opt/valheim/bepinex/BepInEx/plugins/`, and publish the port with
 `-p 3000:3000/tcp`. There's a working example in
-[`tools/docker-compose.test.yml`](tools/docker-compose.test.yml).
+[`tools/docker-compose.test.yml`](https://github.com/cocopuff2u-gaming/munin-map/blob/main/tools/docker-compose.test.yml).
 
 ### The first start
 
@@ -129,35 +127,6 @@ don't need to do anything, and the server stays playable.
 
 After that, later starts are quick: everything is kept in
 `BepInEx/plugins/MuninMap/map_data`.
-
----
-
-## Moving from Valheim WebMap
-
-Munin Map replaces Valheim WebMap. **Don't run both**; if Munin Map sees the
-old `WebMap.dll` it stays switched off and says so in the log.
-
-1. **Stop the server.**
-2. **Remove the old mod's DLL**: delete `BepInEx/plugins/WebMap/WebMap.dll`.
-   Leave the rest of that folder for now; your map is in it. With a mod
-   manager, *disable* Valheim WebMap rather than uninstalling it.
-3. **Install Munin Map** as above.
-4. **Start the server.** Munin Map moves everything over by itself, once:
-   * your settings (`com.valheimwebmap.server.cfg` is copied to `com.cocopuff2u.muninmap.cfg`)
-   * your whole map: explored area, tiles, 3D models, base names, `markers.json`
-   * your `announce.token`
-
-   The log says:
-
-   ```
-   MuninMap: settings taken over from .../com.valheimwebmap.server.cfg
-   MuninMap: map moved over from .../plugins/WebMap
-   ```
-
-5. Once the map looks right, delete the old `BepInEx/plugins/WebMap` folder.
-
-Nothing is drawn again; the move takes a moment. Bookmarks and `#x,z,zoom`
-links to the old map keep working.
 
 ---
 
@@ -213,7 +182,7 @@ The ones people change most:
 | `web_edit_bases` | `true` | Let people rename or hide bases from the web page. |
 | `max_render_zoom` | `7` | Closest zoom drawn. `6` uses a quarter of the disk space. |
 
-Every setting is listed in [docs/ADVANCED.md](docs/ADVANCED.md#all-settings).
+Every setting is listed in [docs/ADVANCED.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/docs/ADVANCED.md#all-settings).
 
 ---
 
@@ -225,7 +194,7 @@ in it. That secret lets you:
 * **See the server's log** in the page: **Events**, then **Server log**, then enter the secret.
 * **Send a message** to everyone in game:
   `curl -X POST -H "X-Announce-Token: <secret>" -d "Hello Vikings" http://localhost:3000/announce`
-* **Use the admin API calls**: listed in [docs/ADVANCED.md](docs/ADVANCED.md#http-api).
+* **Use the admin API calls**: listed in [docs/ADVANCED.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/docs/ADVANCED.md#http-api).
 
 ---
 
@@ -235,7 +204,7 @@ in it. That secret lets you:
 |---|---|
 | The page doesn't open | Check that port 3000 (TCP) is open in the firewall, forwarded on the router, and allowed by your host. Check the log for `HTTP server listening on port 3000`. |
 | Nothing in the log about Munin Map | BepInEx isn't running. Check that `BepInEx/LogOutput.log` exists and the server starts through BepInEx. |
-| `Valheim WebMap is still installed` in the log | Delete `WebMap.dll` (see [Moving from Valheim WebMap](#moving-from-valheim-webmap)). |
+| `Valheim WebMap is installed too` in the log | Switch one of the two off (see [Coming from Valheim WebMap](#coming-from-valheim-webmap)). |
 | The map is blurry in places | It's still being drawn. Watch the counter in the bottom-left corner. |
 | Boxes instead of models in 3D | The models are still being read from the game files. Give it a few minutes on the first start. |
 | The page looks wrong after an update | Press Ctrl+Shift+R once. If you use Cloudflare, purge its cache. |
@@ -246,14 +215,37 @@ and attach `BepInEx/LogOutput.log`.
 
 ---
 
+## Coming from Valheim WebMap
+
+Munin Map can pick up where a Valheim WebMap install left off. It never
+touches the other mod's folder; you move things over yourself:
+
+1. **Stop the server.**
+2. **Switch Valheim WebMap off** (remove its DLL, or disable it in your mod
+   manager). Both serve a map on the same port, so only one should run.
+3. **Move your map**: move the `map_data` folder from Valheim WebMap's plugin
+   folder into `BepInEx/plugins/MuninMap/`. Copy `announce.token` too if you use one.
+4. **Install Munin Map** as above and **start the server.** Your settings are
+   taken over by themselves (`com.valheimwebmap.server.cfg` is copied to
+   `com.cocopuff2u.muninmap.cfg`), and the log says:
+
+   ```
+   MuninMap: settings taken over from .../com.valheimwebmap.server.cfg
+   ```
+
+Nothing is drawn again: explored area, tiles, 3D models, base names and
+`markers.json` are all in `map_data`. Bookmarks and `#x,z,zoom` links to the
+old map keep working. If you start Munin Map before moving the folder, the log
+says where the old map is.
+
 ## More
 
-* [docs/ADVANCED.md](docs/ADVANCED.md): every setting, your own markers,
+* [docs/ADVANCED.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/docs/ADVANCED.md): every setting, your own markers,
   the HTTP API, server load and disk use, building from source.
-* [docs/EXPORT.md](docs/EXPORT.md): exporting an area as a 3D scene for
+* [docs/EXPORT.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/docs/EXPORT.md): exporting an area as a 3D scene for
   Blender, Unreal, Unity or Godot.
-* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works inside.
-* [CHANGELOG.md](CHANGELOG.md): what changed in each version.
+* [docs/ARCHITECTURE.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/docs/ARCHITECTURE.md): how it works inside.
+* [CHANGELOG.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/CHANGELOG.md): what changed in each version.
 
 ## Credits
 
@@ -265,7 +257,7 @@ and its contributors. Thank you all.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). The libraries it ships with keep their own
+MIT. See [LICENSE](https://github.com/cocopuff2u-gaming/munin-map/blob/main/LICENSE). The libraries it ships with keep their own
 licences: Leaflet (BSD-2), three.js (MIT), websocket-sharp (MIT),
 SixLabors.ImageSharp (Apache-2.0) and three Microsoft System libraries (MIT),
-given in full in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+given in full in [THIRD-PARTY-NOTICES.md](https://github.com/cocopuff2u-gaming/munin-map/blob/main/THIRD-PARTY-NOTICES.md).

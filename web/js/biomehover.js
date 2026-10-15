@@ -29,6 +29,7 @@ export class BiomeHover {
       const grid = new Uint8Array(await r.arrayBuffer());
       if (grid.length !== N * N) return;
       this.grid = grid; this.names = ['', ...names]; this.size = d.world || 21504;
+      (d.alt || []).forEach((n, i) => { this.names[(d.altBase || 32) + i] = n; });   // the game's biome variants ("Ruin Black Forest")
     } catch (e) { /* no biome picture on this server: the slot stays empty */ }
     finally { this.loading = false; this.loadedAt = Date.now(); }
   }

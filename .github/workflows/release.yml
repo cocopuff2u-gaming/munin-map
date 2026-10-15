@@ -5,7 +5,7 @@
 #
 # The game assemblies come from the Valheim dedicated server, fetched with SteamCMD
 # (anonymous login is enough for app 896660) and cached between runs. Nothing from the
-# game ends up in the zip: only the mod's own DLL (websocket-sharp and ImageSharp inside it), the web app and the
+# game ends up in the zip: only the mod's own DLL (websocket-sharp and ImageSharp merged into it), the web app and the
 # helper scripts, exactly what build.sh packages locally.
 name: Build
 

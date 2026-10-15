@@ -16,7 +16,7 @@ namespace MuninMap.World
     // it, and that is a spoiler.
     internal static class Markers
     {
-        private struct Portal { public float x, y, z; public string tag; }
+        private struct Portal { public ZDOID id; public int prefab; public float x, y, z; public string tag; }
         private struct Tomb { public float x, y, z; public string owner; public long when; }
 
         private static List<Portal> portals = new List<Portal>();
@@ -230,7 +230,7 @@ namespace MuninMap.World
             {
                 string tag = "";
                 try { tag = zdo.GetString(hashPortalTag, "") ?? ""; } catch { }
-                buildingPortals.Add(new Portal { x = pos.x, y = pos.y, z = pos.z, tag = tag });
+                buildingPortals.Add(new Portal { id = zdo.m_uid, prefab = zdo.GetPrefab(), x = pos.x, y = pos.y, z = pos.z, tag = tag });
                 return true;
             }
             if (n.Equals("Player_tombstone", StringComparison.OrdinalIgnoreCase))
@@ -432,6 +432,62 @@ namespace MuninMap.World
                 json = built;
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: markers failed: " + e.Message); }
+        }
+
+        private static List<Structures.Base> bases;
+
+        // Between sweeps (every 15 s, main thread): portals placed, retagged or taken down and boats
+        // and carts that moved show without waiting for the next walk over the world. Portals come
+        // from the game's own list of them (ZDOMan.m_portalObjects, a few hundred at most), boats and
+        // carts are the ones the last sweep found looked up by id, and new ones as players' games send
+        // them (Vehicles.ArrivePatch). The markers are rebuilt only when something changed.
+        public static IEnumerator LiveLoop()
+        {
+            while (true)
+            {
+                yield return new WaitForSeconds(15f);
+                try
+                {
+                    bool p = RefreshPortals(), v = Vehicles.Refresh();
+                    if (p || v) { json = Build(); rev++; }
+                }
+                catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: live markers: " + e.Message); }
+            }
+        }
+
+        private static HashSet<int> gamePortals;
+        private static bool RefreshPortals()
+        {
+            if (buildingPortals != null || ZDOMan.instance == null || Game.instance == null) return false;   // mid-sweep: the sweep has them
+            if (gamePortals == null) gamePortals = new HashSet<int>(Game.instance.PortalPrefabHash);
+            var live = new Dictionary<ZDOID, ZDO>();
+            foreach (var l in ZDOMan.instance.m_portalObjects.Values)
+                foreach (var z in l) if (z != null && z.IsValid()) live[z.m_uid] = z;
+            bool changed = false;
+            var next = new List<Portal>(portals.Count + 4);
+            foreach (var p in portals)
+            {
+                if (!live.TryGetValue(p.id, out var z))
+                {
+                    if (gamePortals.Contains(p.prefab)) { changed = true; continue; }   // taken down
+                    next.Add(p);   // a portal the game doesn't list (a mod's): the sweep keeps it
+                    continue;
+                }
+                live.Remove(p.id);
+                var q = Read(z);
+                if (q.tag != p.tag || Mathf.Abs(q.x - p.x) > 0.5f || Mathf.Abs(q.z - p.z) > 0.5f) changed = true;
+                next.Add(q);
+            }
+            foreach (var z in live.Values) { next.Add(Read(z)); changed = true; }   // new since the sweep
+            if (changed) portals = next;
+            return changed;
+        }
+        private static Portal Read(ZDO z)
+        {
+            var pos = z.GetPosition();
+            string tag = "";
+            try { tag = z.GetString(hashPortalTag, "") ?? ""; } catch { }
+            return new Portal { id = z.m_uid, prefab = z.GetPrefab(), x = pos.x, y = pos.y, z = pos.z, tag = tag };
         }
 
         private static string Build()
@@ -660,7 +716,10 @@ namespace MuninMap.World
             j.BeginObject().Prop("id", "bases").Prop("label", "Player bases").Key("markers").BeginArray();
             try
             {
-                foreach (var b in Structures.ComputeBases(MuninConfig.BASE_MIN_PER_CELL, MuninConfig.BASE_MIN_PIECES))
+                // worked out from the sweep's buildings, so once a sweep: a rebuild between sweeps (a
+                // base renamed, a portal or boat moved) reuses them
+                if (slice || bases == null) bases = Structures.ComputeBases(MuninConfig.BASE_MIN_PER_CELL, MuninConfig.BASE_MIN_PIECES);
+                foreach (var b in bases)
                 {
                     if (!Visible(b.x, b.z)) continue;
                     var ov = FindOverride(b.x, b.z);

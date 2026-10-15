@@ -215,10 +215,17 @@ export class MarkerLayers {
     el.innerHTML = `<b>New pin</b><small>${Math.round(x)}, ${Math.round(z)}</small>
       <div class="row"><select name="type">${PIN_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select>
       <input name="text" maxlength="20" placeholder="Label (letters, numbers)" autocomplete="off"></div>
-      <div class="row"><input name="name" maxlength="16" placeholder="Your name" value="${escape(name)}" autocomplete="off"><button class="btn small" type="submit">Add pin</button></div>
+      <div class="row"><input name="name" maxlength="16" placeholder="Your name" value="${escape(name)}" autocomplete="off"><button class="btn small" type="submit">Add pin</button>${this.onPing ? '<button class="btn small" type="button" data-act="ping" title="Ping this spot in game">Ping</button>' : ''}</div>
       <small class="err" hidden></small>`;
     const popup = L.popup({ closeButton: true, autoPan: true, className: 'pin-form-popup' }).setLatLng(latlng).setContent(el).openOn(this.map);
     setTimeout(() => el.querySelector('[name=text]').focus(), 50);
+    el.querySelector('[data-act=ping]')?.addEventListener('click', () => {
+      const who = String(new FormData(el).get('name') || '').trim();
+      if (!who) { el.querySelector('[name=name]').focus(); return; }
+      try { localStorage.setItem('munin-pin-name', who); } catch (e) { /* no storage */ }
+      this.onPing(latlng, who);
+      this.map.closePopup(popup);
+    });
     el.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const fd = new FormData(el);

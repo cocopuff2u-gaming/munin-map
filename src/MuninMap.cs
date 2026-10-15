@@ -5,6 +5,7 @@ using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using BepInEx;
+using BepInEx.Bootstrap;
 using HarmonyLib;
 using UnityEngine;
 using MuninMap.Live;
@@ -21,7 +22,7 @@ namespace MuninMap
     {
         public const string GUID = "com.cocopuff2u.muninmap";
         public const string NAME = "Munin Map";
-        public const string VERSION = "3.0.2";
+        public const string VERSION = "3.0.5";
         private const string OLD_GUID = "com.valheimwebmap.server";   // the mod this one was, Valheim WebMap
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
@@ -44,18 +45,8 @@ namespace MuninMap
         public void Awake()
         {
             instance = this;
-            Util.Deps.Init();
             pluginPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            // Valheim WebMap still installed: both would want the same port and the same work, so
-            // this one stays out of the way until the old DLL is gone
-            string old = FindOld("WebMap.dll");
-            if (old != null)
-            {
-                ZLog.LogError("MuninMap: Valheim WebMap is still installed (" + old + "). Munin Map replaces it: delete WebMap.dll and restart. Munin Map is not running.");
-                enabled = false;
-                return;
-            }
-            MoveFromOldMod();
+            TakeOldSettings();
             Live.ServerLog.Listen();   // the game's console lines from the start (the admin "Server log" view)
             harmony = new Harmony(GUID);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
@@ -68,23 +59,10 @@ namespace MuninMap
             ZLog.Log($"Munin Map {VERSION} loaded");
         }
 
-        // a file of Valheim WebMap's anywhere under BepInEx/plugins, outside this mod's folder
-        private static string FindOld(string file)
-        {
-            try
-            {
-                foreach (string f in Directory.GetFiles(Paths.PluginPath, file, SearchOption.AllDirectories))
-                    if ((file.EndsWith("*") || string.Equals(Path.GetFileName(f), file, StringComparison.OrdinalIgnoreCase))
-                        && !string.Equals(Path.GetDirectoryName(f), pluginPath, StringComparison.OrdinalIgnoreCase)) return f;
-            }
-            catch (Exception e) { ZLog.LogWarning("MuninMap: looking for Valheim WebMap: " + e.Message); }
-            return null;
-        }
-
-        // Coming from Valheim WebMap: its settings, its map (explored ground, tiles, models, bases,
-        // markers.json) and its announce.token come along, once. The map is moved, not copied: it can
-        // be gigabytes, and a move on the same disk is instant.
-        private void MoveFromOldMod()
+        // Valheim WebMap, the mod this one grew out of: its settings come along once, from the
+        // config folder. Its own folder is never touched; if its map is still there, the log says
+        // how to bring it over.
+        private void TakeOldSettings()
         {
             try
             {
@@ -107,40 +85,25 @@ namespace MuninMap
                 }
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: settings from Valheim WebMap: " + e.Message); }
+        }
 
-            string data = Path.Combine(pluginPath ?? "", "map_data");
-            if (Directory.Exists(data) && Directory.GetFileSystemEntries(data).Length > 0) return;
-            // WebMap's folder is the one with its DLL in it (switched off by a mod manager: .old)
-            string oldDir = null;
-            foreach (string pat in new[] { "WebMap.dll.old", "WebMap.dll*" })
+        // every plugin has loaded by now
+        public void Start()
+        {
+            if (Chainloader.PluginInfos.ContainsKey(OLD_GUID))
+                ZLog.LogWarning("MuninMap: Valheim WebMap is installed too. Both serve a map on the same port and do the same work: switch one of them off.");
+            try
             {
-                string f = FindOld(pat);
-                if (f != null && Directory.Exists(Path.Combine(Path.GetDirectoryName(f), "map_data"))) { oldDir = Path.GetDirectoryName(f); break; }
-            }
-            if (oldDir == null)
-            {
-                try
-                {
-                    foreach (string d in Directory.GetDirectories(Paths.PluginPath, "map_data", SearchOption.AllDirectories))
+                string data = Path.Combine(pluginPath ?? "", "map_data");
+                if (Directory.Exists(data) && Directory.GetFileSystemEntries(data).Length > 0) return;   // already has a map
+                foreach (string d in Directory.GetDirectories(Paths.PluginPath))
+                    if (!string.Equals(d, pluginPath, StringComparison.OrdinalIgnoreCase)
+                        && Path.GetFileName(d).IndexOf("webmap", StringComparison.OrdinalIgnoreCase) >= 0
+                        && Directory.Exists(Path.Combine(d, "map_data")))
                     {
-                        string parent = Path.GetDirectoryName(d);
-                        if (!string.Equals(parent, pluginPath, StringComparison.OrdinalIgnoreCase) && Path.GetFileName(parent).IndexOf("webmap", StringComparison.OrdinalIgnoreCase) >= 0) { oldDir = parent; break; }
+                        ZLog.Log("MuninMap: a map from Valheim WebMap is in " + Path.Combine(d, "map_data") + ". To keep it, stop the server and move that folder next to MuninMap.dll.");
+                        break;
                     }
-                }
-                catch { }
-            }
-            if (oldDir == null) return;
-            try
-            {
-                if (Directory.Exists(data)) Directory.Delete(data);   // empty
-                Directory.Move(Path.Combine(oldDir, "map_data"), data);
-                ZLog.Log("MuninMap: map moved over from " + oldDir);
-            }
-            catch (Exception e) { ZLog.LogWarning("MuninMap: could not move the map from " + oldDir + " (" + e.Message + "). Move its map_data folder next to MuninMap.dll by hand."); }
-            try
-            {
-                string tok = Path.Combine(pluginPath ?? "", "announce.token"), oldTok = Path.Combine(oldDir, "announce.token");
-                if (!File.Exists(tok) && File.Exists(oldTok)) File.Copy(oldTok, tok);
             }
             catch { }
         }
@@ -233,7 +196,9 @@ namespace MuninMap
             StaticCoroutine.Start(SaveLoop());
             StaticCoroutine.Start(World.Runestones.PrepareRoutine(mapDataPath));
             StaticCoroutine.Start(WorldSweep.Loop());
+            StaticCoroutine.Start(World.Markers.LiveLoop());
             StaticCoroutine.Start(Announce.Pump());
+            StaticCoroutine.Start(WebPing.Pump());
             StaticCoroutine.Start(TileStore.MainThreadPump());
             StaticCoroutine.Start(Models.ModelStore.Pump());
             TileStore.Start();
@@ -610,7 +575,7 @@ namespace MuninMap
 
             private static void Prefix(ref ZRoutedRpc __instance, RoutedRPCData rpcData)
             {
-                if (rpcData == null || rpcData.m_targetPeerID == 0L) return;
+                if (rpcData == null || rpcData.m_targetPeerID == 0L || WebPing.sending) return;
                 try
                 {
                     if (IsDuplicate(rpcData)) return;

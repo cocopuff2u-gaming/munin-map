@@ -55,7 +55,7 @@ rm -rf dist/pkg "dist/MuninMap-$V.zip"
 # everything under it together (the web folder included) when they install
 PKG=dist/pkg/plugins/MuninMap
 mkdir -p "$PKG"
-# one DLL: websocket-sharp, ImageSharp and its helpers are inside it (MuninMap.csproj EmbedDeps)
+# one DLL: websocket-sharp, ImageSharp and its helpers are merged into it (src/ILRepack.targets)
 cp src/bin/Release/MuninMap.dll "$PKG/"
 cp -r web "$PKG/web"
 mkdir -p "$PKG/tools" && cp tools/extract_textures.py tools/extract_meshes.py "$PKG/tools/"

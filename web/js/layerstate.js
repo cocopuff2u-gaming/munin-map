@@ -4,6 +4,7 @@
 export const layerState = {
   fog: true, fogOpacity: 1,     // fog of war is always on, fully black over unexplored ground
   mist: true,           // the Mistlands mist, cleared around a Wisplight (WebGL map only)
+  altBiomes: false,     // the game's biome variants striped over the map (WebGL map only)
   buildings: true, buildingsOpacity: 1,
   ruins: true,          // world-generated structures (2D)
   ruinHidden: new Set(), // kinds of world structure hidden (layers/shapes.js RUIN_SITES indexes)

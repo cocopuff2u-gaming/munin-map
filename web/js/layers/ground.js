@@ -8,7 +8,7 @@
 // (the zoom-2 tiles are always loaded, so there is always one). New tiles fade in over that, so
 // nothing is ever blank and nothing pops.
 
-import { ShapesCanvas, screenArea, CLOUD_EXTENT, MIST_RES } from './shapes.js';
+import { ShapesCanvas, screenArea, CLOUD_EXTENT, MIST_RES, ALT_COLOURS } from './shapes.js';
 import { on } from '../net.js';
 import { fetchMist, MIST_BLOCKS } from '../mist.js';
 import { OUTSIDE_RIM, worldTile, WORLD_HALF } from '../crs.js';
@@ -580,6 +580,85 @@ export class BiomeGL extends L.Layer {
       }
       gl.uniform1f(p.u.u_alpha, 1);
     }
+    gl.bindVertexArray(null);
+  }
+}
+
+// The game's alt biomes ("Ruin Black Forest", "Root Black Forest"...: variants of a biome with
+// their own creatures, plants and places), striped over the map in their biome's colour so they
+// stand out from the biome around them, on explored ground only. From the server's biome grid
+// (data/biomes.grid, the one the cursor's biome name reads), fetched again every two minutes as
+// exploration grows (a 304 when it hasn't).
+export class AltBiomeGL extends L.Layer {
+  constructor() { super(); this.order = 8.7; this.on = false; this.names = []; this.base = 32; }
+  onAdd(map) { this.sc = ShapesCanvas.for(map); this.sc.add(this); }
+  onRemove() { this.sc.remove(this); }
+  need() {}
+  setOn(on) {
+    this.on = on;
+    clearInterval(this.timer);
+    if (on) { this.refresh(); this.timer = setInterval(() => this.refresh(), 120000); }
+    if (this.sc) this.sc.redraw();
+  }
+  // a variant's biome ("Ruin Black Forest" -> Black Forest), from the end of its name
+  biomeOf(name) { return Object.keys(ALT_COLOURS).find((b) => name.split(', ')[0].endsWith(b)) || ''; }
+  // [biome, colour] of each biome with variants in this world
+  key() { return [...new Set(this.names.map((n) => this.biomeOf(n)))].filter(Boolean).map((b) => [b, ALT_COLOURS[b]]); }
+  async refresh() {
+    if (!this.sc || !this.sc.alt) return;
+    try {
+      const d = await (await fetch('data/biomes.json', { cache: 'no-store' })).json();
+      if (!d.ready) return;
+      this.names = d.alt || []; this.base = d.altBase || 32; this.size = d.world || 21504;
+      if (this.onKey) this.onKey(this.key());
+      const r = await fetch(worldTile('data/biomes.grid'), { cache: 'no-cache' });
+      if (!r.ok) return;
+      const grid = new Uint8Array(await r.arrayBuffer());
+      if (grid.length !== 1024 * 1024) return;
+      const gl = this.sc.gl;
+      if (!this.tex) this.tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1024, 1024, 0, gl.RED, gl.UNSIGNED_BYTE, grid);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      // the colour for each grid value: its variant's biome
+      const lut = new Uint8Array(256 * 4);
+      this.names.forEach((n, i) => {
+        const h = ALT_COLOURS[this.biomeOf(n)] || '#ffffff', o = (this.base + i) * 4;
+        if (o >= lut.length) return;
+        lut[o] = parseInt(h.substr(1, 2), 16); lut[o + 1] = parseInt(h.substr(3, 2), 16); lut[o + 2] = parseInt(h.substr(5, 2), 16); lut[o + 3] = 255;
+      });
+      if (!this.lut) this.lut = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.lut);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, lut);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      this.sc.redraw();
+    } catch (e) { /* try again next time */ }
+  }
+  draw(gl, v, sc) {
+    const p = sc.alt;
+    if (!this.on || !this.tex || !p || !this.names.length) return;
+    const H = (this.size || 21504) / 2;
+    sc.setView(p);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.lut);
+    gl.uniform1i(p.u.u_lut, 1);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.uniform1i(p.u.u_grid, 0);
+    gl.uniform1f(p.u.u_half, H);
+    gl.uniform1f(p.u.u_mpp, 1 / v.ppm);
+    gl.uniform1f(p.u.u_base, this.base);
+    gl.uniform1f(p.u.u_alpha, 1);
+    // only the part of the world on the canvas
+    const x0 = Math.max(v.x, -H), x1 = Math.min(v.x1, H), zt = Math.min(v.z, H), zb = Math.max(v.z0, -H);
+    if (x1 <= x0 || zt <= zb) return;
+    gl.uniform4f(p.u.u_rect, x0, zt, x1 - x0, zt - zb);
+    gl.bindVertexArray(sc.quadVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
   }
 }
