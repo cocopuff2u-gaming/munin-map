@@ -194,12 +194,14 @@ void main() { o = texture(u_tex, v_uv) * u_alpha; }`;
 // Contour lines from a height tile (R32F, metres, row 0 north), worked out per pixel: how far this
 // pixel is from the nearest line, in screen pixels (the height's change across a pixel, fwidth), so
 // lines are a pixel wide and sharp at any zoom. Every fifth line bolder; lines closer together than
-// a few pixels fade out instead of turning the slope solid.
+// a few pixels fade out instead of turning the slope solid. Zooming in, the lines halfway between
+// (u_fine) fade in bit by bit, so the spacing halves without a jump.
 const CONTOUR_FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 uniform highp sampler2D u_h;
 uniform float u_interval;   // metres between lines
+uniform float u_fine;       // 0..1: how far in the lines halfway between them are
 uniform float u_alpha;
 out vec4 o;
 float hAt(ivec2 p) { return texelFetch(u_h, clamp(p, ivec2(0), ivec2(255)), 0).r; }
@@ -214,7 +216,10 @@ void main() {
   vec2 f = fract(t);
   float h = mix(mix(hAt(i), hAt(i + ivec2(1, 0)), f.x), mix(hAt(i + ivec2(0, 1)), hAt(i + ivec2(1, 1)), f.x), f.y) - 30.0;
   float w = max(fwidth(h), 1e-4);
-  float a = max(line(h, u_interval, w, 0.45, 0.36), line(h, u_interval * 5.0, w, 0.8, 0.66));
+  float I = u_interval, M = I * 5.0;
+  float minor = max(line(h, I, w, 0.45, 0.36), line(h, I * 0.5, w, 0.45, 0.36) * u_fine);
+  float major = max(line(h, M, w, 0.8, 0.66), line(h, M * 0.5, w, 0.45 + 0.35 * u_fine, 0.36 + 0.3 * u_fine));
+  float a = max(minor, major);
   a *= step(u_interval * 0.5, h);                                  // nothing at or under the sea
   o = vec4(vec3(0.157, 0.094, 0.039) * a, a) * u_alpha;            // premultiplied
 }`;

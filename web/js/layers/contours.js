@@ -6,7 +6,7 @@
 // what nobody has explored. Closer zooms get closer lines; every fifth is bolder and, zoomed in,
 // carries its height (metres above the sea). Fetching and decoding run in contourworker.js.
 import { TILE, MAX_ZOOM, WORLD_HALF, WORLD_SIZE, worldTile } from '../crs.js';
-import { ShapesCanvas } from './shapes.js';
+import { ShapesCanvas, screenArea } from './shapes.js';
 
 const MIN_DRAW = 3;          // not drawn further out than this zoom
 const LABELS_FROM = 5.5;     // heights written from this zoom in
@@ -15,7 +15,12 @@ const UPLOADS = 3;           // new textures per frame at most: the rest the fra
 const LABEL_COLOR = '#f2e6cf';
 
 const span = (z) => TILE * 2 ** (MAX_ZOOM - z);   // metres a tile covers
-const intervalAt = (zoom) => (zoom >= 6.5 ? 5 : zoom >= 5.5 ? 10 : zoom >= 4.5 ? 20 : zoom >= 3.5 ? 25 : 50);
+// Lines every 5 m at zoom 7, twice as far apart each zoom out (80 m at 3), and in between the lines
+// halfway between fade in: the spacing at a zoom and how far in the finer ones are.
+function spacing(zoom) {
+  const e = Math.max(0, Math.min(4, MAX_ZOOM - zoom)), c = Math.ceil(e - 1e-6);
+  return { interval: 5 * 2 ** c, fine: c - e };
+}
 
 export class ContourGL extends L.Layer {
   constructor(opts) {
@@ -44,7 +49,8 @@ export class ContourGL extends L.Layer {
     this.sc.redraw();
   }
 
-  heightZoom(v) { return Math.max(0, Math.min(this.hmax, Math.round(v.zoom))); }
+  // the finer height tiles come a little before their zoom, so the lines are there when it is
+  heightZoom(v) { return Math.max(0, Math.min(this.hmax, Math.ceil(v.zoom - 0.3))); }
 
   range(v, z) {
     const s = span(z), n = Math.round(WORLD_SIZE / s);
@@ -54,14 +60,20 @@ export class ContourGL extends L.Layer {
     };
   }
 
-  // the height tiles over the view: ask for the ones not here yet, nearest the middle first
+  // the height tiles over the view: ask for the ones not here yet, nearest the middle first, and
+  // the zoom out's too (a quarter as many), which stand in while a zoom's own tiles come in: never
+  // a gap with no lines at all
   need(v) {
     if (this.hmax < 0 || v.zoom < MIN_DRAW - 0.5) return;
-    const z = this.heightZoom(v), r = this.range(v, z);
-    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2, want = [];
-    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
-      const k = `${z}/${x}/${y}`;
-      if (!this.tex.has(k) && !this.ready.has(k) && !this.empty.has(k) && !this.busy.has(k)) want.push([Math.hypot(x - cx, y - cy), k]);
+    const z = this.heightZoom(v), want = [], m = span(z), sa = screenArea(v);
+    const a = { x: sa.x - m, x1: sa.x1 + m, z: sa.z + m, z0: sa.z0 - m };   // the screen and a tile around it
+    for (const [tz, pri] of [[z - 1, 0], [z, 0.5]]) {
+      if (tz < 0) continue;
+      const r = this.range(a, tz), cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
+        const k = `${tz}/${x}/${y}`;
+        if (!this.tex.has(k) && !this.ready.has(k) && !this.empty.has(k) && !this.busy.has(k)) want.push([pri + Math.hypot(x - cx, y - cy) / 100, k]);
+      }
     }
     want.sort((a, b) => a[0] - b[0]);
     for (const [, k] of want.slice(0, 8)) this.load(k);
@@ -76,6 +88,8 @@ export class ContourGL extends L.Layer {
     });
     this.busy.delete(k);
     if (res.h && this._map) this.ready.set(k, res); else this.empty.add(k);
+    if (!this._map) return;
+    if (!this.busy.size && this.sc.view) this.need(this.sc.view);   // the next batch, if the view wants more
     this.sc.redraw();
   }
 
@@ -114,12 +128,13 @@ export class ContourGL extends L.Layer {
     const p = sc.contour;
     if (!p || this.hmax < 0 || v.zoom < MIN_DRAW - 0.5) return;
     this.uploads = 0; this.more = false;
-    const z = this.heightZoom(v), r = this.range(v, z), interval = intervalAt(v.zoom);
+    const z = this.heightZoom(v), r = this.range(v, z), { interval, fine } = spacing(v.zoom);
     sc.setView(p);
     gl.bindVertexArray(sc.quadVao);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(p.u.u_h, 0);
     gl.uniform1f(p.u.u_interval, interval);
+    gl.uniform1f(p.u.u_fine, fine);
     gl.uniform1f(p.u.u_alpha, Math.min(1, (v.zoom - MIN_DRAW + 0.5) * 2));   // eases in at the far end
     const drawn = [];
     for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
@@ -129,7 +144,7 @@ export class ContourGL extends L.Layer {
       // not in yet: the part of a zoomed-out tile over this one stands in
       for (let up = 1; !e && up <= 3 && z - up >= 0; up++) {
         const f = 2 ** up, pk = `${z - up}/${Math.floor(x / f)}/${Math.floor(y / f)}`;
-        e = this.tex.get(pk);
+        e = this.entry(gl, pk);
         if (e) { u0 = (x % f) / f; v0 = (y % f) / f; u1 = u0 + 1 / f; v1 = v0 + 1 / f; }
       }
       if (!e) continue;
@@ -139,7 +154,7 @@ export class ContourGL extends L.Layer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       if (u0 === 0 && u1 === 1) drawn.push([x, y, e]);
     }
-    if (v.zoom >= LABELS_FROM) this.labels(gl, v, sc, r, drawn, interval * 5);
+    if (v.zoom >= LABELS_FROM) this.labels(gl, v, sc, r, drawn, fine > 0.5 ? interval * 2.5 : interval * 5);
     gl.bindVertexArray(null);
     if (this.more) sc.redraw();   // the textures left over, next frame
   }
