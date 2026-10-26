@@ -228,6 +228,35 @@ void main() {
   o = vec4(vec3(0.157, 0.094, 0.039) * a, a) * u_alpha;            // premultiplied
 }`;
 
+// The "Height" map style: the land coloured by its height (greens low, tans and browns up the
+// hills, grey rock, white tops; the sea darker as it deepens), lit from the north-west by the slope
+// for relief. From the same height tiles as the contour lines.
+const HEIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform highp sampler2D u_h;
+uniform float u_mpp;
+uniform float u_alpha;
+out vec4 o;
+float hAt(ivec2 p) { return texelFetch(u_h, clamp(p, ivec2(0), ivec2(255)), 0).r; }
+vec3 ramp(float h) {
+  if (h < 0.0) return mix(vec3(0.20, 0.38, 0.58), vec3(0.05, 0.12, 0.26), clamp(-h / 60.0, 0.0, 1.0));
+  vec3 c = mix(vec3(0.36, 0.58, 0.32), vec3(0.62, 0.70, 0.40), smoothstep(0.0, 40.0, h));
+  c = mix(c, vec3(0.78, 0.68, 0.46), smoothstep(40.0, 100.0, h));
+  c = mix(c, vec3(0.60, 0.47, 0.35), smoothstep(100.0, 180.0, h));
+  c = mix(c, vec3(0.70, 0.69, 0.67), smoothstep(180.0, 270.0, h));
+  return mix(c, vec3(0.97, 0.97, 0.99), smoothstep(270.0, 370.0, h));
+}
+void main() {
+  vec2 t = v_uv * 256.0 - 0.5;
+  ivec2 i = ivec2(floor(t));
+  vec2 f = fract(t);
+  float h = mix(mix(hAt(i), hAt(i + ivec2(1, 0)), f.x), mix(hAt(i + ivec2(0, 1)), hAt(i + ivec2(1, 1)), f.x), f.y) - 30.0;
+  float gx = dFdx(h) / u_mpp, gy = dFdy(h) / u_mpp;               // slope, metres per metre (screen y runs south)
+  float shade = 1.0 + 0.45 * clamp((gx + gy) * 0.8, -1.0, 1.0) * step(0.0, h);
+  o = vec4(ramp(h) * shade, 1.0) * u_alpha;
+}`;
+
 // Soft dark clouds in world space past the world's edge, like the seed maps' surround (generated
 // here, nothing to download); darker toward the rim. Inside the circle the fog stays plain black.
 const CLOUDS_GLSL = `
@@ -563,6 +592,7 @@ export class ShapesCanvas {
     try { this.cloudBake = compile(gl, CLOUD_BAKE_VS, CLOUD_BAKE_FS); } catch (e) { this.cloudBake = null; }
     this.guide = compile(gl, EDGE_VS, GUIDE_FS);
     try { this.contour = compile(gl, TEX_VS, CONTOUR_FS); } catch (e) { this.contour = null; }
+    try { this.heightFill = compile(gl, TEX_VS, HEIGHT_FS); } catch (e) { this.heightFill = null; }
     try { this.alt = compile(gl, EDGE_VS, ALT_FS); } catch (e) { this.alt = null; }
     try { this.mist = compile(gl, EDGE_VS, MIST_FS); this.mistBake = compile(gl, CLOUD_BAKE_VS, MIST_BAKE_FS); } catch (e) { this.mist = this.mistBake = null; }
     this.line = compile(gl, LINE_VS, LINE_FS);

@@ -8,6 +8,7 @@ import { VEG, VEG_GROUPS } from './vegpack.js';
 import { RUIN_SITES } from './layers/shapes.js';
 import { on } from './net.js';
 import { RaidLayer } from './layers/raid.js';
+import { BiomeHover } from './biomehover.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
@@ -117,14 +118,14 @@ export class Sidebar {
     const world = card('The world');
     if (this.app.biomes) {
       // map style: the drawn land, or each biome in a solid colour with its name
-      const style = el(`<div class="lrow"><span class="lico">${BIOME_SVG}</span><span class="ltext"><b>Map style</b><small>Terrain or solid biomes</small></span><select class="sel"><option value="terrain">Terrain</option><option value="biomes">Biomes</option></select></div>`);
+      const style = el(`<div class="lrow"><span class="lico">${BIOME_SVG}</span><span class="ltext"><b>Map style</b><small>Terrain, biomes or height</small></span><select class="sel"><option value="terrain">Terrain</option><option value="biomes">Biomes</option>${this.app.gl && (this.app.config?.height_max_zoom ?? -1) >= 0 ? '<option value="height">Height</option>' : ''}</select></div>`);
       const keyEl = el('<div class="biome-key" hidden></div>');
       const sel = style.querySelector('select'); sel.value = S.mapStyle;
-      const apply = () => { const on = sel.value === 'biomes'; this.app.biomes.setOn(on); keyEl.hidden = !on; S.set('mapStyle', sel.value); };
+      const apply = () => { const on = sel.value === 'biomes'; this.app.biomes.setOn(on); this.app.setHeightStyle(sel.value === 'height'); keyEl.hidden = !on; S.set('mapStyle', sel.value); };
       this.app.biomes.onColours = (cols) => { keyEl.replaceChildren(...Object.entries(cols).map(([n, c]) => el(`<span><i style="background:${c}"></i>${escape(n)}</span>`))); };
       sel.addEventListener('change', apply);
       world.append(style, keyEl);
-      if (S.mapStyle === 'biomes') apply();
+      if (S.mapStyle !== 'terrain') apply();
     }
     if (this.app.altBiomes) {
       // the game's biome variants, striped in a colour each, with a key of the ones this world has
@@ -280,6 +281,37 @@ export class Sidebar {
   }
 
   // "at the spawn", "650 m NE of spawn", "2.1 km W of spawn"
+  // the nearest altar of each boss found, and each trader, from the spawn: how far, which way, and
+  // how long on foot (measure.js's reach over land: "by boat" when there's sea in between)
+  renderDistances(p) {
+    const sets = this.app.layers.markers?.sets || [], s = this.app.spawn || { x: 0, z: 0 };
+    const near = new Map();
+    for (const set of sets) {
+      if (set.id !== 'bosses' && set.id !== 'traders') continue;
+      for (const m of set.markers || []) {
+        const d = Math.hypot(m.x - s.x, m.z - s.z), cur = near.get(m.label);
+        if (!cur || d < cur.d) near.set(m.label, { m, d, trader: set.id === 'traders' });
+      }
+    }
+    if (!near.size) return;
+    const rows = [...near.values()].sort((a, b) => a.trader - b.trader || a.d - b.d);
+    p.append(el('<h3>Distances from the spawn</h3>'));
+    const table = el(`<table class="dist-table"><tbody>${rows.map((r) => `<tr class="clickable" data-x="${r.m.x}" data-z="${r.m.z}"><td>${escape(r.m.label)}</td><td>${fmtDist(r.d)} ${this.whereText(r.m.x, r.m.z).split(' ').slice(-3, -2)}</td><td class="walk">…</td></tr>`).join('')}</tbody></table>`);
+    table.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => this.app.goTo(+tr.dataset.x, +tr.dataset.z, Math.max(this.app.map.getZoom(), 6))));
+    p.append(table);
+    p.append(el('<div class="sub">Nearest one found of each. Walking: running with stops for stamina, the shortest way over land</div>'));
+    const fill = (times) => table.querySelectorAll('td.walk').forEach((td, i) => { td.textContent = times ? (isFinite(times[i]) ? (times[i] < 60 ? 'under 1m' : fmtDuration(times[i])) + ' walk' : 'by boat') : ''; });
+    const key = rows.map((r) => `${Math.round(r.m.x)},${Math.round(r.m.z)}`).join(';') + '@' + Math.round(s.x) + ',' + Math.round(s.z);
+    if (this.walkKey === key && this.walkTimes) { fill(this.walkTimes); return; }
+    if (!this.app.measure) { fill(null); return; }
+    this.walkKey = key; this.walkTimes = null;
+    this.app.measure.walkTimes(s.x, s.z, rows.map((r) => [r.m.x, r.m.z])).then((res) => {
+      if (this.walkKey !== key) return;
+      this.walkTimes = res.targets;
+      if (table.isConnected) fill(res.targets);
+    });
+  }
+
   whereText(x, z) {
     const s = this.app.spawn || { x: 0, z: 0 }, dx = x - s.x, dz = z - s.z, d = Math.hypot(dx, dz);
     if (d < 60) return 'at the spawn';
@@ -295,23 +327,43 @@ export class Sidebar {
     if (!this.mkOpen) this.mkOpen = new Map();
     const p = $('#panel-markers');
     if (!this.mkSearch) {
-      this.mkSearch = el('<div class="mk-search"><input type="search" placeholder="Find a marker"></div>');
+      this.mkSearch = el('<div class="mk-search"><input type="search" placeholder="Find a marker"><div class="mk-biomes"></div></div>');
       this.mkSearch.querySelector('input').addEventListener('input', () => this.renderMarkers(this.mkSets));
       this.mkBody = el('<div></div>');
+      this.mkBiome = '';
     }
     if (!p.contains(this.mkSearch)) p.replaceChildren(this.mkSearch, this.mkBody);
     const q = this.mkSearch.querySelector('input').value.trim().toLowerCase();
+    // the biome each marker stands in (the server's biome grid, explored ground; a variant such as
+    // Ruin Black Forest counts as its biome), for the chips that narrow the list to one biome
+    const bh = (this.app.biomeHover ??= new BiomeHover());
+    if (!bh.grid && !this.mkBiomeWait) { this.mkBiomeWait = true; bh.load().then(() => { this.mkBiomeWait = false; if (bh.grid) this.renderMarkers(this.mkSets); }); }
+    const MAIN = ['Meadows', 'Black Forest', 'Swamp', 'Mountain', 'Plains', 'Mistlands', 'Ashlands', 'Deep North', 'Ocean'];
+    const biomeOf = (m) => {
+      if (m._biome === undefined && bh.grid) { const b = bh.at(m.x, m.z); m._biome = MAIN.find((n) => b === n || b.endsWith(' ' + n) || b.startsWith(n)) || b || ''; }
+      return m._biome || '';
+    };
+    const matches = (m) => !q || (m.label || '').toLowerCase().includes(q) || (m.tag || '').toLowerCase().includes(q);
+    const counts = new Map();
+    if (bh.grid) for (const s of sets) for (const m of s.markers || []) if (matches(m)) { const b = biomeOf(m); if (b) counts.set(b, (counts.get(b) || 0) + 1); }
+    if (this.mkBiome && !counts.has(this.mkBiome)) this.mkBiome = '';
+    const chips = this.mkSearch.querySelector('.mk-biomes');
+    chips.innerHTML = counts.size ? [['', 'All']].concat(MAIN.filter((n) => counts.has(n)).map((n) => [n, n])).map(([b, label]) =>
+      `<button data-b="${escape(b)}" class="${this.mkBiome === b ? 'on' : ''}">${escape(label)}${b ? ` <span>${counts.get(b)}</span>` : ''}</button>`).join('') : '';
+    chips.querySelectorAll('button').forEach((x) => x.addEventListener('click', () => { this.mkBiome = x.dataset.b; this.renderMarkers(this.mkSets); }));
     const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', peaks: 'peak', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
     const go = (x, z) => this.app.goTo(x, z, Math.max(this.app.map.getZoom(), 6));
     this.mkBody.replaceChildren();
     let any = false;
     for (const s of sets) {
       let ms = (s.markers || []).slice().sort((a, b) => byName(a.label, b.label));
-      if (q) ms = ms.filter((m) => (m.label || '').toLowerCase().includes(q) || (m.tag || '').toLowerCase().includes(q));
-      if (q && !ms.length) continue;
+      if (q) ms = ms.filter(matches);
+      if (this.mkBiome) ms = ms.filter((m) => biomeOf(m) === this.mkBiome);
+      const narrowed = q || this.mkBiome;
+      if (narrowed && !ms.length) continue;
       any = true;
       const iconName = ICON[s.id] || 'poi';
-      const open = q ? true : (this.mkOpen.has(s.id) ? this.mkOpen.get(s.id) : (s.markers || []).length <= 8);
+      const open = narrowed ? true : (this.mkOpen.has(s.id) ? this.mkOpen.get(s.id) : (s.markers || []).length <= 8);
       const card = el(`<details class="mk-card"${open ? ' open' : ''}><summary><span class="ico">${iconSvg(iconName, colors[iconName])}</span><b>${escape(s.label)}</b><span class="lcount">${ms.length}</span><span class="chev"></span></summary><div class="mk-list"></div></details>`);
       card.addEventListener('toggle', () => { if (!q) this.mkOpen.set(s.id, card.open); });
       const list = card.querySelector('.mk-list');
@@ -348,7 +400,7 @@ export class Sidebar {
       }
       this.mkBody.append(card);
     }
-    if (!any) this.mkBody.append(el(`<div class="empty-card">${q ? 'No marker matches that.' : 'No markers yet.'}</div>`));
+    if (!any) this.mkBody.append(el(`<div class="empty-card">${q || this.mkBiome ? 'No marker matches that.' : 'No markers yet.'}</div>`));
   }
 
   // ---------------------------------------------------------------- stats
@@ -411,6 +463,7 @@ export class Sidebar {
     p.append(el('<div class="sub">Mini bosses</div>'));
     p.append(el(`<div class="boss-track">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
       return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${breakable(n)}</div>`; }).join('')}</div>`));
+    this.renderDistances(p);
     if (quests.length) {
       p.append(el('<div class="sub">Hildir\'s quests</div>'));
       p.append(el(`<div class="chips">${quests.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));

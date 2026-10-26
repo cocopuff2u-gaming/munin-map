@@ -426,6 +426,13 @@ class App {
     this.guideGL.set(!!this.gridOn, this.ringsOn && this.spawn ? this.spawn : null);
   }
 
+  // the Height map style: the land coloured by height, from the height tiles (made on first use)
+  setHeightStyle(v) {
+    if (v && !this.heightFill) this.heightFill = new ContourGL({ mode: 'fill', heightMaxZoom: this.config?.height_max_zoom ?? -1 });
+    if (!this.heightFill) return;
+    if (v) this.heightFill.addTo(this.map); else this.heightFill.remove();
+  }
+
   // contour lines from the height tiles (made on first use)
   setContours(v) {
     if (v && !this.contours) this.contours = new ContourGL({ heightMaxZoom: this.config?.height_max_zoom ?? -1 });

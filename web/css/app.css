@@ -356,6 +356,17 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .mp-chips button { padding: 3px 6px; border-radius: 5px; }
 #btn-measure.on { color: #ffd866; background: var(--bg-3); }
 .measuring .leaflet-interactive, .map.measuring { cursor: crosshair; }
+.mk-biomes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.mk-biomes:empty { display: none; }
+.mk-biomes button { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font: 600 11px var(--font); padding: 2px 8px; cursor: pointer; }
+.mk-biomes button span { opacity: .7; font-weight: 500; }
+.mk-biomes button.on { background: var(--bg-3); color: var(--text); border-color: var(--muted); }
+.dist-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; }
+.dist-table td { padding: 4px 3px; border-top: 1px solid var(--line); }
+.dist-table td:nth-child(2) { color: var(--muted); white-space: nowrap; }
+.dist-table td.walk { text-align: right; white-space: nowrap; }
+.dist-table tr.clickable { cursor: pointer; }
+.dist-table tr.clickable:hover td { background: var(--bg-3); }
 .forecast { width: 100%; border-collapse: collapse; font-size: 11px; margin: 4px 0; table-layout: fixed; }
 .forecast th { font-weight: 600; color: var(--muted); text-align: left; padding: 2px 3px; }
 .forecast td { padding: 3px 6px 3px 3px; border-top: 1px solid var(--line); line-height: 1.25; vertical-align: top; }

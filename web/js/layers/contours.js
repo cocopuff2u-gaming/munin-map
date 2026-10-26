@@ -18,10 +18,14 @@ const LABEL_COLOR = '#f2e6cf';
 const span = (z) => TILE * 2 ** (MAX_ZOOM - z);   // metres a tile covers
 const INTERVAL = 25, MAJOR = 100;                // the same at every zoom: hills look alike zoomed in or out
 
+// mode 'lines': the contour lines; 'fill': the Height map style (land coloured by height), drawn
+// over the ground and under trees, buildings and everything else
 export class ContourGL extends L.Layer {
   constructor(opts) {
     super();
-    this.order = 8.9;                // over buildings and biomes, under the fog (9)
+    this.fill = opts.mode === 'fill';
+    this.order = this.fill ? 0.4 : 8.9;   // fill: over the ground (0); lines: over buildings and biomes, under the fog (9)
+    this.minDraw = this.fill ? 0 : MIN_DRAW;
     this.hmax = opts.heightMaxZoom;
     this.tex = new Map();            // key -> { t: texture, labels } (most recently drawn last)
     this.ready = new Map();          // key -> { h, labels } waiting for its upload
@@ -65,7 +69,7 @@ export class ContourGL extends L.Layer {
   // the zoom out's too (a quarter as many), which stand in while a zoom's own tiles come in: never
   // a gap with no lines at all
   need(v) {
-    if (this.hmax < 0 || v.zoom < MIN_DRAW - 0.5) return;
+    if (this.hmax < 0 || v.zoom < this.minDraw - 0.5) return;
     const L = this.levels(v), want = [], m = span(L.lo), sa = screenArea(v);
     const a = { x: sa.x - m, x1: sa.x1 + m, z: sa.z + m, z0: sa.z0 - m };   // the screen and a tile around it
     const levels = [[L.lo - 1, 0], [L.lo, 0.5]];
@@ -128,22 +132,24 @@ export class ContourGL extends L.Layer {
   }
 
   draw(gl, v, sc) {
-    const p = sc.contour;
-    if (!p || this.hmax < 0 || v.zoom < MIN_DRAW - 0.5) return;
+    const p = this.fill ? sc.heightFill : sc.contour;
+    if (!p || this.hmax < 0 || v.zoom < this.minDraw - 0.5) return;
     this.uploads = 0; this.more = false;
-    const L = this.levels(v), alpha = Math.min(1, (v.zoom - MIN_DRAW + 0.5) * 2);   // eases in at the far end
+    const L = this.levels(v), alpha = this.fill ? 1 : Math.min(1, (v.zoom - MIN_DRAW + 0.5) * 2);   // lines ease in at the far end
     sc.setView(p);
     gl.bindVertexArray(sc.quadVao);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(p.u.u_h, 0);
-    gl.uniform1f(p.u.u_interval, INTERVAL);
-    gl.uniform1f(p.u.u_major, MAJOR);
     gl.uniform1f(p.u.u_mpp, 1 / v.ppm);
-    gl.uniform1f(p.u.u_bold, Math.min(1, Math.max(0, (v.zoom - 4) / 2)));   // the 100 m lines: thin at zoom 4 and out, full at 6
+    if (!this.fill) {
+      gl.uniform1f(p.u.u_interval, INTERVAL);
+      gl.uniform1f(p.u.u_major, MAJOR);
+      gl.uniform1f(p.u.u_bold, Math.min(1, Math.max(0, (v.zoom - 4) / 2)));   // the 100 m lines: thin at zoom 4 and out, full at 6
+    }
     let drawn = null;
     if (L.b < 1) drawn = this.pass(gl, v, p, L.lo, alpha * (1 - L.b));
     if (L.b > 0) { const d = this.pass(gl, v, p, L.hi, alpha * L.b); if (L.b >= 0.5 || !drawn) drawn = d; }
-    if (v.zoom >= LABELS_FROM && drawn) this.labels(gl, v, sc, drawn);
+    if (!this.fill && v.zoom >= LABELS_FROM && drawn) this.labels(gl, v, sc, drawn);
     gl.bindVertexArray(null);
     if (this.more) sc.redraw();   // the textures left over, next frame
   }
