@@ -273,6 +273,7 @@ namespace MuninMap
                 try
                 {
                     Players.Refresh(mapDataServer.players);
+                    mapDataServer.BroadcastPlayers();
                     Stats.OnTick(Players.Current);
                     Activity.Sample(Players.Current);
                 }

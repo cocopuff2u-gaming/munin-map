@@ -41,9 +41,14 @@ export class PlayersLayer {
     const ts = data.ts || Date.now();
     if (this.lastTs && ts > this.lastTs) this.gap = Math.max(300, Math.min(2500, this.gap * 0.8 + (ts - this.lastTs) * 0.2));
     this.lastTs = ts;
-    this.offsets.push(Date.now() - ts);
-    if (this.offsets.length > 30) this.offsets.shift();
+    if (ts !== this.prevTs) { this.offsets.push(Date.now() - ts); if (this.offsets.length > 30) this.offsets.shift(); }   // (a repeat, sent on connecting, is old news)
+    this.prevTs = ts;
     this.offset = Math.min(...this.offsets);
+    // how late updates come past the quickest one: the playback waits that much more (the 80th
+    // percentile, and a bit: the odd straggler is bridged by carrying on at the last pace), so the
+    // next update is nearly always in before it's needed
+    const late = this.offsets.map((o) => o - this.offset).sort((a, b) => a - b);
+    this.margin = Math.max(150, Math.min(1500, (late[Math.floor(late.length * 0.8)] || 0) + 100));
     const seen = new Set();
     for (const p of this.players) {
       seen.add(p.id);
@@ -88,7 +93,14 @@ export class PlayersLayer {
     while (i >= 0 && tr[i].t > t) i--;
     if (i < 0) return tr[0];
     const a = tr[i], b = tr[i + 1];
-    if (!b || t >= b.t) return tr[tr.length - 1];
+    if (!b || t >= b.t) {
+      // past the newest (an update is late): carry on at the last pace for up to 300 ms instead
+      // of stopping dead and then jumping when it comes
+      const z = tr[tr.length - 1], y = tr[tr.length - 2];
+      if (!y || z.t <= y.t || Math.hypot(z.x - y.x, z.z - y.z) > 100) return z;
+      const k = Math.min(t - z.t, 300) / (z.t - y.t);
+      return { x: z.x + (z.x - y.x) * k, z: z.z + (z.z - y.z) * k, yaw: z.yaw };
+    }
     const u = (t - a.t) / (b.t - a.t);
     if (Math.hypot(b.x - a.x, b.z - a.z) > 100) return u < 1 ? a : b;   // a portal: no flying across the map
     const p0 = tr[i - 1] && Math.hypot(a.x - tr[i - 1].x, a.z - tr[i - 1].z) <= 100 ? tr[i - 1] : a;
@@ -98,8 +110,8 @@ export class PlayersLayer {
     return { x: cr(p0.x, a.x, b.x, p3.x), z: cr(p0.z, a.z, b.z, p3.z), yaw: a.yaw + dy * u };
   }
 
-  // the moment shown: a little over one update behind the newest, on the server's clock
-  shownTime() { return Date.now() - (this.offset || 0) - this.gap * 1.25; }
+  // the moment shown: one update and the usual lateness behind the newest, on the server's clock
+  shownTime() { return Date.now() - (this.offset || 0) - this.gap - (this.margin || 250); }
 
   // every frame while anyone's on: each marker to where it is now, a followed one under the centre
   animate() {

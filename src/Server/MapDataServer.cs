@@ -147,6 +147,17 @@ namespace MuninMap
             try { wsLegacyHost.Sessions.Broadcast(frame); } catch { }
         }
 
+        // Players, sent the moment a snapshot is taken (MuninMap's snapshot loop), off the game's thread.
+        // On the broadcast timer they waited up to a second, and the two timers drifting apart now and
+        // then put two snapshots between sends: a moving player stood still for two seconds on the page.
+        public void BroadcastPlayers()
+        {
+            string pj = Players.Json;
+            if (pj == lastPlayersJson) return;
+            lastPlayersJson = pj;
+            System.Threading.ThreadPool.QueueUserWorkItem(_ => { try { Send("{\"t\":\"players\",\"data\":" + pj + "}"); } catch { } });
+        }
+
         private string lastRaidJson = "null", lastInvasionKey = "";
         private static string InvasionKey(string json) => System.Text.RegularExpressions.Regex.Replace(json, ",\"left\":[0-9.]+", "");
         private void Broadcast()
@@ -156,12 +167,6 @@ namespace MuninMap
                 forceReload = false;
                 Send("{\"t\":\"reload\"}");
                 return;
-            }
-            string pj = Players.Json;
-            if (pj != lastPlayersJson)
-            {
-                lastPlayersJson = pj;
-                Send("{\"t\":\"players\",\"data\":" + pj + "}");
             }
             string raid = WorldEvents.RaidJson;
             if (raid != lastRaidJson) { lastRaidJson = raid; Send("{\"t\":\"raid\",\"data\":" + raid + "}"); }
