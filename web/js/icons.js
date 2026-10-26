@@ -25,6 +25,7 @@ const glyphs = {
   hotspring: '<path d="M3 17c0-2.5 4-4 9-4s9 1.5 9 4-4 4-9 4-9-1.5-9-4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M8 11c-1-2 1-3 0-5M12 11c-1-2 1-3 0-5M16 11c-1-2 1-3 0-5" fill="none" stroke="COLOR" stroke-width="1.6"/>',
   drakenest: '<path d="M3 15c2 5 16 5 18 0z" fill="COLOR" stroke="#111" stroke-width="1.2"/><ellipse cx="9" cy="12" rx="2.6" ry="3.4" fill="#e9f3ff" stroke="#111"/><ellipse cx="15" cy="12" rx="2.6" ry="3.4" fill="#e9f3ff" stroke="#111"/>',
   gucktree: '<path d="M11 21V12M13 21V12" stroke="#5a4632" stroke-width="2"/><path d="M12 13c-4 0-7-2-7-5 2 0 3-2 7-4 4 2 5 4 7 4 0 3-3 5-7 5z" fill="#4b4a32" stroke="#111" stroke-width="1.2"/><circle cx="9" cy="9" r="1.6" fill="COLOR" stroke="none"/><circle cx="14.5" cy="8" r="1.5" fill="COLOR" stroke="none"/><circle cx="12" cy="11" r="1.3" fill="COLOR" stroke="none"/>',
+  peak: '<path d="M2 20 9 7l3 5 3-3 7 11z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 10.6 9 7l2.2 3.8-1.2-.6-1 .9-.9-.8z" fill="#fff" stroke="none"/>',
   sign: '<path d="M4 5h16v9H4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 14v7" stroke="#111" stroke-width="2.4"/><path d="M7 8.5h10M7 11h7" stroke="#111" stroke-width="1.3"/>',
   fulingcamp: '<path d="M12 4l9 16H3z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 12l4 8H8z" fill="#111"/><path d="M12 4V1.5M12 2l3 1-3 1" fill="COLOR" stroke="#111" stroke-width="1"/>',
   tarpit: '<path d="M3 15c0-3 4-5 9-5s9 2 9 5-4 5-9 5-9-2-9-5z" fill="COLOR" stroke="#111" stroke-width="1.2"/><circle cx="9" cy="14" r="1.6" fill="#111"/><circle cx="14.5" cy="15.5" r="1.2" fill="#111"/><path d="M12 9c0-2 1-3 0-5" fill="none" stroke="COLOR" stroke-width="1.6"/>',
@@ -58,7 +59,7 @@ export const colors = {
   // dungeon kinds, each its own colour, from its biome and clear of the other markers' colours
   crypt: '#7fa86a', sunkencrypt: '#9aa04e', trollcave: '#a7764c', frostcave: '#9fd1ee', infestedmine: '#7f95b8', fortress: '#c94a32',
   bearcave: '#b08a5e', hole: '#b9d4e6', morkhalla: '#9b86e0', fulingcamp: '#d9b26b', tarpit: '#8f8578',
-  forge: '#ff8a4c', memorial: '#c7d4e6', orb: '#7fd3ff', hotspring: '#6fd6c4', drakenest: '#a9c7e8', gucktree: '#9fd35a', sign: '#c9a46a', landmark: '#7fd3ff',
+  forge: '#ff8a4c', memorial: '#c7d4e6', orb: '#7fd3ff', hotspring: '#6fd6c4', drakenest: '#a9c7e8', gucktree: '#9fd35a', sign: '#c9a46a', peak: '#a7a39a', landmark: '#7fd3ff',
   trader: '#f2c14e', hildir: '#f2c14e', bogwitch: '#9be37a', miniboss: '#ff9d4d', hildir1: '#ff9d4d', hildir2: '#ff9d4d', hildir3: '#ff9d4d', dungeon: '#c9a5ff', cave: '#9fd8ff', camp: '#ff9d4d',
   village: '#e0c39a', ruin: '#bfc7d2', runestone: '#8fd3ff', wreck: '#bfc7d2', poi: '#9aa5b5', portal: '#5ce0e6',
   tombstone: '#d6d6d6', boat: '#8fc7ff', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',

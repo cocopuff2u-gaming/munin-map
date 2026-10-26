@@ -174,6 +174,7 @@ namespace MuninMap
 
             Stats.Load();
             Activity.Load(worldDataPath);
+            Peaks.Start(worldDataPath);
             Events.LoadTail();
             Live.ServerLog.Open(worldDataPath);
             Markers.LoadOverrides(worldDataPath);

@@ -783,6 +783,20 @@ namespace MuninMap.World
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
+            // --- mountain tops on explored ground; the highest of those shown is named so
+            j.BeginObject().Prop("id", "peaks").Prop("label", "Peaks").Key("markers").BeginArray();
+            bool first = true;
+            foreach (var pk in Peaks.All)   // highest first
+            {
+                if (!Visible(pk.x, pk.z)) continue;
+                j.BeginObject().Prop("x", pk.x, 1).Prop("z", pk.z, 1).Prop("cat", "peak").Prop("icon", "peak")
+                 .Prop("label", (first ? "Highest peak · " : "Peak · ") + Mathf.RoundToInt(pk.height) + " m").Prop("height", pk.height, 0).End();
+                first = false;
+            }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
             // --- signs with something written on them, on explored ground
             j.BeginObject().Prop("id", "signs").Prop("label", "Signs").Key("markers").BeginArray();
             foreach (var s in signs)

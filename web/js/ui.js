@@ -184,6 +184,8 @@ export class Sidebar {
     const guides = card('Map guides');
     guides.append(row(GRID_SVG, 'Grid', '256 m zones with coordinates', S.grid, (v) => { this.app.setGrid(v); S.set('grid', v); }));
     guides.append(row(RINGS_SVG, 'Distance rings', 'Every 500 m out from the spawn', S.rings, (v) => { this.app.setRings(v); S.set('rings', v); }));
+    if ((this.app.config?.height_max_zoom ?? -1) >= 0)
+      guides.append(row(CONTOUR_SVG, 'Contour lines', 'Height lines, metres above sea', false, (v) => this.app.setContours(v)));
 
     // ---- where players go, and what weighs on their frame rate (all off at first: data on demand)
     const act = card('Activity', '2D map');
@@ -218,7 +220,7 @@ export class Sidebar {
     for (const [kind, name] of VEG_KEY) if (VEG[kind]) legend.querySelector('.lv').append(el(`<span><i class="${VEG[kind][2] ? 'rock' : 'round'}" style="background:${VEG[kind][1]}"></i>${name}</span>`));
     p.append(legend);
 
-    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
+    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', peaks: 'peak', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
     L.markers.onChange((sets) => {
       this.markerSetRows.replaceChildren();
       for (const s of sets) {
@@ -299,7 +301,7 @@ export class Sidebar {
     }
     if (!p.contains(this.mkSearch)) p.replaceChildren(this.mkSearch, this.mkBody);
     const q = this.mkSearch.querySelector('input').value.trim().toLowerCase();
-    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
+    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', peaks: 'peak', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
     const go = (x, z) => this.app.goTo(x, z, Math.max(this.app.map.getZoom(), 6));
     this.mkBody.replaceChildren();
     let any = false;
@@ -718,6 +720,7 @@ const LABEL_SVG = SVG('<rect x="3" y="7" width="18" height="10" rx="3"/><path d=
 const GRID_SVG = SVG('<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 12h16M12 4v16" stroke-width="1.4"/>');
 const RINGS_SVG = SVG('<circle cx="12" cy="12" r="2" fill="#7cff4f" stroke="none"/><circle cx="12" cy="12" r="5.5" stroke="#7cff4f"/><circle cx="12" cy="12" r="9" stroke="#7cff4f" stroke-dasharray="2 2.5"/>');
 const SUN_SVG = SVG('<circle cx="12" cy="12" r="4" fill="#ffd866" stroke="#ffd866"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="#ffd866"/>');
+const CONTOUR_SVG = SVG('<path d="M3 17c3-1 5-6 9-6s6 5 9 6" stroke="#c9a46a"/><path d="M6 17c2-1 3-3.5 6-3.5s4 2.5 6 3.5" stroke="#c9a46a" opacity=".7"/><path d="M9 7c1-2 2-3 3-3s2 1 3 3" stroke="#c9a46a" stroke-width="2.2"/>');
 const TRAIL_SVG = SVG('<path d="M4 19c3-1 3-5 6-6s5 1 7-2 1-5 3-6" stroke="#6fe0c8" stroke-width="2" stroke-dasharray="3 2.2" fill="none"/><circle cx="20" cy="5" r="2" fill="#6fe0c8" stroke="none"/>');
 const HEAT_SVG = SVG('<rect x="3" y="3" width="6" height="6" fill="#2c4fd0" stroke="none"/><rect x="9" y="3" width="6" height="6" fill="#33c0dc" stroke="none"/><rect x="15" y="3" width="6" height="6" fill="#2c4fd0" stroke="none"/><rect x="3" y="9" width="6" height="6" fill="#7bdc50" stroke="none"/><rect x="9" y="9" width="6" height="6" fill="#f0482a" stroke="none"/><rect x="15" y="9" width="6" height="6" fill="#fad232" stroke="none"/><rect x="3" y="15" width="6" height="6" fill="#33c0dc" stroke="none"/><rect x="9" y="15" width="6" height="6" fill="#fad232" stroke="none"/><rect x="15" y="15" width="6" height="6" fill="#7bdc50" stroke="none"/>');
 const SHADOW_SVG = SVG('<circle cx="10" cy="10" r="5"/><path d="M8 19c3 1.5 9 1.5 12-2" opacity=".6"/>');

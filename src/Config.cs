@@ -68,7 +68,7 @@ namespace MuninMap
         public static float STATS_SAVE_INTERVAL = 60f;
         public static bool ENABLE_3D = true;
         // height tiles only feed the 3D view and the export: with 3D off nothing renders them
-        public static int HeightMaxZoom => ENABLE_3D ? HEIGHT_MAX_ZOOM : -1;
+        public static int HeightMaxZoom => HEIGHT_MAX_ZOOM;   // the 3D view and the 2D contour lines both use them
         public static bool LEGACY_MAP = true;
         public static bool REVEAL_ALL = false;
 
@@ -230,7 +230,7 @@ namespace MuninMap
 
             HEIGHT_MAX_ZOOM = config.Bind("Render", "height_max_zoom",
                 MuninConfig.HEIGHT_MAX_ZOOM,
-                "Closest zoom for height tiles (used by the 3D view). Lower it to save disk if 3D is off.").Value;
+                "Closest zoom for height tiles (used by the 3D view and the contour lines). 6 = 2 m/px is plenty for contours; -1 turns height tiles (and contours) off.").Value;
 
             MAIN_THREAD_ROWS_PER_FRAME = config.Bind("Render", "main_thread_rows_per_frame",
                 MuninConfig.MAIN_THREAD_ROWS_PER_FRAME,

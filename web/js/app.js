@@ -16,6 +16,7 @@ import { MarkerLayers, escape, byName } from './layers/markers.js';
 import { PlayersLayer } from './layers/players.js';
 import { RaidLayer } from './layers/raid.js';
 import { ActivityLayers } from './layers/activity.js';
+import { ContourLayer } from './layers/contours.js';
 import { chunks, objects, prefabs, markers, stats } from './data.js';
 import { Sidebar } from './ui.js';
 import { BiomeHover } from './biomehover.js';
@@ -415,6 +416,13 @@ class App {
   guide() {
     if (!this.guideGL) this.guideGL = new GuideGL(WORLD_RADIUS, '#7cff4f').addTo(this.map);   // the spawn's colour
     this.guideGL.set(!!this.gridOn, this.ringsOn && this.spawn ? this.spawn : null);
+  }
+
+  // contour lines from the height tiles (made on first use)
+  setContours(v) {
+    if (v && !this.contours) this.contours = new ContourLayer({ map: this.map, heightMaxZoom: this.config?.height_max_zoom ?? -1, fog: this.layers.fog });
+    if (!this.contours) return;
+    if (v) this.contours.addTo(this.map); else this.contours.remove();
   }
 
   setRings(v) {
