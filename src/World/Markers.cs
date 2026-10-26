@@ -584,15 +584,46 @@ namespace MuninMap.World
             return lists;
         }
 
+
+        // ---- a marker set's text, kept from the last time when what it's made of is the same: each
+        // sweep rewrote all of it (700 KB on a big world, hundreds of ms and a memory clean-up in one
+        // frame) though nearly every sweep changes nothing
+        private static readonly Dictionary<string, KeyValuePair<long, string>> setText = new Dictionary<string, KeyValuePair<long, string>>();
+        private static bool Reuse(JsonWriter j, string id, long sig)
+        {
+            if (!setText.TryGetValue(id, out var kept) || kept.Key != sig) return false;
+            j.Raw(kept.Value);
+            return true;
+        }
+        private static void Keep(JsonWriter j, string id, long sig, int mark) => setText[id] = new KeyValuePair<long, string>(sig, j.Since(mark));
+        private static long Mix(long h, long v) { unchecked { return (h ^ v) * 1099511628211L; } }
+        private static long Mix(long h, float x, float z) => Mix(Mix(h, Mathf.RoundToInt(x * 10)), Mathf.RoundToInt(z * 10));
+        private static long Mix(long h, string s) => Mix(h, s == null ? 0 : s.GetHashCode());
+
         private static IEnumerable<object> BuildParts(JsonWriter j, bool slice)
         {
             var locs = LocationsByKind();   // altars, lairs, dungeons, traders, camps, landmarks: each loop below visits only its own
+            // what each set is made of, as a number: the explored ground, the locations (and whether
+            // the game has built them), the lists the sweep made
+            long fogSig = Mix(Fog.ExploredCells, MuninConfig.REVEAL_ALL ? 1 : 0), locSig = fogSig;
+            foreach (var l in locs) foreach (var li in l) locSig = Mix(Mix(locSig, li.m_position.x, li.m_position.z), li.m_placed ? 1 : 0);
+            long portalSig = Mix(fogSig, Live.Stats.Keys().Count), tombSig = fogSig, wardSig = fogSig, runeSig = fogSig, signSig = fogSig, bedSig = fogSig;
+            foreach (var p in portals) portalSig = Mix(Mix(Mix(portalSig, p.x, p.z), p.tag), p.creator);
+            foreach (var t in tombs) tombSig = Mix(Mix(Mix(tombSig, t.x, t.z), t.owner), t.when);
+            foreach (var w in wards) wardSig = Mix(Mix(Mix(Mix(Mix(wardSig, w.x, w.z), w.owner), w.on ? 1 : 0), Mathf.RoundToInt(w.r)), w.permitted == null ? 0 : string.Join(",", w.permitted).GetHashCode());
+            foreach (var r in runes) runeSig = Mix(Mix(Mix(runeSig, r.x, r.z), r.text), r.topic);
+            foreach (var sg in signs) signSig = Mix(Mix(Mix(signSig, sg.x, sg.z), sg.text), sg.author);
+            foreach (var b in beds) bedSig = Mix(Mix(bedSig, b.x, b.z), b.owner);
             j.BeginObject();
             j.Prop("rev", rev + 1);
             j.Key("sets").BeginArray();
 
             // --- boss altars, once someone has explored the ground they stand on (the same rule as
             // everything here; the rest of the game's location registry stays private: spoilers)
+            long sig_bosses = locSig;
+            if (!Reuse(j, "bosses", sig_bosses))
+            {
+            int mark_bosses = j.Mark();
             j.BeginObject().Prop("id", "bosses").Prop("label", "Boss altars").Key("markers").BeginArray();
             try
             {
@@ -607,10 +638,16 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: boss altars: " + e.Message); }
             j.End().End();
+            Keep(j, "bosses", sig_bosses, mark_bosses);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- mini-boss lairs (Hildir's sisters), on explored ground like the altars
+            long sig_minibosses = locSig;
+            if (!Reuse(j, "minibosses", sig_minibosses))
+            {
+            int mark_minibosses = j.Mark();
             j.BeginObject().Prop("id", "minibosses").Prop("label", "Mini-boss lairs").Key("markers").BeginArray();
             try
             {
@@ -625,10 +662,16 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: mini bosses: " + e.Message); }
             j.End().End();
+            Keep(j, "minibosses", sig_minibosses, mark_minibosses);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- dungeon entrances, on explored ground
+            long sig_dungeons = Mix(locSig, Dungeons.Signature);
+            if (!Reuse(j, "dungeons", sig_dungeons))
+            {
+            int mark_dungeons = j.Mark();
             j.BeginObject().Prop("id", "dungeons").Prop("label", "Dungeons").Key("markers").BeginArray();
             try
             {
@@ -654,10 +697,16 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: dungeons: " + e.Message); }
             j.End().End();
+            Keep(j, "dungeons", sig_dungeons, mark_dungeons);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- landmarks (the Forge of Potential, memorials, Fimbulvinter orbs, hot springs), on explored ground
+            long sig_landmarks = locSig;
+            if (!Reuse(j, "landmarks", sig_landmarks))
+            {
+            int mark_landmarks = j.Mark();
             j.BeginObject().Prop("id", "landmarks").Prop("label", "Landmarks").Key("markers").BeginArray();
             try
             {
@@ -672,10 +721,16 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: landmarks: " + e.Message); }
             j.End().End();
+            Keep(j, "landmarks", sig_landmarks, mark_landmarks);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- Fuling camps, tar pits, drake nests and guck trees, on explored ground
+            long sig_camps = locSig;
+            if (!Reuse(j, "camps", sig_camps))
+            {
+            int mark_camps = j.Mark();
             j.BeginObject().Prop("id", "camps").Prop("label", "Camps & resources").Key("markers").BeginArray();
             try
             {
@@ -690,10 +745,16 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: camps: " + e.Message); }
             j.End().End();
+            Keep(j, "camps", sig_camps, mark_camps);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- traders (Haldor, Hildir, the Bog Witch), on explored ground like the altars
+            long sig_traders = locSig;
+            if (!Reuse(j, "traders", sig_traders))
+            {
+            int mark_traders = j.Mark();
             j.BeginObject().Prop("id", "traders").Prop("label", "Traders").Key("markers").BeginArray();
             try
             {
@@ -708,10 +769,16 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: traders: " + e.Message); }
             j.End().End();
+            Keep(j, "traders", sig_traders, mark_traders);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- portals
+            long sig_portals = portalSig;
+            if (!Reuse(j, "portals", sig_portals))
+            {
+            int mark_portals = j.Mark();
             j.BeginObject().Prop("id", "portals").Prop("label", "Portals").Key("markers").BeginArray();
             foreach (var p in portals)
             {
@@ -723,6 +790,8 @@ namespace MuninMap.World
                 j.End();
             }
             j.End().End();
+            Keep(j, "portals", sig_portals, mark_portals);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
@@ -747,6 +816,10 @@ namespace MuninMap.World
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- tombstones
+            long sig_tombstones = tombSig;
+            if (!Reuse(j, "tombstones", sig_tombstones))
+            {
+            int mark_tombstones = j.Mark();
             j.BeginObject().Prop("id", "tombstones").Prop("label", "Tombstones").Key("markers").BeginArray();
             foreach (var t in tombs)
             {
@@ -755,10 +828,16 @@ namespace MuninMap.World
                 j.Prop("label", string.IsNullOrEmpty(t.owner) ? "Tombstone" : t.owner + "'s tombstone").Prop("owner", t.owner).Prop("when", t.when).End();
             }
             j.End().End();
+            Keep(j, "tombstones", sig_tombstones, mark_tombstones);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- wards and the ground they protect
+            long sig_wards = wardSig;
+            if (!Reuse(j, "wards", sig_wards))
+            {
+            int mark_wards = j.Mark();
             j.BeginObject().Prop("id", "wards").Prop("label", "Wards").Key("markers").BeginArray();
             foreach (var w in wards)
             {
@@ -770,10 +849,16 @@ namespace MuninMap.World
                 j.End();
             }
             j.End().End();
+            Keep(j, "wards", sig_wards, mark_wards);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- runestones, with what they say
+            long sig_runestones = runeSig;
+            if (!Reuse(j, "runestones", sig_runestones))
+            {
+            int mark_runestones = j.Mark();
             j.BeginObject().Prop("id", "runestones").Prop("label", "Runestones").Key("markers").BeginArray();
             foreach (var r in runes)
             {
@@ -785,10 +870,16 @@ namespace MuninMap.World
                 j.End();
             }
             j.End().End();
+            Keep(j, "runestones", sig_runestones, mark_runestones);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- mountain tops on explored ground; the highest of those shown is named so
+            long sig_peaks = Mix(fogSig, Peaks.All.Count);
+            if (!Reuse(j, "peaks", sig_peaks))
+            {
+            int mark_peaks = j.Mark();
             j.BeginObject().Prop("id", "peaks").Prop("label", "Peaks").Key("markers").BeginArray();
             bool first = true;
             foreach (var pk in Peaks.All)   // highest first
@@ -799,10 +890,16 @@ namespace MuninMap.World
                 first = false;
             }
             j.End().End();
+            Keep(j, "peaks", sig_peaks, mark_peaks);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- signs with something written on them, on explored ground
+            long sig_signs = signSig;
+            if (!Reuse(j, "signs", sig_signs))
+            {
+            int mark_signs = j.Mark();
             j.BeginObject().Prop("id", "signs").Prop("label", "Signs").Key("markers").BeginArray();
             foreach (var s in signs)
             {
@@ -811,10 +908,16 @@ namespace MuninMap.World
                  .Prop("label", s.text).Prop("author", s.author).End();
             }
             j.End().End();
+            Keep(j, "signs", sig_signs, mark_signs);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- Vegvisirs: their own set, named as the game's hover names them
+            long sig_vegvisirs = runeSig;
+            if (!Reuse(j, "vegvisirs", sig_vegvisirs))
+            {
+            int mark_vegvisirs = j.Mark();
             j.BeginObject().Prop("id", "vegvisirs").Prop("label", "Vegvisirs").Key("markers").BeginArray();
             foreach (var r in runes)
             {
@@ -823,10 +926,16 @@ namespace MuninMap.World
                 j.Prop("label", string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic).End();
             }
             j.End().End();
+            Keep(j, "vegvisirs", sig_vegvisirs, mark_vegvisirs);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- player beds (where each one respawns)
+            long sig_beds = bedSig;
+            if (!Reuse(j, "beds", sig_beds))
+            {
+            int mark_beds = j.Mark();
             j.BeginObject().Prop("id", "beds").Prop("label", "Beds").Key("markers").BeginArray();
             foreach (var b in beds)
             {
@@ -835,6 +944,8 @@ namespace MuninMap.World
                 j.Prop("label", b.owner + "'s bed").Prop("owner", b.owner).End();
             }
             j.End().End();
+            Keep(j, "beds", sig_beds, mark_beds);
+            }
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 

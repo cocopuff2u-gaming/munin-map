@@ -114,10 +114,26 @@ namespace MuninMap.World
         }
 
         // Main thread, end of the sweep (before Markers.Finish, which shows these)
+        // a fingerprint of everything known of the dungeons' insides: their markers are only written
+        // again when it changes (World/Markers)
+        public static long Signature { get; private set; }
+
         public static void Finish()
         {
             if (building != null) done = building;
             building = null; entrances = null;
+            unchecked
+            {
+                long h = done.Count;
+                foreach (var kv in done)
+                {
+                    var d = kv.Value;
+                    h = h * 31 + kv.Key.GetHashCode();
+                    h = h * 31 + d.rooms + d.chests * 7 + d.emptied * 13 + d.picked * 17 + d.gates * 19 + d.opened * 23 + d.monsters * 29 + d.graves * 37 + d.built * 41;
+                    foreach (var l in d.left) h = h * 31 + l.Key.GetHashCode() + l.Value;
+                }
+                Signature = h;
+            }
         }
 
         // items in a chest (Inventory.Save: version, then the count); -1 if it never had any

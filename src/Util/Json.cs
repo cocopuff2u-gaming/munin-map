@@ -46,6 +46,9 @@ namespace MuninMap.Util
         public JsonWriter Value(double v, int decimals = 2) { Sep(); Num(v, decimals); return this; }
         public JsonWriter Null() { Sep(); sb.Append("null"); return this; }
         public JsonWriter Raw(string json) { Sep(); sb.Append(json); return this; }
+        // where the text is now, and what was written since (to keep a part and splice it in again with Raw)
+        public int Mark() => sb.Length;
+        public string Since(int mark) { string s = sb.ToString(mark, sb.Length - mark); return s.Length > 0 && s[0] == ',' ? s.Substring(1) : s; }
 
         public JsonWriter Prop(string k, string v)  => Key(k).Value(v);
         public JsonWriter Prop(string k, bool v)    => Key(k).Value(v);

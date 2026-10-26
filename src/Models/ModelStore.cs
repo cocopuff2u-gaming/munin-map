@@ -33,6 +33,7 @@ namespace MuninMap.Models
 
         private static string root;
         private static readonly ConcurrentDictionary<int, Info> index = new ConcurrentDictionary<int, Info>();
+        private static int exportsSinceScan;   // models exported since the library was last scanned for missing textures/meshes
         private static readonly Queue<int> queue = new Queue<int>();
         private static readonly HashSet<int> queued = new HashSet<int>();
         private static readonly Dictionary<int, string> catOf = new Dictionary<int, string>();
@@ -232,8 +233,11 @@ namespace MuninMap.Models
                     int tick = idleTicks++;
                     if (extractDone) { extractDone = false; int n = RescanTextures(); WriteTexturesJson(); Rebuild(); ZLog.Log($"MuninMap: {n} models to re-export with newly extracted textures"); }
                     else if (meshDone) { meshDone = false; int n = RescanMeshes(); Rebuild(); ZLog.Log($"MuninMap: {n} models to re-export with newly extracted meshes"); }
-                    else if (MuninConfig.ENABLE_3D && (tick == 5 || tick % 60 == 59))   // texture/mesh extraction only feeds 3D
+                    else if (MuninConfig.ENABLE_3D && (tick == 5 || tick % 60 == 59) && (exportsSinceScan > 0 || tick == 5))   // texture/mesh extraction only feeds 3D
                     {
+                        // (the scans read the whole library on the game's thread, 40-80 ms on a big one:
+                        // only when models were exported since the last, as nothing else changes them)
+                        exportsSinceScan = 0;
                         int again = RescanTextures() + RescanMeshes();
                         if (again > 0) ZLog.Log($"MuninMap: {again} models to re-export with newly extracted textures or meshes");
                         else if (MuninConfig.USE_TEXTURES && !TextureExtractor.Running && !MeshExtractor.Running)
@@ -302,6 +306,7 @@ namespace MuninMap.Models
             index[hash] = info;
             Exported++;
             indexDirty = true;
+            exportsSinceScan++;
             if (Exported == 1 || Exported % 100 == 0)
                 ZLog.Log($"MuninMap: models exported {Exported} (readable meshes {Readable}, unreadable {Unreadable}, queued {QueueLength})");
         }
