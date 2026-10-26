@@ -131,6 +131,7 @@ namespace MuninMap
             catch { }
             Live.Events.Add("death", name, "died", x, z);
             Live.Stats.OnDeath(name);
+            if (x.HasValue && z.HasValue) Live.Activity.OnDeath(x.Value, z.Value);
         }
 
         private static bool ShouldAnnounce(long key)

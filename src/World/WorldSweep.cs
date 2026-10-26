@@ -159,6 +159,7 @@ namespace MuninMap.World
             ForestMap.Begin();
             WorldObjects.Begin();
             Demisters.Begin();
+            Hotspots.Begin();
             var changedZones = new HashSet<long>();
             var mapTables = new List<ZDO>();
 
@@ -193,6 +194,7 @@ namespace MuninMap.World
                                 long creator = 0L;
                                 try { creator = zdo.GetLong(ZDOVars.s_creator, 0L); } catch { }
                                 Dungeons.Observe(zdo, pref, p, creator);
+                                Hotspots.Observe(pref, creator, p);   // what weighs on players' frame rates, per zone
                                 Demisters.Observe(pref, p);   // Dvergr lanterns: clearings in the mist   // inside a dungeon (and the gates at their doors)
                                 // the 3D object data (and the model export it requests) only matters with 3D on
                                 if (MuninConfig.ENABLE_3D) WorldObjects.Observe(zdo, pref, p, creator);
@@ -274,6 +276,7 @@ namespace MuninMap.World
             int changedChunks = Structures.LastChanged;
             yield return Step("ruins", Ruins.Finish());
             Vehicles.Finish(); Dungeons.Finish(); Demisters.Finish();
+            yield return Step("hotspots", Once(Hotspots.Finish));
             yield return Step("markers", Markers.Finish());
             yield return Step("structure map", Once(StructureMap.Finish));
             StructureMap.LastScanned = seen;

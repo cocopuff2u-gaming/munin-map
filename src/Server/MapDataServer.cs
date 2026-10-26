@@ -575,6 +575,8 @@ namespace MuninMap
                     return Text(e, PinsJson(asked ? WebOwner(e.Request, null) : null), "application/json", nocache: true);
                 }
                 case "markers.json": return Text(e, Markers.Json, "application/json", nocache: true);
+                case "hotspots.json": return Text(e, Hotspots.Json, "application/json", nocache: true);
+                case "activity.json": return Text(e, Activity.Json(), "application/json", nocache: true);
                 case "fog.png": return Bytes(e, Fog.Png(), "image/png", "no-cache");
                 case "structures/index.json": return Text(e, Structures.IndexJson, "application/json", nocache: true);
                 case "ruins/index.json": return Text(e, Ruins.IndexJson, "application/json", nocache: true);

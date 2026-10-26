@@ -58,7 +58,7 @@ export function escape(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({
 export class MarkerLayers {
   constructor(map, opts = {}) {
     this.map = map;
-    this.visible = new Map([['dungeons', false], ['tablepins', false], ['wards', false], ['runestones', false], ['vegvisirs', false], ['beds', false]]);     // set id -> bool; dungeon entrances, table pins, wards, runestones, Vegvisirs and beds start off (a world has hundreds)
+    this.visible = new Map(layerState.sets);     // set id -> bool; the sets that start off are listed in layerstate.js
     this.catVisible = new Map(LOCATION_CATS.map((c) => [c, c !== 'poi']));
     this.sets = [];
     this.pins = new Map();        // pin id -> pin

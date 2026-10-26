@@ -173,6 +173,7 @@ namespace MuninMap
             catch (Exception e) { ZLog.LogWarning("MuninMap: pins.csv not readable: " + e.Message); }
 
             Stats.Load();
+            Activity.Load(worldDataPath);
             Events.LoadTail();
             Live.ServerLog.Open(worldDataPath);
             Markers.LoadOverrides(worldDataPath);
@@ -271,6 +272,7 @@ namespace MuninMap
                 {
                     Players.Refresh(mapDataServer.players);
                     Stats.OnTick(Players.Current);
+                    Activity.Sample(Players.Current);
                 }
                 catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: player snapshot failed: " + e.Message); }
                 yield return new WaitForSeconds(MuninConfig.PLAYER_UPDATE_INTERVAL);
@@ -315,6 +317,7 @@ namespace MuninMap
                 {
                     statsT = 0f;
                     Stats.Save();
+                    Activity.Save();
                 }
             }
         }
@@ -530,6 +533,7 @@ namespace MuninMap
             private static void Postfix()
             {
                 try { Stats.Save(force: true); } catch { }
+                try { Activity.Save(); } catch { }
                 try { if (Fog.Dirty) Fog.Save(Path.Combine(worldDataPath, "fog.png")); } catch { }
                 TileStore.Stop();
                 mapDataServer.Stop();

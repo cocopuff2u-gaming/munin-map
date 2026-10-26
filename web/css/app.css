@@ -335,6 +335,10 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .serverlog [hidden] { display: none !important; }
 
 /* stats: boss progress, leaderboard */
+.zone-overlay { image-rendering: pixelated; image-rendering: crisp-edges; }
+.hot-table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+.hot-table td { padding: 1px 10px 1px 0; }
+.hot-table td + td { text-align: right; font-weight: 600; }
 .forecast { width: 100%; border-collapse: collapse; font-size: 11px; margin: 4px 0; table-layout: fixed; }
 .forecast th { font-weight: 600; color: var(--muted); text-align: left; padding: 2px 3px; }
 .forecast td { padding: 3px 6px 3px 3px; border-top: 1px solid var(--line); line-height: 1.25; vertical-align: top; }

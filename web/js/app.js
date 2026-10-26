@@ -15,6 +15,7 @@ import { SmoothZoom, SmoothZoomControl } from './smoothzoom.js';
 import { MarkerLayers, escape, byName } from './layers/markers.js';
 import { PlayersLayer } from './layers/players.js';
 import { RaidLayer } from './layers/raid.js';
+import { ActivityLayers } from './layers/activity.js';
 import { chunks, objects, prefabs, markers, stats } from './data.js';
 import { Sidebar } from './ui.js';
 import { BiomeHover } from './biomehover.js';
@@ -158,6 +159,7 @@ class App {
     this.layers.ruins = (this.gl ? new RuinsGL() : new RuinsLayer()).addTo(this.map);   // world-generated structures, under player builds
     this.layers.structures = (this.gl ? new BuildingsGL() : new StructuresLayer()).addTo(this.map);
     this.layers.markers = new MarkerLayers(this.map, { gl: this.gl });
+    this.layers.activity = new ActivityLayers(this.map);
     // right click (long press on a phone) places a pin, unless the server turned web pins off
     this.map.on('contextmenu', (e) => { if (this.config?.web_pins !== false) this.layers.markers.openPinEditor(e.latlng); });
     // middle click: ping the spot, shown in game like a player's ping (Server/WebPing.cs); the pin
