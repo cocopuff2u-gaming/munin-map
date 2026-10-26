@@ -3,8 +3,9 @@
 // CONTOUR_FS) works out per pixel how close it is to a line. So the lines are part of the very
 // frames the map draws (no wobble in a glide, nothing left at the old size), a pixel wide and sharp
 // at every zoom, and cost the page nothing between zooms. They sit just under the fog, which hides
-// what nobody has explored. Closer zooms get closer lines; every fifth is bolder and, zoomed in,
-// carries its height (metres above the sea). Fetching and decoding run in contourworker.js.
+// what nobody has explored. A thin line every 25 m of height and a bold one every 100 m, which
+// carries its height zoomed in. Where a finer height tile takes over (each zoom), the two are
+// crossfaded over half a zoom so the lines don't jump. Fetching and decoding run in contourworker.js.
 import { TILE, MAX_ZOOM, WORLD_HALF, WORLD_SIZE, worldTile } from '../crs.js';
 import { ShapesCanvas, screenArea } from './shapes.js';
 
@@ -15,12 +16,7 @@ const UPLOADS = 3;           // new textures per frame at most: the rest the fra
 const LABEL_COLOR = '#f2e6cf';
 
 const span = (z) => TILE * 2 ** (MAX_ZOOM - z);   // metres a tile covers
-// Lines every 5 m at zoom 7, twice as far apart each zoom out (80 m at 3), and in between the lines
-// halfway between fade in: the spacing at a zoom and how far in the finer ones are.
-function spacing(zoom) {
-  const e = Math.max(0, Math.min(4, MAX_ZOOM - zoom)), c = Math.ceil(e - 1e-6);
-  return { interval: 5 * 2 ** c, fine: c - e };
-}
+const INTERVAL = 25, MAJOR = 100;                // the same at every zoom: hills look alike zoomed in or out
 
 export class ContourGL extends L.Layer {
   constructor(opts) {
@@ -49,8 +45,13 @@ export class ContourGL extends L.Layer {
     this.sc.redraw();
   }
 
-  // the finer height tiles come a little before their zoom, so the lines are there when it is
-  heightZoom(v) { return Math.max(0, Math.min(this.hmax, Math.ceil(v.zoom - 0.3))); }
+  // the height tiles in use: lo, and hi (a zoom finer) taking over by `b` (0..1) over the last half
+  // of each zoom; the finer tiles are fetched from a third of the way in
+  levels(v) {
+    const f = v.zoom - 0.3, lo = Math.max(0, Math.min(this.hmax, Math.floor(f))), hi = Math.min(this.hmax, lo + 1);
+    const t = f - Math.floor(f), b = hi > lo ? Math.min(1, Math.max(0, (t - 0.5) * 2)) : 0;
+    return { lo, hi, b: b * b * (3 - 2 * b), fetchHi: hi > lo && t > 0.33 };
+  }
 
   range(v, z) {
     const s = span(z), n = Math.round(WORLD_SIZE / s);
@@ -65,9 +66,11 @@ export class ContourGL extends L.Layer {
   // a gap with no lines at all
   need(v) {
     if (this.hmax < 0 || v.zoom < MIN_DRAW - 0.5) return;
-    const z = this.heightZoom(v), want = [], m = span(z), sa = screenArea(v);
+    const L = this.levels(v), want = [], m = span(L.lo), sa = screenArea(v);
     const a = { x: sa.x - m, x1: sa.x1 + m, z: sa.z + m, z0: sa.z0 - m };   // the screen and a tile around it
-    for (const [tz, pri] of [[z - 1, 0], [z, 0.5]]) {
+    const levels = [[L.lo - 1, 0], [L.lo, 0.5]];
+    if (L.fetchHi) levels.push([L.hi, 1]);
+    for (const [tz, pri] of levels) {
       if (tz < 0) continue;
       const r = this.range(a, tz), cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
       for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
@@ -128,15 +131,25 @@ export class ContourGL extends L.Layer {
     const p = sc.contour;
     if (!p || this.hmax < 0 || v.zoom < MIN_DRAW - 0.5) return;
     this.uploads = 0; this.more = false;
-    const z = this.heightZoom(v), r = this.range(v, z), { interval, fine } = spacing(v.zoom);
+    const L = this.levels(v), alpha = Math.min(1, (v.zoom - MIN_DRAW + 0.5) * 2);   // eases in at the far end
     sc.setView(p);
     gl.bindVertexArray(sc.quadVao);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(p.u.u_h, 0);
-    gl.uniform1f(p.u.u_interval, interval);
-    gl.uniform1f(p.u.u_fine, fine);
-    gl.uniform1f(p.u.u_alpha, Math.min(1, (v.zoom - MIN_DRAW + 0.5) * 2));   // eases in at the far end
-    const drawn = [];
+    gl.uniform1f(p.u.u_interval, INTERVAL);
+    gl.uniform1f(p.u.u_major, MAJOR);
+    let drawn = null;
+    if (L.b < 1) drawn = this.pass(gl, v, p, L.lo, alpha * (1 - L.b));
+    if (L.b > 0) { const d = this.pass(gl, v, p, L.hi, alpha * L.b); if (L.b >= 0.5 || !drawn) drawn = d; }
+    if (v.zoom >= LABELS_FROM && drawn) this.labels(gl, v, sc, drawn);
+    gl.bindVertexArray(null);
+    if (this.more) sc.redraw();   // the textures left over, next frame
+  }
+
+  // one zoom's height tiles over the view; the tiles drawn whole (for the labels)
+  pass(gl, v, p, z, alpha) {
+    const r = this.range(v, z), drawn = { r, tiles: [] };
+    gl.uniform1f(p.u.u_alpha, alpha);
     for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
       const k = `${z}/${x}/${y}`;
       if (this.empty.has(k)) continue;
@@ -152,15 +165,13 @@ export class ContourGL extends L.Layer {
       gl.uniform4f(p.u.u_uv, u0, v0, u1, v1);
       gl.uniform4f(p.u.u_rect, -WORLD_HALF + x * r.s, WORLD_HALF - y * r.s, r.s, r.s);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      if (u0 === 0 && u1 === 1) drawn.push([x, y, e]);
+      if (u0 === 0 && u1 === 1) drawn.tiles.push([x, y, e]);
     }
-    if (v.zoom >= LABELS_FROM) this.labels(gl, v, sc, r, drawn, fine > 0.5 ? interval * 2.5 : interval * 5);
-    gl.bindVertexArray(null);
-    if (this.more) sc.redraw();   // the textures left over, next frame
+    return drawn;
   }
 
   // heights on the bold lines, kept apart from each other
-  labels(gl, v, sc, r, drawn, every) {
+  labels(gl, v, sc, { r, tiles }) {
     const t = sc.tex, taken = [];
     sc.setView(t);
     gl.bindVertexArray(sc.quadVao);
@@ -168,10 +179,10 @@ export class ContourGL extends L.Layer {
     gl.uniform1i(t.u.u_tex, 0);
     gl.uniform4f(t.u.u_uv, 0, 0, 1, 1);
     gl.uniform1f(t.u.u_alpha, Math.min(1, (v.zoom - LABELS_FROM) * 2 + 0.3));
-    for (const [x, y, e] of drawn) {
+    for (const [x, y, e] of tiles) {
       const l = e.labels;
       for (let i = 0; i < l.length; i += 3) {
-        if (l[i + 2] % every !== 0) continue;
+        if (l[i + 2] % MAJOR !== 0) continue;
         const wx = -WORLD_HALF + x * r.s + (l[i] / TILE) * r.s, wz = WORLD_HALF - y * r.s - (l[i + 1] / TILE) * r.s;
         const sx = (wx - v.x) * v.ppm, sy = (v.z - wz) * v.ppm;
         if (taken.some(([ax, ay]) => Math.abs(ax - sx) < 90 && Math.abs(ay - sy) < 40)) continue;
