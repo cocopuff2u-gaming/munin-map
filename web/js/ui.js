@@ -131,11 +131,11 @@ export class Sidebar {
       const keyEl = el('<div class="biome-key" hidden></div>');
       const A = this.app.altBiomes;
       A.onKey = (k) => { keyEl.replaceChildren(...k.map(([n, c]) => el(`<span><i style="background:${c}"></i>${escape(n)}</span>`))); };
-      world.append(row(BIOME_SVG, 'Alt biomes', 'Biome variants like Ruin Black Forest, striped in their biome colour', S.altBiomes, (v) => { A.setOn(v); keyEl.hidden = !v; S.set('altBiomes', v); }), keyEl);
+      world.append(row(BIOME_SVG, 'Alt biomes', 'Variants like Ruin Black Forest', S.altBiomes, (v) => { A.setOn(v); keyEl.hidden = !v; S.set('altBiomes', v); }), keyEl);
       if (S.altBiomes) { A.setOn(true); keyEl.hidden = false; }
     }
     if (this.app.mist) {
-      world.append(row(MIST_SVG, 'Mistlands mist', 'Cleared by Wisplights, Dvergr lanterns and mist torches', S.mist, (v) => { this.app.mist.setOn(v); S.set('mist', v); }));
+      world.append(row(MIST_SVG, 'Mistlands mist', 'Cleared by Wisplights and lanterns', S.mist, (v) => { this.app.mist.setOn(v); S.set('mist', v); }));
       this.app.mist.setOn(S.mist);
     }
     world.append(row(ico('house', '#c9a26b'), 'Buildings', 'Player builds, coloured by material', S.buildings, (v) => { if (v) L.structures.addTo(this.app.map); else L.structures.remove(); S.set('buildings', v); }));
