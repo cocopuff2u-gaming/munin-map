@@ -206,6 +206,10 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .pin-form input, .pin-form select { flex: 1; min-width: 0; font: 13px var(--font); color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
 .pin-form select { flex: 0 0 auto; }
 .pin-form .err { display: block; margin-top: 6px; color: #e07a6a; }
+.pin-form .pin-key { margin-top: 8px; }
+.pin-form .pin-key summary { cursor: pointer; font-size: 12px; color: var(--muted, #9aa); }
+.pin-form .pin-key small { display: block; margin-top: 4px; max-width: 240px; }
+.pin-form .pin-key input { font-family: ui-monospace, monospace; font-size: 12px; }
 .base-edit { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
 .pin-form-popup .leaflet-popup-content { margin: 10px 12px; }
 .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
@@ -348,9 +352,15 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 
 /* layers: cards of switch rows */
 .lcard { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 6px; margin: 0 0 10px; }
-.lcard header { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 4px; }
+.lcard > summary { display: flex; align-items: center; gap: 8px; margin: 0; padding: 2px 0; cursor: pointer; list-style: none; user-select: none; }
+.lcard > summary::-webkit-details-marker { display: none; }
+.lcard[open] > summary { margin-bottom: 4px; }
+.lcard > summary > span { flex: 1; text-align: right; }
+.lcard > summary .chev { width: 7px; height: 7px; margin: 0 2px 2px auto; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; flex: none; }
+.lcard > summary > span + .chev { margin-left: 0; }
+.lcard[open] > summary .chev { transform: rotate(45deg); }
 .lcard h4 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
-.lcard header span { font-size: 11px; color: var(--muted); opacity: .8; }
+.lcard > summary > span { font-size: 11px; color: var(--muted); opacity: .8; }
 .lrow { display: flex; align-items: center; gap: 10px; padding: 7px 2px; cursor: pointer; border-radius: 6px; }
 .lrow + .lrow { border-top: 1px solid rgba(42,50,61,.55); }
 .lrow:hover { background: rgba(255,255,255,.03); }
@@ -393,8 +403,7 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .lslider[hidden] { display: none; }
 .lslider input { flex: 1; accent-color: var(--accent); }
 .lslider output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
-.llegend summary { cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 2px 0; }
-.llegend[open] summary { margin-bottom: 6px; }
+.llegend[open] > summary { margin-bottom: 6px; }
 
 /* markers: search, a card per set */
 .mk-search { position: sticky; top: -12px; z-index: 2; background: var(--bg); padding: 0 0 8px; }

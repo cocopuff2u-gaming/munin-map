@@ -21,7 +21,14 @@ export function makeIcon(name, color, label, cls = 'mk') {
   });
 }
 
-// this browser's id: made up once, kept; the server keys web pins by it so only this browser can remove them
+// this browser's id: made up once, kept; the server keys web pins by it so only this browser can
+// remove them. It is the "pin key": pasted into another browser, that one can remove them too
+export function setClientId(id) {
+  id = String(id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+  if (!id) return false;
+  try { localStorage.setItem('munin-client', id); } catch (e) { return false; }
+  return true;
+}
 export function clientId() {
   let id = null;
   try { id = localStorage.getItem('munin-client'); } catch (e) { /* storage blocked */ }
@@ -43,6 +50,9 @@ const GAME_ICON = {
   fire: 'pin:Icon0', house: 'pin:Icon1', mine: 'pin:Icon2', dot: 'pin:Icon3', cave: 'pin:Icon4', pin: 'pin:Icon3', bed: 'pin:Bed',
 };
 
+// names in the order people expect: Beef 3 before Beef 14, case ignored
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+export const byName = (a, b) => collator.compare(a || '', b || '');
 export function escape(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 export class MarkerLayers {
@@ -115,7 +125,7 @@ export class MarkerLayers {
           area: cat === 'ward' && m.r ? { r: m.r, on: !!m.on } : undefined,   // the ground a ward protects (MarkerGL draws the ring)
           labelColor: gamePin ? '#d6d6d6' : undefined,
           always: cat === 'spawn' || cat === 'boss' || cat === 'trader' || cat === 'miniboss',   // their labels always show (valheim.tools does the same): never in a tug of war
-          open: (ll) => L.popup({ offset: [0, -8] }).setLatLng(ll).setContent(editable ? this.basePopup(m, set) : popupHtml(m, set)).openOn(this.map) });
+          open: (ll) => L.popup({ offset: [0, -8] }).setLatLng(ll).setContent(editable ? this.basePopup(m, set) : cat === 'portal' ? this.portalPopup(m, set, byTag) : popupHtml(m, set)).openOn(this.map) });
         if (cat === 'portal' && m.tag) { if (!byTag.has(m.tag)) byTag.set(m.tag, []); byTag.get(m.tag).push(m); }
       }
     }
@@ -143,12 +153,15 @@ export class MarkerLayers {
 
   async loadPins() {
     try {
-      const pins = await getJSON('data/pins.json');
+      // the server marks this browser's own pins "mine" (it never sends who owns the others)
+      const pins = await getJSON('data/pins.json?client=' + encodeURIComponent(clientId()));
+      this.pins.clear();
       for (const p of pins) this.addPin(p);
     } catch (e) { console.warn('pins', e); }
   }
 
   addPin(p) {
+    if (this.pins.get(p.id)?.mine) p.mine = true;   // the live copy doesn't say whose it is
     this.pins.set(p.id, p);
     this.list = null;
     this.canvas.draw();
@@ -162,7 +175,7 @@ export class MarkerLayers {
   openPin(p, ll) {
     let key = '';
     try { key = localStorage.getItem('munin-admin-key') || ''; } catch (e) { /* no storage */ }
-    const mine = p.owner === 'web:' + clientId();
+    const mine = !!p.mine;
     const el = document.createElement('div');
     el.innerHTML = `<b>${escape(p.text || 'Pin')}</b><small>by ${escape(p.name)} · ${p.x}, ${p.z}</small>` +
       (mine || key ? `<div class="pin-actions"><button class="btn small" type="button">Remove pin</button></div><small class="err" hidden></small>` : '');
@@ -179,6 +192,30 @@ export class MarkerLayers {
       } catch (e) { err.textContent = 'Could not remove: ' + e.message; err.hidden = false; }
     });
     L.popup({ offset: [0, -16] }).setLatLng(ll).setContent(el).openOn(this.map);
+  }
+
+  // a portal's popup, with a button to each other end of its tag (byTag: tag -> portals, filled
+  // while the list is built, so it is complete by the time anyone clicks)
+  portalPopup(m, set, byTag) {
+    const el = document.createElement('div');
+    el.innerHTML = popupHtml(m, set);
+    const others = (m.tag && byTag.get(m.tag) || []).filter((o) => o !== m);
+    if (!others.length) return el;
+    const row = document.createElement('div');
+    row.className = 'pin-actions';
+    for (const o of others) {
+      const far = Math.hypot(o.x - m.x, o.z - m.z);
+      const b = document.createElement('button');
+      b.className = 'btn small'; b.type = 'button';
+      b.textContent = `Go to the other end (${far < 1000 ? Math.round(far) + ' m' : (far / 1000).toFixed(1) + ' km'})`;
+      b.addEventListener('click', () => {
+        L.popup({ offset: [0, -8], autoPan: false }).setLatLng(toLatLng(o.x, o.z)).setContent(this.portalPopup(o, set, byTag)).openOn(this.map);
+        window.app?.goTo(o.x, o.z, Math.max(this.map.getZoom(), 6));
+      });
+      row.append(b);
+    }
+    el.append(row);
+    return el;
   }
 
   // popup for an auto-detected base: rename it, hide it, or put the name back
@@ -216,7 +253,9 @@ export class MarkerLayers {
       <div class="row"><select name="type">${PIN_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select>
       <input name="text" maxlength="20" placeholder="Label (letters, numbers)" autocomplete="off"></div>
       <div class="row"><input name="name" maxlength="16" placeholder="Your name" value="${escape(name)}" autocomplete="off"><button class="btn small" type="submit">Add pin</button>${this.onPing ? '<button class="btn small" type="button" data-act="ping" title="Ping this spot in game">Ping</button>' : ''}</div>
-      <small class="err" hidden></small>`;
+      <small class="err" hidden></small>
+      <details class="pin-key"><summary>Pin key</summary><small>Your pins can be removed from this browser only. To remove them from another one, copy this key there.</small>
+      <div class="row"><input name="key" value="${escape(clientId())}" autocomplete="off" spellcheck="false"><button class="btn small" type="button" data-act="key">Use key</button></div></details>`;
     const popup = L.popup({ closeButton: true, autoPan: true, className: 'pin-form-popup' }).setLatLng(latlng).setContent(el).openOn(this.map);
     setTimeout(() => el.querySelector('[name=text]').focus(), 50);
     el.querySelector('[data-act=ping]')?.addEventListener('click', () => {
@@ -224,6 +263,14 @@ export class MarkerLayers {
       if (!who) { el.querySelector('[name=name]').focus(); return; }
       try { localStorage.setItem('munin-pin-name', who); } catch (e) { /* no storage */ }
       this.onPing(latlng, who);
+      this.map.closePopup(popup);
+    });
+    el.querySelector('[data-act=key]').addEventListener('click', () => {
+      const err = el.querySelector('.err'), key = el.querySelector('[name=key]');
+      if (key.value.trim() === clientId()) return;
+      if (!setClientId(key.value.trim())) { err.textContent = 'That key can\'t be used here'; err.hidden = false; return; }
+      key.value = clientId();
+      this.loadPins();
       this.map.closePopup(popup);
     });
     el.addEventListener('submit', async (ev) => {
@@ -235,7 +282,12 @@ export class MarkerLayers {
       try {
         const r = await fetch('api/pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Munin-Client': clientId() },
           body: JSON.stringify({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, type: fd.get('type'), text: fd.get('text'), name: who, client: clientId() }) });
-        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || r.status); }
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.status);
+        // the live pin may have come in already, or still be on its way
+        const placed = this.pins.get(j.id);
+        if (placed) placed.mine = true; else if (j.id) this.pins.set(j.id, { id: j.id, mine: true, type: fd.get('type'), name: who, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, text: fd.get('text') });
+        this.list = null; this.canvas.draw(); this.emitPins();
         this.map.closePopup(popup);
       } catch (e) { err.textContent = 'Could not add pin: ' + e.message; err.hidden = false; }
     });

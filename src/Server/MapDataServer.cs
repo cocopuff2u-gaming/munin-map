@@ -203,7 +203,7 @@ namespace MuninMap
         {
             lock (pins) pins.Add($"{id},{pinId},{type},{name},{Fixed(position.x)},{Fixed(position.z)},{pinText}");
             var j = new JsonWriter(160);
-            j.BeginObject().Prop("t", "pin").Prop("owner", id).Prop("id", pinId).Prop("type", type).Prop("name", name)
+            j.BeginObject().Prop("t", "pin").Prop("id", pinId).Prop("type", type).Prop("name", name)
              .Prop("x", position.x, 1).Prop("z", position.z, 1).Prop("text", pinText).End();
             Send(j.ToString());
             Events.Add("pin", name, "placed a pin" + (pinText.Length > 0 ? ": " + pinText : ""), position.x, position.z);
@@ -216,7 +216,9 @@ namespace MuninMap
             Send("{\"t\":\"rmpin\",\"id\":\"" + parts[1] + "\"}");
         }
 
-        public string PinsJson()
+        // owners stay on the server (a published owner id is all it takes to remove someone's pin);
+        // the asking browser (viewer, "web:<client>") gets "mine" on its own pins
+        public string PinsJson(string viewer = null)
         {
             var j = new JsonWriter(1024);
             j.BeginArray();
@@ -225,7 +227,8 @@ namespace MuninMap
                 {
                     var p = line.Split(',');
                     if (p.Length < 7) continue;
-                    j.BeginObject().Prop("owner", p[0]).Prop("id", p[1]).Prop("type", p[2]).Prop("name", p[3]);
+                    j.BeginObject().Prop("id", p[1]).Prop("type", p[2]).Prop("name", p[3]);
+                    if (viewer != null && p[0] == viewer) j.Prop("mine", true);
                     float.TryParse(p[4], NumberStyles.Float, CultureInfo.InvariantCulture, out float x);
                     float.TryParse(p[5], NumberStyles.Float, CultureInfo.InvariantCulture, out float z);
                     j.Prop("x", x, 1).Prop("z", z, 1).Prop("text", string.Join(",", p, 6, p.Length - 6)).End();
@@ -370,7 +373,9 @@ namespace MuninMap
                 case "/messages": return Text(e, Events.RecentJson, "application/json", nocache: true);
                 case "/pins":
                 {
-                    string text; lock (pins) text = string.Join("\n", pins);
+                    // the owner column is blanked unless the token is sent
+                    bool full = Authorized(req);
+                    string text; lock (pins) text = string.Join("\n", full ? pins : pins.ConvertAll(l => l.Substring(l.IndexOf(','))));
                     return Text(e, text, "text/csv", nocache: true);
                 }
                 case "/structures": return Bytes(e, StructureMap.GetPng(), "image/png", "no-cache");
@@ -399,7 +404,7 @@ namespace MuninMap
                     string name = MuninMap.CleanPinText(f.TryGetValue("name", out object no) ? no as string : null, 16);
                     if (name.Length == 0) name = "web";
                     string id = MuninMap.PlacePin(owner, f.TryGetValue("type", out object to) ? to as string : "dot", name, new Vector3(x, 0, z), f.TryGetValue("text", out object txo) ? txo as string : "");
-                    return Text(e, "{\"id\":\"" + id + "\",\"owner\":\"" + owner + "\"}", "application/json", nocache: true);
+                    return Text(e, "{\"id\":\"" + id + "\"}", "application/json", nocache: true);
                 }
                 case "/api/ping":
                 {
@@ -475,15 +480,16 @@ namespace MuninMap
             return false;
         }
 
-        // a browser identifies itself with a random id it made up and keeps (X-Munin-Client header
-        // or "client" in the body); pins it placed can be removed from that browser only
+        // a browser identifies itself with a random id it made up and keeps (X-Munin-Client header,
+        // "client" in the body or ?client=); pins it placed can be removed from that browser only
         private static readonly Regex clientIdFilter = new Regex("[^A-Za-z0-9_-]", RegexOptions.Compiled);
-        private static readonly Dictionary<string, float> pinLast = new Dictionary<string, float>();
+        private static readonly Dictionary<string, double> pinLast = new Dictionary<string, double>();
 
         private static string WebOwner(HttpListenerRequest req, Dictionary<string, object> body)
         {
             string c = req.Headers["X-Munin-Client"];
             if (string.IsNullOrEmpty(c) && body != null && body.TryGetValue("client", out object co)) c = co as string;
+            if (string.IsNullOrEmpty(c)) c = req.QueryString["client"];
             c = clientIdFilter.Replace(c ?? "", "");
             if (c.Length > 40) c = c.Substring(0, 40);
             if (c.Length == 0) c = "anon";
@@ -492,10 +498,10 @@ namespace MuninMap
 
         private static bool PinRateOk(string owner)
         {
-            float now = (float)(DateTime.UtcNow - new DateTime(2020, 1, 1)).TotalSeconds;
+            double now = (DateTime.UtcNow - new DateTime(2020, 1, 1)).TotalSeconds;   // double: a float of this is only good to 16 s
             lock (pinLast)
             {
-                if (pinLast.TryGetValue(owner, out float last) && now - last < 2f) return false;
+                if (pinLast.TryGetValue(owner, out double last) && now - last < 2.0) return false;
                 pinLast[owner] = now;
                 if (pinLast.Count > 512) pinLast.Clear();
             }
@@ -562,7 +568,12 @@ namespace MuninMap
                     int.TryParse(e.Request.QueryString["limit"] ?? "100", out int limit);
                     return Text(e, Events.OlderJson(before, Math.Max(1, Math.Min(500, limit))), "application/json", nocache: true);
                 }
-                case "pins.json": return Text(e, PinsJson(), "application/json", nocache: true);
+                case "pins.json":
+                {
+                    // ?client=<id> (or the X-Munin-Client header) marks that browser's pins
+                    bool asked = !string.IsNullOrEmpty(e.Request.QueryString["client"]) || !string.IsNullOrEmpty(e.Request.Headers["X-Munin-Client"]);
+                    return Text(e, PinsJson(asked ? WebOwner(e.Request, null) : null), "application/json", nocache: true);
+                }
                 case "markers.json": return Text(e, Markers.Json, "application/json", nocache: true);
                 case "fog.png": return Bytes(e, Fog.Png(), "image/png", "no-cache");
                 case "structures/index.json": return Text(e, Structures.IndexJson, "application/json", nocache: true);

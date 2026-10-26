@@ -1,6 +1,6 @@
 // The sidebar: layers, players, markers, stats, events.
 
-import { escape } from './layers/markers.js';
+import { escape, byName } from './layers/markers.js';
 import { iconSvg, colors, materialColors, materialNames } from './icons.js';
 import { stats as statsStore, prefabs, objectFilter, OBJECT_CATS, markers as markerStore } from './data.js';
 import { layerState } from './layerstate.js';
@@ -90,8 +90,19 @@ export class Sidebar {
   buildLayers() {
     const p = $('#panel-layers');
     const L = this.app.layers, S = layerState;
+    // each card folds away like the Map key; this browser remembers which are open
+    let opened = {};
+    try { opened = JSON.parse(localStorage.getItem('munin-layer-folds') || '{}') || {}; } catch (e) { /* none */ }
+    const foldable = (c, title, open = true) => {
+      c.open = opened[title] ?? open;
+      c.addEventListener('toggle', () => {
+        opened[title] = c.open;
+        try { localStorage.setItem('munin-layer-folds', JSON.stringify(opened)); } catch (e) { /* this visit only */ }
+      });
+      return c;
+    };
     const card = (title, sub) => {
-      const c = el(`<section class="lcard"><header><h4>${title}</h4>${sub ? `<span>${sub}</span>` : ''}</header></section>`);
+      const c = foldable(el(`<details class="lcard"><summary><h4>${title}</h4>${sub ? `<span>${sub}</span>` : ''}<i class="chev"></i></summary></details>`), title);
       p.append(c);
       return c;
     };
@@ -191,7 +202,7 @@ export class Sidebar {
     }
 
     // ---- what the colours mean, folded away: buildings by material, trees and rocks by kind
-    const legend = el('<details class="lcard llegend"><summary>Map key</summary><div class="lsub">Buildings</div><div class="legend lb"></div><div class="lsub">Trees &amp; rocks</div><div class="legend lv"></div></details>');
+    const legend = foldable(el('<details class="lcard llegend"><summary><h4>Map key</h4><i class="chev"></i></summary><div class="lsub">Buildings</div><div class="legend lb"></div><div class="lsub">Trees &amp; rocks</div><div class="legend lv"></div></details>'), 'Map key', false);
     materialNames.forEach((n, i) => legend.querySelector('.lb').append(el(`<span><i style="background:${materialColors[i]}"></i>${n}</span>`)));
     for (const [kind, name] of VEG_KEY) if (VEG[kind]) legend.querySelector('.lv').append(el(`<span><i class="${VEG[kind][2] ? 'rock' : 'round'}" style="background:${VEG[kind][1]}"></i>${name}</span>`));
     p.append(legend);
@@ -282,7 +293,7 @@ export class Sidebar {
     this.mkBody.replaceChildren();
     let any = false;
     for (const s of sets) {
-      let ms = (s.markers || []).slice().sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+      let ms = (s.markers || []).slice().sort((a, b) => byName(a.label, b.label));
       if (q) ms = ms.filter((m) => (m.label || '').toLowerCase().includes(q) || (m.tag || '').toLowerCase().includes(q));
       if (q && !ms.length) continue;
       any = true;

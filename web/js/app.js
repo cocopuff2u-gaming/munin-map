@@ -12,7 +12,7 @@ import { RuinsLayer } from './layers/ruins.js';
 import { webgl2Available, TreesGL, RuinsGL, BuildingsGL } from './layers/shapes.js';
 import { GroundGL, FogGL, WorldEdgeGL, GuideGL, BiomeGL, AltBiomeGL, MistGL } from './layers/ground.js';
 import { SmoothZoom, SmoothZoomControl } from './smoothzoom.js';
-import { MarkerLayers, escape } from './layers/markers.js';
+import { MarkerLayers, escape, byName } from './layers/markers.js';
 import { PlayersLayer } from './layers/players.js';
 import { RaidLayer } from './layers/raid.js';
 import { chunks, objects, prefabs, markers, stats } from './data.js';
@@ -231,7 +231,15 @@ class App {
       let i = items.findIndex((b) => b.classList.contains('active'));
       if (e.key === 'ArrowDown') { i = Math.min(items.length - 1, i + 1); e.preventDefault(); }
       else if (e.key === 'ArrowUp') { i = Math.max(0, i - 1); e.preventDefault(); }
-      else if (e.key === 'Enter') { (items[Math.max(0, i)] || {}).click?.(); return; }
+      else if (e.key === 'Enter') {
+        // Enter goes to the highlighted match and keeps the list; Enter again, the next one (Shift: back)
+        if (!items.length) return;
+        if (i >= 0 && i === this.searchAt) i = (i + (e.shiftKey ? items.length - 1 : 1)) % items.length;
+        i = Math.max(0, i);
+        this.searchAt = i;
+        items[i].go();
+        items[i].scrollIntoView({ block: 'nearest' });
+      }
       else if (e.key === 'Escape') { this.hideSearch(); search.blur(); return; }
       else return;
       items.forEach((b, k) => b.classList.toggle('active', k === i));
@@ -362,12 +370,18 @@ class App {
     if (coord) out.push({ kind: 'Coordinates', label: `${coord[1]}, ${coord[2]}`, x: +coord[1], z: +coord[2] });
     const ql = q.toLowerCase();
     for (const p of this.layers.players.players) if (p.name.toLowerCase().includes(ql) && p.x !== undefined) out.push({ kind: 'Player', label: p.name, x: p.x, z: p.z, player: p.id });
-    for (const m of this.layers.markers.all()) if ((m.label || '').toLowerCase().includes(ql) || (m.kind || '').toLowerCase() === ql) out.push(m);
+    // markers: names that start with the query first, then the rest, each in name order
+    const found = [];
+    for (const m of this.layers.markers.all()) if ((m.label || '').toLowerCase().includes(ql) || (m.kind || '').toLowerCase() === ql) found.push(m);
+    const starts = (m) => ((m.label || '').toLowerCase().startsWith(ql) ? 0 : 1);
+    out.push(...found.sort((a, b) => starts(a) - starts(b) || byName(a.label, b.label) || byName(a.kind, b.kind)));
     res.replaceChildren();
+    this.searchAt = -1;
     for (const r of out.slice(0, 30)) {
       const b = document.createElement('button');
       b.innerHTML = `<span>${escape(r.label)}</span><span class="kind">${escape(r.kind)} · ${Math.round(r.x)}, ${Math.round(r.z)}</span>`;
-      b.addEventListener('click', () => { this.goTo(r.x, r.z, Math.max(this.map.getZoom(), 6)); if (r.player) this.layers.players.follow(r.player); this.hideSearch(); });
+      b.go = () => { this.goTo(r.x, r.z, Math.max(this.map.getZoom(), 6)); if (r.player) this.layers.players.follow(r.player); };
+      b.addEventListener('click', () => { b.go(); this.hideSearch(); });
       res.append(b);
     }
     if (!out.length) res.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'No matches' }));
