@@ -191,6 +191,34 @@ uniform float u_alpha;
 out vec4 o;
 void main() { o = texture(u_tex, v_uv) * u_alpha; }`;
 
+// Contour lines from a height tile (R32F, metres, row 0 north), worked out per pixel: how far this
+// pixel is from the nearest line, in screen pixels (the height's change across a pixel, fwidth), so
+// lines are a pixel wide and sharp at any zoom. Every fifth line bolder; lines closer together than
+// a few pixels fade out instead of turning the slope solid.
+const CONTOUR_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform highp sampler2D u_h;
+uniform float u_interval;   // metres between lines
+uniform float u_alpha;
+out vec4 o;
+float hAt(ivec2 p) { return texelFetch(u_h, clamp(p, ivec2(0), ivec2(255)), 0).r; }
+float line(float h, float step, float w, float half_, float strength) {
+  float d = abs(fract(h / step + 0.5) - 0.5) * step / w;          // pixels to the nearest line
+  float room = clamp((step / w - 3.0) / 3.0, 0.0, 1.0);            // lines under ~3-6 px apart fade
+  return clamp(half_ + 0.5 - d, 0.0, 1.0) * strength * room;
+}
+void main() {
+  vec2 t = v_uv * 256.0 - 0.5;
+  ivec2 i = ivec2(floor(t));
+  vec2 f = fract(t);
+  float h = mix(mix(hAt(i), hAt(i + ivec2(1, 0)), f.x), mix(hAt(i + ivec2(0, 1)), hAt(i + ivec2(1, 1)), f.x), f.y) - 30.0;
+  float w = max(fwidth(h), 1e-4);
+  float a = max(line(h, u_interval, w, 0.45, 0.36), line(h, u_interval * 5.0, w, 0.8, 0.66));
+  a *= step(u_interval * 0.5, h);                                  // nothing at or under the sea
+  o = vec4(vec3(0.157, 0.094, 0.039) * a, a) * u_alpha;            // premultiplied
+}`;
+
 // Soft dark clouds in world space past the world's edge, like the seed maps' surround (generated
 // here, nothing to download); darker toward the rim. Inside the circle the fog stays plain black.
 const CLOUDS_GLSL = `
@@ -525,6 +553,7 @@ export class ShapesCanvas {
     try { this.edgeSpace = compile(gl, EDGE_VS, EDGE_SPACE_FS); } catch (e) { this.edgeSpace = null; }
     try { this.cloudBake = compile(gl, CLOUD_BAKE_VS, CLOUD_BAKE_FS); } catch (e) { this.cloudBake = null; }
     this.guide = compile(gl, EDGE_VS, GUIDE_FS);
+    try { this.contour = compile(gl, TEX_VS, CONTOUR_FS); } catch (e) { this.contour = null; }
     try { this.alt = compile(gl, EDGE_VS, ALT_FS); } catch (e) { this.alt = null; }
     try { this.mist = compile(gl, EDGE_VS, MIST_FS); this.mistBake = compile(gl, CLOUD_BAKE_VS, MIST_BAKE_FS); } catch (e) { this.mist = this.mistBake = null; }
     this.line = compile(gl, LINE_VS, LINE_FS);

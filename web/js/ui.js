@@ -184,7 +184,7 @@ export class Sidebar {
     const guides = card('Map guides');
     guides.append(row(GRID_SVG, 'Grid', '256 m zones with coordinates', S.grid, (v) => { this.app.setGrid(v); S.set('grid', v); }));
     guides.append(row(RINGS_SVG, 'Distance rings', 'Every 500 m out from the spawn', S.rings, (v) => { this.app.setRings(v); S.set('rings', v); }));
-    if ((this.app.config?.height_max_zoom ?? -1) >= 0)
+    if (this.app.gl && (this.app.config?.height_max_zoom ?? -1) >= 0)   // (drawn in the WebGL map)
       guides.append(row(CONTOUR_SVG, 'Contour lines', 'Height lines, metres above sea', false, (v) => this.app.setContours(v)));
 
     // ---- where players go, and what weighs on their frame rate (all off at first: data on demand)
