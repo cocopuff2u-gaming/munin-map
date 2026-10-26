@@ -253,7 +253,7 @@ export class Sidebar {
       const hp = pl.maxHealth ? Math.round(100 * pl.health / pl.maxHealth) : 100;
       const color = PL.color(pl.name), following = PL.following === pl.id;
       const tags = [pl.dead && '<span class="tag dead">Dead</span>', pl.inBed && '<span class="tag sleep">Sleeping</span>', pl.pvp && '<span class="tag pvp">PvP</span>'].filter(Boolean).join('');
-      const where = pl.x !== undefined ? `${escape(pl.biome || '')}${pl.biome ? ' · ' : ''}${pl.weather ? escape(pl.weather) + ' · ' : ''}${this.whereText(pl.x, pl.z)}` : 'Position hidden';
+      const where = pl.x !== undefined ? `${escape(pl.biome || '')}${pl.biome ? ' · ' : ''}${this.whereText(pl.x, pl.z)}` : 'Position hidden';   // (the weather is on their card)
       const r = el(`<div class="pcard${following ? ' on' : ''}">
         <div class="pc-top"><span class="avatar" style="background:${color}">${escape((pl.name || '?').slice(0, 1).toUpperCase())}</span>
           <div class="grow"><div class="pc-name">${escape(pl.name)}${tags}</div><div class="pc-where" title="${pl.x !== undefined ? `${pl.x}, ${pl.z}` : ''}">${where}</div></div>

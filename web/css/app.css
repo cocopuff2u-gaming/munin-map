@@ -513,7 +513,7 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #0d1117; flex: none; font-size: 14px; }
 .avatar.small { width: 22px; height: 22px; font-size: 11px; }
 .pc-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.pc-where { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-where { font-size: 11px; color: var(--muted); line-height: 1.3; }
 .tag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; }
 .tag.dead { background: rgba(255,92,92,.15); color: #ff8f8f; }
 .tag.sleep { background: rgba(201,167,255,.15); color: #c9a7ff; }
