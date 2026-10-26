@@ -342,7 +342,7 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .forecast th:first-child { width: 24%; }
 .forecast td.same { color: var(--muted); opacity: .6; }
 .boss-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 4px 0; }
-.boss { background: var(--bg-3); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 11px; color: var(--muted); opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.boss { background: var(--bg-3); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 11px; color: var(--muted); opacity: .6; line-height: 1.2; hyphens: manual; }
 .boss span { display: block; font-size: 14px; font-weight: 700; }
 .boss.down { opacity: 1; color: var(--text); background: rgba(255,92,92,.12); box-shadow: inset 0 0 0 1px rgba(255,92,92,.45); }
 .boss.down span { color: #ff5c5c; }

@@ -117,7 +117,7 @@ export class Sidebar {
     const world = card('The world');
     if (this.app.biomes) {
       // map style: the drawn land, or each biome in a solid colour with its name
-      const style = el(`<div class="lrow"><span class="lico">${BIOME_SVG}</span><span class="ltext"><b>Map style</b><small>Terrain, or biomes in solid colours</small></span><select class="sel"><option value="terrain">Terrain</option><option value="biomes">Biomes</option></select></div>`);
+      const style = el(`<div class="lrow"><span class="lico">${BIOME_SVG}</span><span class="ltext"><b>Map style</b><small>Terrain or solid biomes</small></span><select class="sel"><option value="terrain">Terrain</option><option value="biomes">Biomes</option></select></div>`);
       const keyEl = el('<div class="biome-key" hidden></div>');
       const sel = style.querySelector('select'); sel.value = S.mapStyle;
       const apply = () => { const on = sel.value === 'biomes'; this.app.biomes.setOn(on); keyEl.hidden = !on; S.set('mapStyle', sel.value); };
@@ -378,7 +378,7 @@ export class Sidebar {
     if (d.bosses && d.bosses.length) {
       const down = d.bosses.filter((b) => b.defeated).length;
       p.append(el(`<h3>Bosses <span class="count">${down} of ${d.bosses.length}</span></h3>`));
-      p.append(el(`<div class="boss-track">${d.bosses.map((b) => `<div class="boss${b.defeated ? ' down' : ''}" title="${escape(b.name)}${b.defeated ? ': defeated' : ': not yet'}"><span>${b.defeated ? '&#10003;' : '?'}</span>${escape(b.name)}</div>`).join('')}</div>`));
+      p.append(el(`<div class="boss-track">${d.bosses.map((b) => `<div class="boss${b.defeated ? ' down' : ''}" title="${escape(b.name)}${b.defeated ? ': defeated' : ': not yet'}"><span>${b.defeated ? '&#10003;' : '?'}</span>${breakable(b.name)}</div>`).join('')}</div>`));
     }
 
     // the world's other keys: what its first kills unlocked (raids), and the world modifiers it runs with
@@ -401,7 +401,7 @@ export class Sidebar {
     // Hildir's sisters, each the boss of one of her quest dungeons, and the Writhan
     p.append(el('<div class="sub">Mini bosses</div>'));
     p.append(el(`<div class="boss-track">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
-      return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${escape(n)}</div>`; }).join('')}</div>`));
+      return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${breakable(n)}</div>`; }).join('')}</div>`));
     if (quests.length) {
       p.append(el('<div class="sub">Hildir\'s quests</div>'));
       p.append(el(`<div class="chips">${quests.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));
@@ -727,6 +727,8 @@ const HILDIR_QUESTS = {
 };
 // kill keys whose game name is not just the key prettied
 const KILL_NAMES = { elakingmole: 'Eyeless One' };
+// a name for a narrow tile: a long word may break in its middle, with a hyphen (Fimbul-bringer)
+const breakable = (s) => escape(s).split(' ').map((w) => (w.length > 10 ? w.slice(0, Math.floor(w.length / 2)) + '&shy;' + w.slice(Math.floor(w.length / 2)) : w)).join(' ');
 const prettyKey = (s) => s.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 
 // world keys the game sets as a world progresses (each widens what can attack you)
