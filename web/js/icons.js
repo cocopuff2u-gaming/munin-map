@@ -14,6 +14,12 @@ const glyphs = {
   fortress: '<path d="M4 21V8h3v2h2V8h2v2h2V8h2v2h2V8h3v13z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M10 21v-5a2 2 0 0 1 4 0v5z" fill="#111"/>',
   cave: '<path d="M4 20V11a8 8 0 0 1 16 0v9z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M9 20v-5a3 3 0 0 1 6 0v5z" fill="#111"/>',
   camp: '<path d="M12 4l9 16H3z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 12l4 8H8z" fill="#111"/>',
+  bearcave: '<path d="M3 21 8 8l4 3 4-6 5 16z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M9 21c0-4 1.5-6 3-6s3 2 3 6z" fill="#111"/><circle cx="10.4" cy="14.6" r="1.1" fill="COLOR" stroke="none"/><circle cx="13.6" cy="14.6" r="1.1" fill="COLOR" stroke="none"/>',
+  // the Deep North: a shaft going down, and Mörkhalla's dark keep
+  hole: '<ellipse cx="12" cy="13" rx="9" ry="6" fill="COLOR" stroke="#111" stroke-width="1.2"/><ellipse cx="12" cy="13.5" rx="5.5" ry="3.4" fill="#111"/><path d="M12 3v6M9.5 6.5 12 9l2.5-2.5" fill="none" stroke="COLOR" stroke-width="1.8"/>',
+  morkhalla: '<path d="M4 21V9l3-3 3 3V6l2-3 2 3v3l3-3 3 3v12z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 21v-5a2 2 0 0 1 4 0v5z" fill="#111"/>',
+  fulingcamp: '<path d="M12 4l9 16H3z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 12l4 8H8z" fill="#111"/><path d="M12 4V1.5M12 2l3 1-3 1" fill="COLOR" stroke="#111" stroke-width="1"/>',
+  tarpit: '<path d="M3 15c0-3 4-5 9-5s9 2 9 5-4 5-9 5-9-2-9-5z" fill="COLOR" stroke="#111" stroke-width="1.2"/><circle cx="9" cy="14" r="1.6" fill="#111"/><circle cx="14.5" cy="15.5" r="1.2" fill="#111"/><path d="M12 9c0-2 1-3 0-5" fill="none" stroke="COLOR" stroke-width="1.6"/>',
   village: '<path d="M3 20V10l5-5 5 5v10z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M13 20V12l4-4 4 4v8z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   ruin: '<path d="M5 20V9h3v3h2V6h4v6h2V9h3v11z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
   runestone: '<path d="M8 3h8l2 5-3 13H9L6 8z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 7v9M9.5 10h5" stroke="#111" stroke-width="1.6"/>',
@@ -43,6 +49,7 @@ export const colors = {
   spawn: '#7cff4f', boss: '#ff5c5c',   // spawn: a bright lime nothing else uses
   // dungeon kinds, each its own colour, from its biome and clear of the other markers' colours
   crypt: '#7fa86a', sunkencrypt: '#9aa04e', trollcave: '#a7764c', frostcave: '#9fd1ee', infestedmine: '#7f95b8', fortress: '#c94a32',
+  bearcave: '#b08a5e', hole: '#b9d4e6', morkhalla: '#9b86e0', fulingcamp: '#d9b26b', tarpit: '#8f8578',
   trader: '#f2c14e', hildir: '#f2c14e', bogwitch: '#9be37a', miniboss: '#ff9d4d', hildir1: '#ff9d4d', hildir2: '#ff9d4d', hildir3: '#ff9d4d', dungeon: '#c9a5ff', cave: '#9fd8ff', camp: '#ff9d4d',
   village: '#e0c39a', ruin: '#bfc7d2', runestone: '#8fd3ff', wreck: '#bfc7d2', poi: '#9aa5b5', portal: '#5ce0e6',
   tombstone: '#d6d6d6', boat: '#8fc7ff', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',

@@ -275,6 +275,7 @@ namespace MuninMap.Live
             new[] { "defeated_eikthyr", "Eikthyr" }, new[] { "defeated_gdking", "The Elder" }, new[] { "defeated_bonemass", "Bonemass" },
             new[] { "defeated_dragon", "Moder" }, new[] { "defeated_goblinking", "Yagluth" }, new[] { "defeated_queen", "The Queen" },
             new[] { "defeated_fader", "Fader" },
+            new[] { "defeated_frozenking_p3", "Kall Fimbulbringer" },   // the Deep North boss: the key his last form sets
         };
         private static void World(JsonWriter j)
         {

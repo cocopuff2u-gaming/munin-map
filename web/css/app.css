@@ -457,7 +457,6 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
 .chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--bg-3); color: var(--muted); border: 1px solid var(--line); }
 .chip.on { color: #ffd2a6; border-color: rgba(255,157,77,.5); background: rgba(255,157,77,.1); }
-.boss-track.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .pc-biomes { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
 .pc-first { font-size: 11px; color: var(--muted); margin-top: 4px; }

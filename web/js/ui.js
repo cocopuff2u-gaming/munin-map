@@ -207,7 +207,7 @@ export class Sidebar {
     for (const [kind, name] of VEG_KEY) if (VEG[kind]) legend.querySelector('.lv').append(el(`<span><i class="${VEG[kind][2] ? 'rock' : 'round'}" style="background:${VEG[kind][1]}"></i>${name}</span>`));
     p.append(legend);
 
-    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
+    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', camps: 'fulingcamp', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
     L.markers.onChange((sets) => {
       this.markerSetRows.replaceChildren();
       for (const s of sets) {
@@ -288,7 +288,7 @@ export class Sidebar {
     }
     if (!p.contains(this.mkSearch)) p.replaceChildren(this.mkSearch, this.mkBody);
     const q = this.mkSearch.querySelector('input').value.trim().toLowerCase();
-    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
+    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', camps: 'fulingcamp', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
     const go = (x, z) => this.app.goTo(x, z, Math.max(this.app.map.getZoom(), 6));
     this.mkBody.replaceChildren();
     let any = false;
@@ -370,7 +370,7 @@ export class Sidebar {
     const gk = (d.globalKeys || []).map((k) => String(k));
     const keySet = new Set(gk.map((k) => k.split(' ')[0].toLowerCase()));
     const progress = [], mods = [], effects = [], kills = [], quests = [];
-    const knownBoss = new Set(['defeated_eikthyr', 'defeated_gdking', 'defeated_bonemass', 'defeated_dragon', 'defeated_goblinking', 'defeated_queen', 'defeated_fader']);
+    const knownBoss = new Set(['defeated_eikthyr', 'defeated_gdking', 'defeated_bonemass', 'defeated_dragon', 'defeated_goblinking', 'defeated_queen', 'defeated_fader', 'defeated_frozenking', 'defeated_frozenking_p3']);
     let preset = null;
     for (const k of gk) {
       const [name, ...rest] = k.split(' '), low = name.toLowerCase(), val = rest.join(' ');
@@ -380,13 +380,13 @@ export class Sidebar {
       if (low === 'preset') { preset = val; continue; }
       // any other "beaten" key (other bosses, often from mods): defeated_x, x_defeated, x_killed, killedx
       const m = low.match(/^defeated_(.+)$|^(.+)_defeated$|^(.+)_killed$|^killed_?(.+)$/);
-      if (m && !MODIFIERS[low]) { kills.push(prettyKey(m[1] || m[2] || m[3] || m[4])); continue; }
+      if (m && !MODIFIERS[low]) { const who = m[1] || m[2] || m[3] || m[4]; kills.push(KILL_NAMES[who] || prettyKey(who)); continue; }
       effects.push(modifierText(low, val));
     }
-    // Hildir's sisters, each the boss of one of her quest dungeons
+    // Hildir's sisters, each the boss of one of her quest dungeons, and the Writhan
     p.append(el('<div class="sub">Mini bosses</div>'));
-    p.append(el(`<div class="boss-track three">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
-      return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}, ${escape(where)}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${escape(n)}</div>`; }).join('')}</div>`));
+    p.append(el(`<div class="boss-track">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
+      return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${escape(n)}</div>`; }).join('')}</div>`));
     if (quests.length) {
       p.append(el('<div class="sub">Hildir\'s quests</div>'));
       p.append(el(`<div class="chips">${quests.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));
@@ -698,17 +698,20 @@ const RINGS_SVG = SVG('<circle cx="12" cy="12" r="2" fill="#7cff4f" stroke="none
 const SUN_SVG = SVG('<circle cx="12" cy="12" r="4" fill="#ffd866" stroke="#ffd866"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="#ffd866"/>');
 const SHADOW_SVG = SVG('<circle cx="10" cy="10" r="5"/><path d="M8 19c3 1.5 9 1.5 12-2" opacity=".6"/>');
 
-// Hildir's sisters: the key the game sets when each is beaten
+// the mini bosses: the key the game sets when each is beaten
 const MINI_BOSSES = {
   bosshildir1: ['Brenna', 'Smouldering Tomb, Black Forest'],
   bosshildir2: ['Geirrhafa', 'Howling Cavern, Mountains'],
   bosshildir3: ['Zil & Thungr', 'Sealed Tower, Plains'],
+  defeated_writhan: ['Writhan', ''],
 };
 const HILDIR_QUESTS = {
   hildir1: ['Brenna\'s chest returned', 'Hildir\'s first quest done'],
   hildir2: ['Geirrhafa\'s chest returned', 'Hildir\'s second quest done'],
   hildir3: ['Zil & Thungr\'s chest returned', 'Hildir\'s third quest done'],
 };
+// kill keys whose game name is not just the key prettied
+const KILL_NAMES = { elakingmole: 'Eyeless One' };
 const prettyKey = (s) => s.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 
 // world keys the game sets as a world progresses (each widens what can attack you)

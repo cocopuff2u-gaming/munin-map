@@ -351,6 +351,7 @@ namespace MuninMap.World
                 case "GoblinKing": return "Yagluth";
                 case "FaderLocation": return "Fader";
             }
+            if (prefab.StartsWith("DN_Bossroom", StringComparison.Ordinal)) return "Kall Fimbulbringer";   // the game's pin: "Aesir Passage"
             return prefab.StartsWith("Mistlands_DvergrBossEntrance", StringComparison.Ordinal) ? "The Queen" : null;
         }
 
@@ -380,6 +381,21 @@ namespace MuninMap.World
             if (prefab.StartsWith("MountainCave", StringComparison.Ordinal)) { icon = "frostcave"; return "Frost cave"; }
             if (prefab.StartsWith("Mistlands_DvergrTownEntrance", StringComparison.Ordinal)) { icon = "infestedmine"; return "Infested mine"; }
             if (prefab == "CharredFortress") { icon = "fortress"; return "Charred fortress"; }
+            if (prefab == "BearCave") { icon = "bearcave"; return "Bear cave"; }
+            // the Deep North's, by the game's own names (location_thehole, location_darkesthole, location_morkhalla)
+            if (prefab.StartsWith("TheHole", StringComparison.Ordinal)) { icon = "hole"; return "Winding tunnels"; }
+            if (prefab == "TheDarkestHole") { icon = "hole"; return "The Hole"; }
+            if (prefab == "MorkBorg") { icon = "morkhalla"; return "Mörkhalla"; }
+            return null;
+        }
+
+        // camps and tar pits: places worth a trip that are not dungeons
+        private static string CampName(string prefab, out string icon)
+        {
+            icon = null;
+            if (prefab == null) return null;
+            if (prefab.StartsWith("GoblinCamp", StringComparison.Ordinal)) { icon = "fulingcamp"; return "Fuling camp"; }
+            if (prefab.StartsWith("TarPit", StringComparison.Ordinal)) { icon = "tarpit"; return "Tar pit"; }
             return null;
         }
 
@@ -504,8 +520,8 @@ namespace MuninMap.World
         private static readonly Dictionary<string, int> locationKinds = new Dictionary<string, int>();
         private static List<ZoneSystem.LocationInstance>[] LocationsByKind()
         {
-            var lists = new List<ZoneSystem.LocationInstance>[4];
-            for (int i = 0; i < 4; i++) lists[i] = new List<ZoneSystem.LocationInstance>();
+            var lists = new List<ZoneSystem.LocationInstance>[5];
+            for (int i = 0; i < 5; i++) lists[i] = new List<ZoneSystem.LocationInstance>();
             var zs = ZoneSystem.instance;
             if (zs == null) return lists;
             foreach (var li in zs.m_locationInstances.Values)
@@ -515,17 +531,18 @@ namespace MuninMap.World
                 if (!locationKinds.TryGetValue(name, out int kinds))
                 {
                     kinds = (BossName(name) != null ? 1 : 0) | (MiniBossName(name, out _) != null ? 2 : 0)
-                          | (DungeonName(name, out _) != null ? 4 : 0) | (TraderName(name, out _) != null ? 8 : 0);
+                          | (DungeonName(name, out _) != null ? 4 : 0) | (TraderName(name, out _) != null ? 8 : 0)
+                          | (CampName(name, out _) != null ? 16 : 0);
                     locationKinds[name] = kinds;
                 }
-                for (int i = 0; i < 4; i++) if ((kinds & (1 << i)) != 0) lists[i].Add(li);
+                for (int i = 0; i < 5; i++) if ((kinds & (1 << i)) != 0) lists[i].Add(li);
             }
             return lists;
         }
 
         private static IEnumerable<object> BuildParts(JsonWriter j, bool slice)
         {
-            var locs = LocationsByKind();   // altars, lairs, dungeons, traders: each loop below visits only its own
+            var locs = LocationsByKind();   // altars, lairs, dungeons, traders, camps: each loop below visits only its own
             j.BeginObject();
             j.Prop("rev", rev + 1);
             j.Key("sets").BeginArray();
@@ -592,6 +609,24 @@ namespace MuninMap.World
                     }
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: dungeons: " + e.Message); }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- Fuling camps and tar pits, on explored ground
+            j.BeginObject().Prop("id", "camps").Prop("label", "Camps & tar pits").Key("markers").BeginArray();
+            try
+            {
+                    foreach (var li in locs[4])
+                    {
+                        string name = li.m_location?.m_prefabName;
+                        string cn = CampName(name, out string icon);
+                        if (cn == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
+                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
+                         .Prop("cat", "camp").Prop("icon", icon).Prop("label", cn).Prop("prefab", name).End();
+                    }
+            }
+            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: camps: " + e.Message); }
             j.End().End();
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame

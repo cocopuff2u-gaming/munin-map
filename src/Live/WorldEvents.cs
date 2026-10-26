@@ -23,6 +23,8 @@ namespace MuninMap.Live
             { "defeated_eikthyr", "Eikthyr" }, { "defeated_gdking", "The Elder" }, { "defeated_bonemass", "Bonemass" },
             { "defeated_dragon", "Moder" }, { "defeated_goblinking", "Yagluth" }, { "defeated_queen", "The Queen" },
             { "defeated_fader", "Fader" },
+            { "defeated_frozenking", "Kall Fimbulbringer's first form" }, { "defeated_frozenking_p3", "Kall Fimbulbringer" },
+            { "defeated_writhan", "Writhan" },
         };
         private static readonly Dictionary<string, float> lastKill = new Dictionary<string, float>();
 
