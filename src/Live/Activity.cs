@@ -44,7 +44,7 @@ namespace MuninMap.Live
             {
                 foreach (var s in players)
                 {
-                    if (!s.hasPos || s.dead) continue;
+                    if (!s.hasPos || s.dead || MuninConfig.IsHidden(s.name)) continue;
                     long zone = Zone(s.x, s.z);
                     heat.TryGetValue(zone, out int sec);
                     heat[zone] = sec + Mathf.RoundToInt(dt);

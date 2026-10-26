@@ -151,6 +151,17 @@ class App {
   async start() {
     if (/[?&]fps=1\b/.test(location.search)) this.showFps();
     this.embedMode(new URLSearchParams(location.search));
+    // ?player=<name>: open that player's card once the stats are in
+    const wanted = new URLSearchParams(location.search).get('player');
+    if (wanted) {
+      const off = stats.onChange((d) => {
+        const st = (d?.players || []).find((x) => x.name.toLowerCase() === wanted.toLowerCase()) || { name: wanted };
+        off();
+        const open = () => { if (this.playerCard) this.playerCard.showByName(st.name); else setTimeout(open, 300); };   // (the card is made later in start)
+        open();
+      });
+      stats.refresh();
+    }
     this.config = await getJSON('config').catch(() => ({}));
     this.applyConfig(this.config);
     this.layers.fog = new FogLayer(this.map, this.config, { gl: this.gl });

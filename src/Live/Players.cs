@@ -154,11 +154,13 @@ namespace MuninMap.Live
         {
             var j = new JsonWriter(256 + current.Count * 160);
             j.BeginObject();
-            j.Prop("count", current.Count);
+            int shown = 0; foreach (var p in current) if (!MuninConfig.IsHidden(p.name)) shown++;
+            j.Prop("count", shown);
             if (hasWorldWind) j.Prop("windDeg", worldWind.windDeg, 0);
             j.Key("players").BeginArray();
             foreach (var s in current)
             {
+                if (MuninConfig.IsHidden(s.name)) continue;   // hidden_players
                 j.BeginObject();
                 j.Prop("id", s.id).Prop("name", s.name);
                 j.Prop("health", (int)s.health).Prop("maxHealth", (int)s.maxHealth);

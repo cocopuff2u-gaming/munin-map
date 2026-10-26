@@ -357,7 +357,7 @@ namespace MuninMap.Live
         // found by name at run time (null if a headless server has none)
         private static Func<string, string> localizer;
         private static bool localizerLooked;
-        private static string LocalizeFn(string s)
+        internal static string LocalizeFn(string s)
         {
             if (!localizerLooked)
             {

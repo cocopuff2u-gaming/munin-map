@@ -205,6 +205,7 @@ namespace MuninMap
             StaticCoroutine.Start(Models.ModelStore.Pump());
             TileStore.Start();
             World.MapIcons.Start(mapDataPath);
+            World.ItemIcons.Start(mapDataPath);
             World.BiomeMap.Start(worldDataPath);
             // close-zoom tiles for everything already explored (cheap: only queues what is missing)
             int stride = Math.Max(1, (int)(TileMath.TileSpanMeters(MuninConfig.PRERENDER_ZOOM + 1) / MuninConfig.PIXEL_SIZE / 2));
@@ -533,7 +534,7 @@ namespace MuninMap
         {
             private static void Postfix()
             {
-                try { Stats.Save(force: true); } catch { }
+                try { Stats.EndSessions(); Stats.Save(force: true); } catch { }
                 try { Activity.Save(); } catch { }
                 try { if (Fog.Dirty) Fog.Save(Path.Combine(worldDataPath, "fog.png")); } catch { }
                 TileStore.Stop();

@@ -271,9 +271,9 @@ export class Sidebar {
       p.append(el(`<h3>Recently online <span class="count">${recent.length}</span></h3>`));
       const list = el('<div class="mk-list"></div>');
       for (const x of recent) {
-        const r = el(`<div class="mrow${x.lastX !== undefined ? ' clickable' : ''}"><span class="avatar small" style="background:${PL.color(x.name)}">${escape((x.name || '?').slice(0, 1).toUpperCase())}</span>
+        const r = el(`<div class="mrow clickable"><span class="avatar small" style="background:${PL.color(x.name)}">${escape((x.name || '?').slice(0, 1).toUpperCase())}</span>
           <div class="grow"><div class="name">${escape(x.name)}</div><div class="meta">${x.lastBiome ? escape(x.lastBiome) + ' · ' : ''}${fmtDuration(x.playtime)} played</div></div><span class="mside" title="${escape(new Date(x.lastSeen).toLocaleString())}">${fmtAgo(x.lastSeen)}</span></div>`);
-        if (x.lastX !== undefined) r.addEventListener('click', () => this.app.goTo(x.lastX, x.lastZ, Math.max(this.app.map.getZoom(), 6)));
+        r.addEventListener('click', () => { const rect = r.getBoundingClientRect(); this.app.playerCard.show({ name: x.name }, rect.right, rect.top + rect.height / 2); });
         list.append(r);
       }
       p.append(list);
@@ -497,10 +497,10 @@ export class Sidebar {
       const [sk, sdir] = this.playerSort();
       const val = (pl) => sk === 'name' ? (pl.name || '').toLowerCase() : sk === 'seen' ? (pl.online ? '~' : pl.lastSeen || '') : (pl[sk] || 0);
       const sorted = ps.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * sdir; });
-      const rows = sorted.map((pl) => `<tr class="${pl.online ? 'on' : ''}" data-x="${pl.lastX ?? ''}" data-z="${pl.lastZ ?? ''}">
+      const rows = sorted.map((pl) => `<tr class="${pl.online ? 'on' : ''}" data-name="${escape(pl.name)}">
         <td>${escape(pl.name)}</td><td class="num">${fmtDuration(pl.playtime)}</td><td class="num">${pl.deaths}</td>
         <td class="num">${fmtDist(pl.distance)}</td><td class="num">${(pl.built || 0).toLocaleString()}</td><td class="num" title="${escape(pl.lastSeen)}">${pl.online ? 'now' : fmtAgo(pl.lastSeen).replace(' ago', '').replace('just now', 'now')}</td></tr>`).join('');
-      const table = el(`<div style="overflow:auto"><table class="stats"><thead><tr><th data-sort="name">Name</th><th class="num" data-sort="playtime" title="Play time since the map first saw them">Played</th><th class="num" data-sort="deaths" title="Deaths">Died</th><th class="num" data-sort="distance" title="Distance walked">Walked</th><th class="num" data-sort="built" title="Everything they ever built that still stands in this world, from before the map was installed too">Built</th><th class="num" data-sort="seen" title="Last seen">Seen</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+      const table = el(`<div style="overflow:auto"><table class="stats pl-table"><thead><tr><th data-sort="name">Name</th><th class="num" data-sort="playtime" title="Play time since the map first saw them">Played</th><th class="num" data-sort="deaths" title="Deaths">Died</th><th class="num" data-sort="distance" title="Distance walked">Walked</th><th class="num" data-sort="built" title="Everything they ever built that still stands in this world, from before the map was installed too">Built</th><th class="num" data-sort="seen" title="Last seen">Seen</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       for (const th of table.querySelectorAll('th[data-sort]')) {
         const k = th.dataset.sort;
         if (k === sk) th.textContent += sdir < 0 ? ' ▾' : ' ▴';
@@ -511,8 +511,10 @@ export class Sidebar {
           box.forEach((b, i) => { if (b) b.scrollTop = ys[i]; });
         });
       }
-      for (const tr of table.querySelectorAll('tbody tr'))
-        if (tr.dataset.x) { tr.style.cursor = 'pointer'; tr.addEventListener('click', () => this.app.goTo(+tr.dataset.x, +tr.dataset.z, 6)); }
+      for (const tr of table.querySelectorAll('tbody tr')) {   // a row opens that player's card
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', () => { const rect = tr.getBoundingClientRect(); this.app.playerCard.show({ name: tr.dataset.name }, rect.right, rect.top + rect.height / 2); });
+      }
       p.append(table);
     }
     const boards = [

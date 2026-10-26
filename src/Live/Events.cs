@@ -26,6 +26,7 @@ namespace MuninMap.Live
 
         public static void Add(string type, string name, string text, float? x = null, float? z = null)
         {
+            if (MuninConfig.IsHidden(name)) return;   // (hidden_players: not in the feed either)
             var ev = new Ev
             {
                 ts = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),

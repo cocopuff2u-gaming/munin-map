@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using MuninMap.Tiles;
 using MuninMap.Util;
@@ -36,6 +37,20 @@ namespace MuninMap.Live
             public float lastX, lastZ; public bool hasLast;
             public bool online;
             public string lastBiome = "";
+            // when they played: the last sessions (unix start, end), the one going on, and time per day (UTC)
+            public List<long[]> recent = new List<long[]>();
+            public long sessionStart;
+            public Dictionary<string, double> days = new Dictionary<string, double>();
+        }
+
+        private static long Unix() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        private static void SessionStarts(PlayerStat s) { s.sessionStart = Unix(); }
+        private static void SessionEnds(PlayerStat s)
+        {
+            if (s.sessionStart == 0) return;
+            long end = Unix();
+            if (end - s.sessionStart >= 30) { s.recent.Add(new[] { s.sessionStart, end }); if (s.recent.Count > 20) s.recent.RemoveAt(0); }
+            s.sessionStart = 0;
         }
 
         private static readonly Dictionary<string, PlayerStat> players = new Dictionary<string, PlayerStat>();
@@ -87,6 +102,10 @@ namespace MuninMap.Live
                         };
                         var bs = JsonParser.Arr(d, "biomes");
                         if (bs != null) foreach (var b in bs) if (b is string bn) s.biomes.Add(bn);
+                        var rs = JsonParser.Arr(d, "recent");
+                        if (rs != null) foreach (var ro in rs) if (ro is List<object> pr && pr.Count == 2 && pr[0] is double a0 && pr[1] is double a1) s.recent.Add(new[] { (long)a0, (long)a1 });
+                        var ds = JsonParser.Obj(d, "days");
+                        if (ds != null) foreach (var kv in ds) if (kv.Value is double sec) s.days[kv.Key] = sec;
                         if (string.IsNullOrEmpty(s.key)) continue;
                         // up to 3.0.0 the key was the platform id alone, so every character on an
                         // account shared one entry: it goes to the character last seen with it
@@ -111,6 +130,9 @@ namespace MuninMap.Live
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: stats.json not readable: " + e.Message); }
         }
+
+        // the server stopping: sessions going on end now (or they'd be lost from the recent list)
+        public static void EndSessions() { foreach (var s in players.Values) if (s.online) SessionEnds(s); dirty = true; }
 
         public static void Save(bool force = false)
         {
@@ -151,6 +173,13 @@ namespace MuninMap.Live
             j.Key("biomes").BeginArray();
             foreach (var b in s.biomes) j.Value(b);
             j.End();
+            j.Key("recent").BeginArray();
+            foreach (var r in s.recent) j.BeginArray().Value(r[0]).Value(r[1]).End();
+            j.End();
+            if (s.online && s.sessionStart > 0) j.Prop("sessionStart", s.sessionStart);
+            j.Key("days").BeginObject();
+            foreach (var kv in s.days) j.Prop(kv.Key, Math.Round(kv.Value), 0);
+            j.End();
             j.End();
         }
 
@@ -174,6 +203,7 @@ namespace MuninMap.Live
         {
             var s = Get(key, name);
             s.sessions++;
+            if (!s.online) SessionStarts(s);
             s.online = true;
             s.lastSeen = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             dirty = true;
@@ -182,6 +212,7 @@ namespace MuninMap.Live
         public static void OnLeave(string key, string name)
         {
             var s = Get(key, name);
+            if (s.online) SessionEnds(s);
             s.online = false;
             s.lastSeen = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             dirty = true;
@@ -208,8 +239,16 @@ namespace MuninMap.Live
                 var s = Get(p.key, p.name);
                 seen.Add(s.key);
                 if (p.playerId != 0L && s.playerId != p.playerId) { s.playerId = p.playerId; dirty = true; }
-                if (!s.online) { s.online = true; s.sessions++; }
+                if (!s.online) { s.online = true; s.sessions++; SessionStarts(s); }
+                if (s.sessionStart == 0) SessionStarts(s);   // (online when the server started)
                 s.playtime += dt;
+                if (dt > 0)
+                {
+                    string day = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    s.days.TryGetValue(day, out double sec);
+                    s.days[day] = sec + dt;
+                    if (s.days.Count > 31) { string oldest = s.days.Keys.Min(); s.days.Remove(oldest); }
+                }
                 s.lastSeen = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
                 if (p.tracked)
                 {
@@ -223,7 +262,7 @@ namespace MuninMap.Live
                     if (!string.IsNullOrEmpty(p.biome)) { s.lastBiome = p.biome; if (s.biomes.Add(p.biome)) dirty = true; }
                 }
             }
-            foreach (var s in players.Values) if (s.online && !seen.Contains(s.key)) s.online = false;
+            foreach (var s in players.Values) if (s.online && !seen.Contains(s.key)) { SessionEnds(s); s.online = false; }
 
             // online history, 5-minute buckets
             long bucket = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 300 * 300;
@@ -331,7 +370,7 @@ namespace MuninMap.Live
                 j.Key("players").BeginArray();
                 var list = new List<PlayerStat>(players.Values);
                 list.Sort((a, b) => b.playtime.CompareTo(a.playtime));
-                foreach (var s in list) WritePlayer(j, s, full: false);
+                foreach (var s in list) if (!MuninConfig.IsHidden(s.name)) WritePlayer(j, s, full: false);
                 j.End();
                 j.End();
                 json = j.ToString();

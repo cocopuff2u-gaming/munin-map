@@ -64,6 +64,9 @@ namespace MuninMap
 
         // markers, stats, privacy
         public static bool SHOW_LAST_SEEN_POSITION = false;
+        // characters never shown on the map, in the stats or the event feed (admins, alts)
+        public static HashSet<string> HIDDEN_PLAYERS = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public static bool IsHidden(string name) => !string.IsNullOrEmpty(name) && HIDDEN_PLAYERS.Contains(name.Trim());
         public static bool EVENT_LOG = true;
         public static float STATS_SAVE_INTERVAL = 60f;
         public static bool ENABLE_3D = true;
@@ -265,6 +268,10 @@ namespace MuninMap
             SHOW_LAST_SEEN_POSITION = config.Bind("User", "show_last_seen_position",
                 MuninConfig.SHOW_LAST_SEEN_POSITION,
                 "Show where offline players were last seen in the stats panel.").Value;
+
+            string hidden = config.Bind("User", "hidden_players", "",
+                "Character names, comma separated, never shown on the map, in the stats or in the event feed (an admin, an alt).").Value;
+            HIDDEN_PLAYERS = new HashSet<string>((hidden ?? "").Split(',').Select(n => n.Trim()).Where(n => n.Length > 0), StringComparer.OrdinalIgnoreCase);
 
             EVENT_LOG = config.Bind("Server", "event_log",
                 MuninConfig.EVENT_LOG,

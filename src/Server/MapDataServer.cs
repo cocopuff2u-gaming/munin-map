@@ -306,6 +306,7 @@ namespace MuninMap
             if (path.StartsWith("/data/", StringComparison.Ordinal)) return post ? false : ServeData(e, path);
             if (path.StartsWith("/models/", StringComparison.Ordinal)) return post ? false : ServeModel(e, path);
             if (path.StartsWith("/icons/game/", StringComparison.Ordinal)) return post ? false : ServeGameIcon(e, path);
+            if (path.StartsWith("/icons/item/", StringComparison.Ordinal)) return post ? false : ServeItemIcon(e, path);
 
             switch (path)
             {
@@ -576,6 +577,7 @@ namespace MuninMap
                 }
                 case "markers.json": return Text(e, Markers.Json, "application/json", nocache: true);
                 case "hotspots.json": return Text(e, Hotspots.Json, "application/json", nocache: true);
+                case "items.json": return Text(e, ItemIcons.NamesJson, "application/json", nocache: false);
                 case "activity.json": return Text(e, Activity.Json(), "application/json", nocache: true);
                 case "fog.png": return Bytes(e, Fog.Png(), "image/png", "no-cache");
                 case "structures/index.json": return Text(e, Structures.IndexJson, "application/json", nocache: true);
@@ -682,6 +684,19 @@ namespace MuninMap
             if (MapIcons.Dir == null || !name.EndsWith(".png", StringComparison.Ordinal) || name.Contains("/") || name.Contains("..") || name.Contains("\\")) { NotFound(e.Response); return true; }
             string full = Path.Combine(MapIcons.Dir, name);
             if (!File.Exists(full)) { NotFound(e.Response); return true; }
+            byte[] data;
+            try { data = File.ReadAllBytes(full); } catch { NotFound(e.Response); return true; }
+            return Bytes(e, data, "image/png", "public, max-age=86400", etag: ETagOf(data));
+        }
+
+        // /icons/item/{prefab}.png: the game's own item icons (World/ItemIcons), for the player cards
+        private bool ServeItemIcon(HttpRequestEventArgs e, string path)
+        {
+            string name = path.Substring("/icons/item/".Length);
+            if (ItemIcons.Dir == null || !name.EndsWith(".png", StringComparison.Ordinal)) { NotFound(e.Response); return true; }
+            name = ItemIcons.Safe(name.Substring(0, name.Length - 4));
+            string full = Path.Combine(ItemIcons.Dir, name + ".png");
+            if (name.Length == 0 || !File.Exists(full)) { NotFound(e.Response); return true; }
             byte[] data;
             try { data = File.ReadAllBytes(full); } catch { NotFound(e.Response); return true; }
             return Bytes(e, data, "image/png", "public, max-age=86400", etag: ETagOf(data));
