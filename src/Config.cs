@@ -28,6 +28,7 @@ namespace MuninMap
         public static bool ALWAYS_MAP = true;
         public static bool ALWAYS_VISIBLE = false;
         public static bool DEBUG = false;
+        public static bool PERF_REPORT = false;   // log what Munin takes of the game's thread, every 5 minutes
         public static bool TEST = false;
 
         public static int SERVER_PORT = 3000;
@@ -186,6 +187,9 @@ namespace MuninMap
             DEBUG = config.Bind("Server", "debug",
                 MuninConfig.DEBUG,
                 "Output debugging information.").Value;
+
+            PERF_REPORT = config.Bind("Debug", "perf_report", false,
+                "Every 5 minutes, log how much of the game's own thread Munin takes, job by job (ms a second). For checking the map doesn't slow the server.").Value;
 
             TEST = config.Bind("Server", "test",
                 MuninConfig.TEST,

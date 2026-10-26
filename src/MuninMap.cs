@@ -10,6 +10,7 @@ using HarmonyLib;
 using UnityEngine;
 using MuninMap.Live;
 using MuninMap.Patches;
+using MuninMap.Util;
 using MuninMap.Tiles;
 using MuninMap.World;
 using static ZRoutedRpc;
@@ -34,6 +35,7 @@ namespace MuninMap
         public static string pluginPath;
 
         public static int sayMethodHash = 0;
+        private static readonly int SayHash = "Say".GetStableHashCode(), ChatHash = "ChatMessage".GetStableHashCode();
         public static int chatMessageMethodHash = 0;
 
         public static string currentWorldName;
@@ -48,13 +50,12 @@ namespace MuninMap
             pluginPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             TakeOldSettings();
             Live.ServerLog.Listen();   // the game's console lines from the start (the admin "Server log" view)
+            MuninConfig.ReadConfigFile(Config);   // (before the patches: some are only made with debug on)
             harmony = new Harmony(GUID);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
 
             mapDataPath = Path.Combine(pluginPath ?? string.Empty, "map_data");
             Directory.CreateDirectory(mapDataPath);
-
-            MuninConfig.ReadConfigFile(Config);
             discordWebHook = new DiscordWebHook(MuninConfig.DISCORD_WEBHOOK);
             ZLog.Log($"Munin Map {VERSION} loaded");
         }
@@ -191,18 +192,18 @@ namespace MuninMap
 
         public void Online()
         {
-            StaticCoroutine.Start(PlayerSnapshotLoop());
-            StaticCoroutine.Start(Live.WorldEvents.RaidLoop());
-            StaticCoroutine.Start(Live.WorldEvents.DiscoveryLoop());
-            StaticCoroutine.Start(UpdateFogLoop());
-            StaticCoroutine.Start(SaveLoop());
-            StaticCoroutine.Start(World.Runestones.PrepareRoutine(mapDataPath));
-            StaticCoroutine.Start(WorldSweep.Loop());
-            StaticCoroutine.Start(World.Markers.LiveLoop());
-            StaticCoroutine.Start(Announce.Pump());
-            StaticCoroutine.Start(WebPing.Pump());
-            StaticCoroutine.Start(TileStore.MainThreadPump());
-            StaticCoroutine.Start(Models.ModelStore.Pump());
+            StaticCoroutine.Start(Perf.Wrap("snapshot", PlayerSnapshotLoop()));
+            StaticCoroutine.Start(Perf.Wrap("raids", Live.WorldEvents.RaidLoop()));
+            StaticCoroutine.Start(Perf.Wrap("discoveries", Live.WorldEvents.DiscoveryLoop()));
+            StaticCoroutine.Start(Perf.Wrap("fog", UpdateFogLoop()));
+            StaticCoroutine.Start(Perf.Wrap("saves", SaveLoop()));
+            StaticCoroutine.Start(Perf.Wrap("runestones", World.Runestones.PrepareRoutine(mapDataPath)));
+            StaticCoroutine.Start(Perf.Wrap("sweep", WorldSweep.Loop()));
+            StaticCoroutine.Start(Perf.Wrap("markers live", World.Markers.LiveLoop()));
+            StaticCoroutine.Start(Perf.Wrap("announce", Announce.Pump()));
+            StaticCoroutine.Start(Perf.Wrap("web pings", WebPing.Pump()));
+            StaticCoroutine.Start(Perf.Wrap("tile sampling", TileStore.MainThreadPump()));
+            StaticCoroutine.Start(Perf.Wrap("model export", Models.ModelStore.Pump()));
             TileStore.Start();
             World.MapIcons.Start(mapDataPath);
             World.ItemIcons.Start(mapDataPath);
@@ -298,7 +299,7 @@ namespace MuninMap
                     }
                     // zones generated since the last look (ships, hidden players): once a minute is plenty
                     visitedT += MuninConfig.UPDATE_FOG_TEXTURE_INTERVAL;
-                    if (visitedT >= 60f) { visitedT = 0f; Fog.RevealVisitedZones(); }
+                    if (visitedT >= 60f || Fog.VisitedPending) { visitedT = 0f; Fog.RevealVisitedZones(); }   // (a worked-out answer is applied as soon as it's in)
                 }
                 catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: fog update failed: " + e.Message); }
             }
@@ -311,6 +312,7 @@ namespace MuninMap
             {
                 yield return new WaitForSeconds(5f);
                 fogT += 5f; statsT += 5f;
+                Perf.Report();   // (perf_report: every 5 minutes)
                 if (fogT >= MuninConfig.SAVE_FOG_TEXTURE_INTERVAL)
                 {
                     fogT = 0f;
@@ -520,7 +522,7 @@ namespace MuninMap
 
                 MuninMap.instance.Online();
                 mapDataServer.ListenAsync();
-                try { Fog.RevealVisitedZones(); } catch (Exception e) { ZLog.LogWarning("MuninMap: visited-zone reveal failed: " + e.Message); }
+                try { Fog.RevealVisitedZones(wait: true); } catch (Exception e) { ZLog.LogWarning("MuninMap: visited-zone reveal failed: " + e.Message); }
             }
         }
 
@@ -620,11 +622,18 @@ namespace MuninMap
 
             internal static void Observe(ref ZRoutedRpc __instance, ref RoutedRPCData data)
             {
+                long perf = Perf.Start();
+                try { ObserveTimed(ref __instance, ref data); } finally { Perf.Stop("message hook", perf); }
+            }
+
+            private static void ObserveTimed(ref ZRoutedRpc __instance, ref RoutedRPCData data)
+            {
                 int hash = data?.m_methodHash ?? 0;
                 if (hash == 0) return;
                 if (hash == Live.WorldEvents.SetGlobalKeyHash) { Live.WorldEvents.OnGlobalKey(data); return; }   // boss kills
-                bool isSay = hash == sayMethodHash || hash == "Say".GetStableHashCode();
-                bool isChat = hash == chatMessageMethodHash || hash == "ChatMessage".GetStableHashCode();
+                // (every routed message comes through here: the two hashes once, not twice a message)
+                bool isSay = hash == sayMethodHash || hash == SayHash;
+                bool isChat = hash == chatMessageMethodHash || hash == ChatHash;
                 if (!isSay && !isChat)
                 {
                     if (MuninConfig.DEBUG)

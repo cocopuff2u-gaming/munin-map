@@ -261,17 +261,47 @@ namespace MuninMap.World
             return cells;
         }
 
-        public static int RevealVisitedZones()
+        // The zones' depths take a while on a big world (tens of thousands of zones: a 1.5 s stall of
+        // the whole server, every minute, measured on 2.9M objects), and only change when new zones are
+        // built. So: nothing when the count of built zones is the same as last time; otherwise the
+        // depths are worked out on a worker thread from a copy, and applied on a later call.
+        private static int visitedGenCount = -1;
+        private static System.Threading.Tasks.Task<System.Collections.Generic.Dictionary<Vector2s, int>> visitedTask;
+        private static System.Collections.Generic.HashSet<Vector2s> visitedCopy;
+        public static bool VisitedPending => visitedTask != null;
+
+        // wait: work it out now, on this thread (the world loading, when a stall doesn't matter)
+        public static int RevealVisitedZones(bool wait = false)
         {
             if (!MuninConfig.REVEAL_VISITED) return 0;
             System.Collections.Generic.HashSet<Vector2s> gen;
-            try { gen = ZoneSystem.instance?.m_generatedZones; } catch { return 0; }
-            if (gen == null || gen.Count == 0) return 0;
+            System.Collections.Generic.Dictionary<Vector2s, int> depth;
+            if (visitedTask != null)
+            {
+                if (!visitedTask.IsCompleted) return 0;
+                try { depth = visitedTask.Result; } catch { depth = null; }
+                visitedTask = null;
+                gen = visitedCopy; visitedCopy = null;
+                if (depth == null || gen == null) return 0;
+            }
+            else
+            {
+                try { gen = ZoneSystem.instance?.m_generatedZones; } catch { return 0; }
+                if (gen == null || gen.Count == 0 || gen.Count == visitedGenCount) return 0;
+                visitedGenCount = gen.Count;
+                // How deep each built zone sits inside the built area: 1 at its edge, counting inward. The
+                // game builds about 5 zones out from where a player goes, so the deeper a zone, the closer
+                // to where someone actually walked.
+                if (!wait)
+                {
+                    var copy = new System.Collections.Generic.HashSet<Vector2s>(gen);
+                    visitedCopy = copy;
+                    visitedTask = System.Threading.Tasks.Task.Run(() => ZoneDepth(copy));
+                    return 0;
+                }
+                depth = ZoneDepth(gen);
+            }
             int margin = Mathf.Clamp(MuninConfig.REVEAL_VISITED_MARGIN, 0, 5);
-            // How deep each built zone sits inside the built area: 1 at its edge, counting inward. The
-            // game builds about 5 zones out from where a player goes, so the deeper a zone, the closer
-            // to where someone actually walked.
-            var depth = ZoneDepth(gen);
             if (MuninConfig.DEBUG)   // every built zone and its depth, for comparing against the recorded maps
                 try { var sb = new System.Text.StringBuilder(); foreach (var kv in depth) sb.Append(kv.Key.x).Append(' ').Append(kv.Key.y).Append(' ').Append(kv.Value).Append('\n'); File.WriteAllText(Path.Combine(global::MuninMap.MuninMap.worldDataPath, "zones-depth.txt"), sb.ToString()); } catch { }
             int zones = 0, cells = 0;

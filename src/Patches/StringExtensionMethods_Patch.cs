@@ -7,6 +7,11 @@ namespace MuninMap.Patches
     [HarmonyPatch]
     internal class StringExtensionMethods_Patch
     {
+        // Only made with debug on: GetStableHashCode runs constantly (every named value the game
+        // reads), and a dictionary write on each call was a steady cost for a debug log's benefit.
+        [HarmonyPrepare]
+        public static bool Prepare() => MuninConfig.DEBUG;
+
         // Concurrent, not plain dictionaries: these postfixes sit on GetStableHashCode
         // and ZSyncAnimation.GetHash, both of which are called from whatever thread
         // happens to be hashing. A plain Dictionary written from two threads throws or
