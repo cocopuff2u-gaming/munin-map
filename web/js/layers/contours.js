@@ -138,6 +138,8 @@ export class ContourGL extends L.Layer {
     gl.uniform1i(p.u.u_h, 0);
     gl.uniform1f(p.u.u_interval, INTERVAL);
     gl.uniform1f(p.u.u_major, MAJOR);
+    gl.uniform1f(p.u.u_mpp, 1 / v.ppm);
+    gl.uniform1f(p.u.u_bold, Math.min(1, Math.max(0, (v.zoom - 4) / 2)));   // the 100 m lines: thin at zoom 4 and out, full at 6
     let drawn = null;
     if (L.b < 1) drawn = this.pass(gl, v, p, L.lo, alpha * (1 - L.b));
     if (L.b > 0) { const d = this.pass(gl, v, p, L.hi, alpha * L.b); if (L.b >= 0.5 || !drawn) drawn = d; }

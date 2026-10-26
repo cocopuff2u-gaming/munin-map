@@ -195,13 +195,17 @@ void main() { o = texture(u_tex, v_uv) * u_alpha; }`;
 // pixel is from the nearest line, in screen pixels (the height's change across a pixel, fwidth), so
 // lines are a pixel wide and sharp at any zoom. The same heights at every zoom (a thin line each
 // u_interval, a bold one each u_major), so a hill looks the same zoomed in or out; thin lines closer
-// together than a few pixels fade out (the bold ones stay) instead of turning the slope solid.
+// together than a few pixels fade out (the bold ones stay) instead of turning the slope solid. On
+// nearly flat ground a line would smear into a wide band wherever the land sits at its height (a
+// plain at 25 m): there lines fade out, as a hiking map leaves flats bare.
 const CONTOUR_FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 uniform highp sampler2D u_h;
 uniform float u_interval;   // metres between thin lines
 uniform float u_major;      // metres between bold lines
+uniform float u_mpp;        // metres a screen pixel covers
+uniform float u_bold;       // 0..1: how much bolder the 100 m lines are (less zoomed out)
 uniform float u_alpha;
 out vec4 o;
 float hAt(ivec2 p) { return texelFetch(u_h, clamp(p, ivec2(0), ivec2(255)), 0).r; }
@@ -216,8 +220,11 @@ void main() {
   vec2 f = fract(t);
   float h = mix(mix(hAt(i), hAt(i + ivec2(1, 0)), f.x), mix(hAt(i + ivec2(0, 1)), hAt(i + ivec2(1, 1)), f.x), f.y) - 30.0;
   float w = max(fwidth(h), 1e-4);
-  float a = max(line(h, u_interval, w, 0.45, 0.46), line(h, u_major, w, 0.8, 0.72));
-  a *= step(u_interval * 0.5, h);                                  // nothing at or under the sea
+  float slope = w / u_mpp;                                           // height change per metre across
+  float flat_ = smoothstep(0.02, 0.06, slope);                       // under 2% bare, full from 6%
+  w = max(w, 0.06 * u_mpp);                                          // and never wider than on a 6% slope
+  float a = max(line(h, u_interval, w, 0.45, 0.46), line(h, u_major, w, 0.45 + 0.35 * u_bold, 0.5 + 0.22 * u_bold));
+  a *= step(u_interval * 0.5, h) * flat_;                          // nothing at or under the sea, or on the flat
   o = vec4(vec3(0.157, 0.094, 0.039) * a, a) * u_alpha;            // premultiplied
 }`;
 
