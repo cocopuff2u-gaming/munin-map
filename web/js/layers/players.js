@@ -1,5 +1,8 @@
 // Live players: an arrow that points where they are facing, name, health
-// bar, follow mode, and map pings.
+// bar, follow mode, and map pings. Positions come about once a second; in between each player
+// glides from where it was shown to the new spot over the time the updates take to come (one
+// update behind, so never ahead of the truth), turning smoothly, and a followed player keeps the
+// map centred on them every frame instead of a pan each second. A jump (a portal) is not glided.
 
 import { toLatLng } from '../crs.js';
 import { iconSvg } from '../icons.js';
@@ -17,6 +20,8 @@ export class PlayersLayer {
     this.following = null;        // player id
     this.listeners = new Set();
     this.colorOf = new Map();
+    this.motion = new Map();      // id -> { fx, fz, fyaw, tx, tz, tyaw, t0, dur }
+    this.gap = 1000;              // ms between updates, as they come (smoothed)
     on('players', (f) => this.update(f.data));
     on('ping', (f) => this.ping(f));
     on('shout', (f) => this.shout(f));
@@ -31,6 +36,9 @@ export class PlayersLayer {
 
   update(data) {
     this.players = data.players || [];
+    const now = performance.now();
+    if (this.lastUpdate) this.gap = Math.max(300, Math.min(2500, this.gap * 0.7 + (now - this.lastUpdate) * 0.3));
+    this.lastUpdate = now;
     const seen = new Set();
     for (const p of this.players) {
       seen.add(p.id);
@@ -45,13 +53,17 @@ export class PlayersLayer {
         this.markers.set(p.id, mk);
         this.group.addLayer(mk);
       } else {
-        mk.setLatLng(ll);
         this.refresh(mk, p);
       }
+      // glide from where it is shown now to the new spot (a jump of over 100 m: straight there)
+      const m = this.motion.get(p.id), at = m ? this.at(m, now) : null, yaw = p.yaw || 0;
+      if (!at || Math.hypot(p.x - at.x, p.z - at.z) > 100) this.motion.set(p.id, { fx: p.x, fz: p.z, fyaw: yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: 1 });
+      else this.motion.set(p.id, { fx: at.x, fz: at.z, fyaw: at.yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: this.gap });
+      if (!m) mk.setLatLng(ll);
       mk.setTooltipContent(`<b>${escape(p.name)}</b><br>${p.health}/${p.maxHealth} hp · ${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}` : ''}<br>${p.x}, ${p.z}${p.dead ? ' · dead' : ''}${p.pvp ? ' · PvP' : ''}${p.inBed ? ' · sleeping' : ''}`);
-      if (this.following === p.id) this.map.panTo(ll, { animate: true, duration: 0.5, noMoveStart: true });
     }
     for (const id of [...this.markers.keys()]) if (!seen.has(id)) this.remove(id);
+    this.animate();
     if (this.following && !seen.has(this.following)) this.follow(null);
     for (const fn of this.listeners) fn(this.players);
   }
@@ -59,6 +71,56 @@ export class PlayersLayer {
   remove(id) {
     const mk = this.markers.get(id);
     if (mk) { this.group.removeLayer(mk); this.markers.delete(id); }
+    this.motion.delete(id);
+  }
+
+  // where a glide is at a moment (yaw the short way round)
+  at(m, now) {
+    const t = Math.min(1, (now - m.t0) / m.dur), e = t;   // (linear: steady walking looks steady)
+    let dy = ((m.tyaw - m.fyaw + 540) % 360) - 180;
+    return { x: m.fx + (m.tx - m.fx) * e, z: m.fz + (m.tz - m.fz) * e, yaw: m.fyaw + dy * e, done: t >= 1 };
+  }
+
+  // a frame of the glides: each marker to its spot now, the followed one under the map's centre
+  animate() {
+    if (this.raf) return;
+    const step = () => {
+      this.raf = 0;
+      const now = performance.now();
+      let moving = false;
+      for (const [id, m] of this.motion) {
+        const mk = this.markers.get(id);
+        if (!mk) continue;
+        const a = this.at(m, now);
+        if (!a.done) moving = true;
+        mk.setLatLng(toLatLng(a.x, a.z));
+        const arrow = mk.getElement()?.querySelector('.arrow');
+        if (arrow) arrow.style.transform = `rotate(${Math.round(a.yaw)}deg)`;
+        if (this.following === id) this.keepCentred(a.x, a.z);
+      }
+      if (moving) this.raf = requestAnimationFrame(step);
+      else this.endCentring();
+    };
+    this.raf = requestAnimationFrame(step);
+  }
+
+  // follow: the map moved with the player each frame (as the smooth zoom moves it, smoothzoom.js),
+  // unless someone is dragging it or zooming; Leaflet's "moveend" once it settles
+  keepCentred(x, z) {
+    const map = this.map;
+    if (map._animatingZoom || (map.dragging && map.dragging._draggable && map.dragging._draggable._moving) || (map._smooth && map._smooth.running)) return;
+    const ll = toLatLng(x, z);
+    if (!map._smooth || !map._smooth.exact) { if (!this.panTimer) this.panTimer = setTimeout(() => { this.panTimer = null; map.panTo(ll, { animate: true, duration: 0.5, noMoveStart: true }); }, 500); return; }
+    if (!this.centring) { this.centring = true; map._moveStart(false, false); }
+    map._move(ll, map.getZoom());
+    clearTimeout(this.centreEnd);
+    this.centreEnd = setTimeout(() => this.endCentring(), 400);
+  }
+  endCentring() {
+    if (!this.centring) return;
+    this.centring = false;
+    clearTimeout(this.centreEnd);
+    this.map._moveEnd(false);
   }
 
   // a marker already on the map: turn its arrow and move its health bar in place (a new icon is a
