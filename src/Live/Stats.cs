@@ -41,6 +41,7 @@ namespace MuninMap.Live
             public List<long[]> recent = new List<long[]>();
             public long sessionStart;
             public Dictionary<string, double> days = new Dictionary<string, double>();
+            public Dictionary<string, string> gear = new Dictionary<string, string>();   // what they wore when last seen (slot -> prefab)
         }
 
         private static long Unix() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -106,6 +107,8 @@ namespace MuninMap.Live
                         if (rs != null) foreach (var ro in rs) if (ro is List<object> pr && pr.Count == 2 && pr[0] is double a0 && pr[1] is double a1) s.recent.Add(new[] { (long)a0, (long)a1 });
                         var ds = JsonParser.Obj(d, "days");
                         if (ds != null) foreach (var kv in ds) if (kv.Value is double sec) s.days[kv.Key] = sec;
+                        var gs = JsonParser.Obj(d, "gear");
+                        if (gs != null) foreach (var kv in gs) if (kv.Value is string item && item.Length > 0) s.gear[kv.Key] = item;
                         if (string.IsNullOrEmpty(s.key)) continue;
                         // up to 3.0.0 the key was the platform id alone, so every character on an
                         // account shared one entry: it goes to the character last seen with it
@@ -180,6 +183,9 @@ namespace MuninMap.Live
             j.Key("days").BeginObject();
             foreach (var kv in s.days) j.Prop(kv.Key, Math.Round(kv.Value), 0);
             j.End();
+            j.Key("gear").BeginObject();
+            foreach (var kv in s.gear) j.Prop(kv.Key, kv.Value);
+            j.End();
             j.End();
         }
 
@@ -250,6 +256,16 @@ namespace MuninMap.Live
                     if (s.days.Count > 31) { string oldest = s.days.Keys.Min(); s.days.Remove(oldest); }
                 }
                 s.lastSeen = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+                // what they're wearing, kept for when they're offline
+                if (p.gear != null)
+                    for (int g = 0; g < p.gear.Length && g < Players.GearSlots.Length; g++)
+                    {
+                        string slot = Players.GearSlots[g], item = p.gear[g] ?? "";
+                        s.gear.TryGetValue(slot, out string had);
+                        if ((had ?? "") == item) continue;
+                        if (item.Length == 0) s.gear.Remove(slot); else s.gear[slot] = item;
+                        dirty = true;
+                    }
                 if (p.tracked)
                 {
                     if (s.hasLast)

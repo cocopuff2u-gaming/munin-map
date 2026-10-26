@@ -90,8 +90,10 @@ export class PlayerCard {
     } else status = st?.lastSeen ? `Last seen ${fmtAgo(st.lastSeen)}${st.lastBiome ? ' · ' + escape(st.lastBiome) : ''}` : 'Offline';
     const where = p ? (p.x !== undefined ? `${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}` : ''} · ${escape(this.app.sidebar?.whereText?.(p.x, p.z) || `${p.x}, ${p.z}`)}` : 'Position hidden') : '';
     // what they wear: the game's icon and name, the slot under it
-    const gear = p && p.gear ? SLOTS.filter(([k]) => p.gear[k]).map(([k, label]) => {
-      const pf = p.gear[k], nm = gameName(pf);
+    // (offline: what they wore when last seen, kept by the server)
+    const worn = p ? p.gear : st && st.gear && Object.keys(st.gear).length ? st.gear : null;
+    const gear = worn ? SLOTS.filter(([k]) => worn[k]).map(([k, label]) => {
+      const pf = worn[k], nm = gameName(pf);
       return `<div class="pc-item" title="${escape(nm)}"><img src="icons/item/${encodeURIComponent(pf.replace(/[^A-Za-z0-9_-]/g, ''))}.png" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><div><b>${escape(nm)}</b><span>${label}</span></div></div>`;
     }).join('') : '';
     // when they play: the last 14 days (minutes a day) and the last sessions
@@ -147,7 +149,7 @@ export class PlayerCard {
       ${p ? bar('Health', p.health, p.maxHealth, 'hp-health') : ''}
       ${p && p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : ''}
       ${p && p.eitr !== undefined && p.eitr > 0 ? bar('Eitr', p.eitr, Math.max(p.eitr, 100), 'hp-eitr') : ''}
-      ${gear ? `<div class="pc-section">Wearing</div><div class="pc-items">${gear}</div>` : ''}
+      ${gear ? `<div class="pc-section">${p ? 'Wearing' : 'Last seen wearing'}</div><div class="pc-items${p ? '' : ' was'}">${gear}</div>` : ''}
       ${activity}
       ${life ? `<div class="pc-section">All time</div>${life}` : ''}
       ${placeRows ? `<div class="pc-section">Their places</div>${placeRows}` : ''}
