@@ -48,6 +48,7 @@ export class PlayersLayer {
       if (!mk) {
         mk = L.marker(ll, { icon: this.icon(p), zIndexOffset: 1000, keyboard: false });
         mk._look = `${p.name}|${!!p.dead}|${this.following === p.id}`;
+        mk._exactPos = true;   // drawn at fractions of a pixel: walking speed is a fraction a frame, whole pixels stepped
         mk.bindTooltip('', { direction: 'top', offset: [0, -14] });
         mk.on('click', (e) => { const q = this.players.find((r) => r.id === p.id) || p; const oe = e.originalEvent; if (this.onClick) this.onClick(q, oe ? oe.clientX : 0, oe ? oe.clientY : 0); });
         this.markers.set(p.id, mk);
@@ -58,7 +59,7 @@ export class PlayersLayer {
       // glide from where it is shown now to the new spot (a jump of over 100 m: straight there)
       const m = this.motion.get(p.id), at = m ? this.at(m, now) : null, yaw = p.yaw || 0;
       if (!at || Math.hypot(p.x - at.x, p.z - at.z) > 100) this.motion.set(p.id, { fx: p.x, fz: p.z, fyaw: yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: 1 });
-      else this.motion.set(p.id, { fx: at.x, fz: at.z, fyaw: at.yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: this.gap });
+      else this.motion.set(p.id, { fx: at.x, fz: at.z, fyaw: at.yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: this.gap * 1.15 });   // (a little longer than the gap: never stopping to wait for the next)
       if (!m) mk.setLatLng(ll);
       mk.setTooltipContent(`<b>${escape(p.name)}</b><br>${p.health}/${p.maxHealth} hp · ${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}` : ''}<br>${p.x}, ${p.z}${p.dead ? ' · dead' : ''}${p.pvp ? ' · PvP' : ''}${p.inBed ? ' · sleeping' : ''}`);
     }
@@ -104,15 +105,16 @@ export class PlayersLayer {
     this.raf = requestAnimationFrame(step);
   }
 
-  // follow: the map moved with the player each frame (as the smooth zoom moves it, smoothzoom.js),
-  // unless someone is dragging it or zooming; Leaflet's "moveend" once it settles
+  // follow: the map slid along with the player each frame, the way a drag moves it (the map pane
+  // shifted and "move" fired), unless someone is dragging or zooming it; "moveend" once it settles
   keepCentred(x, z) {
     const map = this.map;
     if (map._animatingZoom || (map.dragging && map.dragging._draggable && map.dragging._draggable._moving) || (map._smooth && map._smooth.running)) return;
-    const ll = toLatLng(x, z);
-    if (!map._smooth || !map._smooth.exact) { if (!this.panTimer) this.panTimer = setTimeout(() => { this.panTimer = null; map.panTo(ll, { animate: true, duration: 0.5, noMoveStart: true }); }, 500); return; }
-    if (!this.centring) { this.centring = true; map._moveStart(false, false); }
-    map._move(ll, map.getZoom());
+    const off = map.latLngToContainerPoint(toLatLng(x, z)).subtract(map.getSize().divideBy(2));
+    if (Math.abs(off.x) < 0.05 && Math.abs(off.y) < 0.05) return;
+    if (!this.centring) { this.centring = true; map.fire('movestart'); }
+    map._rawPanBy(off);
+    map.fire('move');
     clearTimeout(this.centreEnd);
     this.centreEnd = setTimeout(() => this.endCentring(), 400);
   }
@@ -120,7 +122,7 @@ export class PlayersLayer {
     if (!this.centring) return;
     this.centring = false;
     clearTimeout(this.centreEnd);
-    this.map._moveEnd(false);
+    this.map.fire('moveend');
   }
 
   // a marker already on the map: turn its arrow and move its health bar in place (a new icon is a

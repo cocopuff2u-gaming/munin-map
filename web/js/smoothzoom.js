@@ -13,7 +13,7 @@ L.Marker.include({
   update() {
     if (this._icon && this._map) {
       const pos = this._map.latLngToLayerPoint(this._latlng);
-      this._setPos(this._map._gliding ? pos : pos.round());
+      this._setPos(this._map._gliding || this._exactPos ? pos : pos.round());   // (_exactPos: a gliding player, layers/players.js)
     }
     return this;
   },
