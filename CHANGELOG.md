@@ -1,5 +1,50 @@
 # Changelog
 
+## 3.1.0
+
+**New on the map**
+
+* **Contour lines** (Layers, Map guides): height lines like a hiking map, a thin one every 25 m and a bold one every 100 m with its height. Drawn by the browser's graphics card, sharp at every zoom, and only over explored ground.
+* **Height map style**: the land coloured by its height, with relief shading.
+* **Peaks**: the world's mountain tops with their heights, on explored ground only; the highest one found is named so.
+* **Ruler** (top bar): measure a route (points snap to markers) and see how long it takes on foot, by lox, raft, karve, longship or drakkar. **Reach** shows everywhere you can get to within 2 to 30 minutes from a spot, over land or by water, in coloured bands with a key.
+* **Activity layers**: each player's trail over the last 3 hours, where players spend their time (a heat map), where they die, and lag hotspots (areas heavy with building pieces, lights, creatures or dropped items: click one to see why). All off at first.
+* **New places**: the Deep North boss (Kall Fimbulbringer) and Writhan, Bear caves, Winding tunnels, The Hole, Mörkhalla and half-buried crypts; Landmarks (the Forge of Potential, Ancestral Memorials, Fimbulvinter orbs, hot springs); Camps & resources (Fuling camps, tar pits, drake nests, guck trees); Signs, with what's written on them, searchable.
+* **Stats**: a weather forecast for each biome, and how far each boss altar and trader found is from the spawn, with the walk there (or "by boat").
+* **Markers**: chips to narrow the list to one biome, with counts.
+* **Embed links**: `?embed` shows the map alone (for an overlay), `?follow=Name` keeps following a player.
+* Marker size slider and a plain dots style; every Layers section folds like the Map key.
+
+**Player cards**
+
+* What a player wears, with the game's own item icons and names, and what offline players last wore.
+* When they play: the last two weeks, recent sessions and their usual hours.
+* Bosses they fought, places they found first, the crafting stations they've built, and leaderboard badges.
+* Their places: the bases they built, their portals, beds, tombstones, wards and where they last died, a click away.
+* Cards for offline players too, and `?player=Name` links that open one.
+* New setting `hidden_players`: characters never shown on the map, in the stats or the event feed.
+
+**Smoother**
+
+* Players glide at an even pace instead of jumping each second, played back a couple of seconds behind on the server's own clock, and following one keeps them centred every frame.
+* Player updates go out the moment they're taken (they could wait up to a second or two).
+* **The server no longer stalls once a minute.** Revealing ground players had already visited redid a big calculation on the game's thread every minute: on a large world, a freeze of over a second. Now it's only redone when new ground is explored, off the game's thread.
+* **No hitches after each world sweep.** The markers were rewritten every sweep (hundreds of KB at once, enough to set off the game's memory clean-up mid-frame); each set is now kept and reused while nothing in it changes.
+* Lighter hooks into the game: one that recorded every name the game hashes now only exists with `debug` on, and checking chat messages no longer hashes two names per message.
+* New setting `perf_report` (Debug): every 5 minutes, log how much of the game's thread the map takes, job by job.
+
+**Fixes (GitHub issues)**
+
+* The fog now always covers the whole world, whatever `texture_size` and `pixel_size` are; an existing fog is converted once, nothing lost (#11).
+* Enter in the search goes to the next match, Shift+Enter back (#12).
+* Portal popups have a button to the other end (#14).
+* Pins: a "pin key" lets you remove your pins from another browser, pin owners are no longer published (anyone could copy one and remove the pin), and the rate limit really is one pin per 2 seconds (#15).
+* Names sort the way people expect ("Beef 3" before "Beef 14") (#16).
+* Layers sections fold (#17); the new bosses, mini bosses and dungeons (#10, #13, #18).
+* Zoomed out, small pieces such as torches no longer show as dots as big as walls; long boss names wrap.
+
+**Upgrading:** replace `MuninMap.dll` and restart the server. On the first start the fog is converted if it used another grid, peaks are found once (a few seconds, in the background) and item icons are cut from the game's files (about 20 s, in the background). Height tiles no longer need the 3D view: `height_max_zoom` alone decides (6 is plenty for contour lines; -1 turns them off). `pins.json` no longer lists who placed each pin.
+
 ## 3.0.5
 
 * **Ping from the web map.** Middle-click the map, or use the Ping button in the right-click pin form, to ping a spot. Players in game see it like a map ping, as "Name (web)", and so does everyone else on the web map. One ping every 10 seconds per visitor; turn it off with the new `web_pings` setting.
@@ -124,7 +169,7 @@ Mistlands mist, invasions, shouts and weather on the map, raids and invasions on
 * Search results use the screen's width, each place's group and position under its name.
 
 **Server**
-* Building the markers at the end of a sweep is spread over frames like the rest (Valheim02's worst sweep frame: ~60 ms to ~34 ms).
+* Building the markers at the end of a sweep is spread over frames like the rest (on a test world, the worst sweep frame went from ~60 ms to ~34 ms).
 
 ## 2.2.4
 
