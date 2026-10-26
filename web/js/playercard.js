@@ -66,7 +66,7 @@ export class PlayerCard {
   }
   showByName(name) { this.show({ name }, innerWidth / 2 - 160, innerHeight / 2); }
 
-  hide() { this.el.hidden = true; this.name = null; }
+  hide() { this.el.hidden = true; this.name = null; this.sig = null; }
 
   // live update from the players feed
   update() { if (this.name !== null) this.refresh(); }
@@ -182,13 +182,22 @@ export class PlayerCard {
     const can3d = this.app.config?.enable_3d !== false;
     const following = p && PL.following === p.id;
     const there = p && p.x !== undefined ? [p.x, p.z] : st && st.lastX !== undefined ? [st.lastX, st.lastZ] : null;
+    // the same card as a second ago but for the bars: just move those (rebuilding it all every
+    // update remade its pictures and could hitch the map)
+    const barsHtml = (p ? bar('Health', p.health, p.maxHealth, 'hp-health') : '') + (p && p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : '') + (p && p.eitr !== undefined && p.eitr > 0 ? bar('Eitr', p.eitr, Math.max(p.eitr, 100), 'hp-eitr') : '');
+    const sig = [name, status, !!where, gear, activity, life, stations, placeRows, badges, following, !!there, this.app.mode].join('|');
+    if (sig === this.sig && !this.el.hidden) {
+      const b = this.el.querySelector('.pc-bars'), w = this.el.querySelector('.pc-where');
+      if (b) b.innerHTML = barsHtml;
+      if (w) w.innerHTML = where;
+      return;
+    }
+    this.sig = sig;
     this.el.innerHTML = `
       <div class="pc-head"><span class="avatar" style="background:${col}">${escape((name || '?').slice(0, 1).toUpperCase())}</span><div class="grow"><div class="name">${escape(name)}</div>
-        <div class="meta">${status}</div>${where ? `<div class="meta">${where}</div>` : ''}</div>
+        <div class="meta">${status}</div>${where ? `<div class="meta pc-where">${where}</div>` : ''}</div>
         <button class="icon-btn small" data-act="close" title="Close"><svg><use href="#i-close"/></svg></button></div>
-      ${p ? bar('Health', p.health, p.maxHealth, 'hp-health') : ''}
-      ${p && p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : ''}
-      ${p && p.eitr !== undefined && p.eitr > 0 ? bar('Eitr', p.eitr, Math.max(p.eitr, 100), 'hp-eitr') : ''}
+      <div class="pc-bars">${barsHtml}</div>
       ${gear ? `<div class="pc-section">${p ? 'Wearing' : 'Last seen wearing'}</div><div class="pc-items${p ? '' : ' was'}">${gear}</div>` : ''}
       ${badges ? `<div class="pc-badges">${badges}</div>` : ''}
       ${activity}

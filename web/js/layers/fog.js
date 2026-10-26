@@ -146,6 +146,10 @@ export class FogLayer {
       const last = this.lastAt.get(p.id);
       if (last && Math.hypot(p.x - last[0], p.z - last[1]) < step) continue;
       this.lastAt.set(p.id, [p.x, p.z]);
+      // ground already explored all round (the usual case): nothing to clear, and no repaint of the
+      // veil and the whole map, which every few seconds made a walking player's dot hitch
+      const r = this.radius * 0.8;
+      if (this.isExplored(p.x, p.z) && this.isExplored(p.x + r, p.z) && this.isExplored(p.x - r, p.z) && this.isExplored(p.x, p.z + r) && this.isExplored(p.x, p.z - r)) continue;
       this.reveal(p.x, p.z);
     }
   }
