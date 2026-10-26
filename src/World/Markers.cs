@@ -30,6 +30,12 @@ namespace MuninMap.World
         private static List<Ward> buildingWards;
         private static List<Runestones.Stone> runes = new List<Runestones.Stone>();
         private static List<Runestones.Stone> buildingRunes;
+        // signs players wrote on (Sign: the text, and who wrote it when the game kept that)
+        private struct SignSpot { public float x, y, z; public string text, author; }
+        private static List<SignSpot> signs = new List<SignSpot>();
+        private static List<SignSpot> buildingSigns;
+        private static readonly Dictionary<string, bool> isSign = new Dictionary<string, bool>();
+        private static readonly System.Text.RegularExpressions.Regex richTags = new System.Text.RegularExpressions.Regex("<[^>]*>", System.Text.RegularExpressions.RegexOptions.Compiled);
         private struct BedSpot { public float x, y, z; public string owner; }
         private static List<BedSpot> beds = new List<BedSpot>();
         private static List<BedSpot> buildingBeds;
@@ -158,6 +164,7 @@ namespace MuninMap.World
             buildingWards = new List<Ward>(wards.Count + 8);
             buildingRunes = new List<Runestones.Stone>(runes.Count + 8);
             buildingBeds = new List<BedSpot>(beds.Count + 8);
+            buildingSigns = new List<SignSpot>(signs.Count + 8);
             buildingTables = new HashSet<ZDOID>();
         }
 
@@ -254,6 +261,18 @@ namespace MuninMap.World
                 catch { }
                 return false;   // still a built piece
             }
+            if (buildingSigns != null && IsSign(n))
+            {
+                try
+                {
+                    string text = richTags.Replace(zdo.GetString(ZDOVars.s_text, "") ?? "", "").Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
+                    // (the writer's name is only kept on console platforms: s_authorDisplayName)
+                    if (text.Length > 0)
+                        buildingSigns.Add(new SignSpot { x = pos.x, y = pos.y, z = pos.z, text = text.Length > 80 ? text.Substring(0, 80) : text, author = zdo.GetString(ZDOVars.s_authorDisplayName, "") ?? "" });
+                }
+                catch { }
+                return false;   // still a built piece
+            }
             float r = WardRadius(n);
             if (r > 0f && zdo.GetLong(ZDOVars.s_creator, 0L) != 0L)   // (built by a player: the world's own camps and forts carry wards too)
             {
@@ -280,6 +299,15 @@ namespace MuninMap.World
         public static void ObserveProxy(ZDO zdo, Vector3 pos)
         {
             if (buildingRunes != null) Runestones.Observe(zdo, pos, buildingRunes);
+        }
+
+        private static bool IsSign(string prefab)
+        {
+            if (isSign.TryGetValue(prefab, out bool b)) return b;
+            b = false;
+            try { var go = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(prefab) : null; b = go != null && go.GetComponent<Sign>() != null; } catch { }
+            isSign[prefab] = b;
+            return b;
         }
 
         private static bool IsBed(string prefab)
@@ -311,14 +339,14 @@ namespace MuninMap.World
         // Main thread, end of sweep, a slice per frame (WorldSweep.Due)
         public static IEnumerator Finish()
         {
-            if (buildingPortals != null) { portals = buildingPortals; tombs = buildingTombs; wards = buildingWards; runes = buildingRunes; beds = buildingBeds; }
+            if (buildingPortals != null) { portals = buildingPortals; tombs = buildingTombs; wards = buildingWards; runes = buildingRunes; beds = buildingBeds; if (buildingSigns != null) signs = buildingSigns; }
             if (buildingTables != null)
             {
                 var gone = new List<ZDOID>();
                 foreach (var id in tables.Keys) if (!buildingTables.Contains(id)) gone.Add(id);
                 foreach (var id in gone) tables.Remove(id);
             }
-            buildingPortals = null; buildingTombs = null; buildingWards = null; buildingRunes = null; buildingBeds = null; buildingTables = null;
+            buildingPortals = null; buildingTombs = null; buildingWards = null; buildingRunes = null; buildingBeds = null; buildingSigns = null; buildingTables = null;
             var j = new JsonWriter(8192);
             var parts = BuildParts(j, true).GetEnumerator();
             while (true)
@@ -376,7 +404,7 @@ namespace MuninMap.World
             icon = null;
             if (prefab == null) return null;
             if (prefab.StartsWith("SunkenCrypt", StringComparison.Ordinal)) { icon = "sunkencrypt"; return "Sunken crypt"; }
-            if (prefab.StartsWith("Crypt", StringComparison.Ordinal)) { icon = "crypt"; return "Burial chamber"; }
+            if (prefab.StartsWith("Crypt", StringComparison.Ordinal) || prefab == "HalfBurried_ForestCrypt") { icon = "crypt"; return "Burial chamber"; }
             if (prefab.StartsWith("TrollCave", StringComparison.Ordinal)) { icon = "trollcave"; return "Troll cave"; }
             if (prefab.StartsWith("MountainCave", StringComparison.Ordinal)) { icon = "frostcave"; return "Frost cave"; }
             if (prefab.StartsWith("Mistlands_DvergrTownEntrance", StringComparison.Ordinal)) { icon = "infestedmine"; return "Infested mine"; }
@@ -389,13 +417,27 @@ namespace MuninMap.World
             return null;
         }
 
-        // camps and tar pits: places worth a trip that are not dungeons
+        // camps and resource spots: places worth a trip that are not dungeons
         private static string CampName(string prefab, out string icon)
         {
             icon = null;
             if (prefab == null) return null;
             if (prefab.StartsWith("GoblinCamp", StringComparison.Ordinal)) { icon = "fulingcamp"; return "Fuling camp"; }
             if (prefab.StartsWith("TarPit", StringComparison.Ordinal)) { icon = "tarpit"; return "Tar pit"; }
+            if (prefab.StartsWith("DrakeNest", StringComparison.Ordinal)) { icon = "drakenest"; return "Drake nest"; }
+            if (prefab.StartsWith("InfestedTree", StringComparison.Ordinal)) { icon = "gucktree"; return "Guck tree"; }
+            return null;
+        }
+
+        // one-off places with something to do there, by the game's names
+        private static string LandmarkName(string prefab, out string icon)
+        {
+            icon = null;
+            if (prefab == null) return null;
+            if (prefab == "AncientUpgradeStation") { icon = "forge"; return "Forge of Potential"; }
+            if (prefab == "NorthMemorialPlace") { icon = "memorial"; return "Ancestral Memorial"; }
+            if (prefab.StartsWith("FimbulLocation", StringComparison.Ordinal)) { icon = "orb"; return "Orb of Fimbulvinter"; }
+            if (prefab.StartsWith("HotSpring", StringComparison.Ordinal)) { icon = "hotspring"; return "Hot spring"; }
             return null;
         }
 
@@ -520,8 +562,8 @@ namespace MuninMap.World
         private static readonly Dictionary<string, int> locationKinds = new Dictionary<string, int>();
         private static List<ZoneSystem.LocationInstance>[] LocationsByKind()
         {
-            var lists = new List<ZoneSystem.LocationInstance>[5];
-            for (int i = 0; i < 5; i++) lists[i] = new List<ZoneSystem.LocationInstance>();
+            var lists = new List<ZoneSystem.LocationInstance>[6];
+            for (int i = 0; i < 6; i++) lists[i] = new List<ZoneSystem.LocationInstance>();
             var zs = ZoneSystem.instance;
             if (zs == null) return lists;
             foreach (var li in zs.m_locationInstances.Values)
@@ -532,17 +574,17 @@ namespace MuninMap.World
                 {
                     kinds = (BossName(name) != null ? 1 : 0) | (MiniBossName(name, out _) != null ? 2 : 0)
                           | (DungeonName(name, out _) != null ? 4 : 0) | (TraderName(name, out _) != null ? 8 : 0)
-                          | (CampName(name, out _) != null ? 16 : 0);
+                          | (CampName(name, out _) != null ? 16 : 0) | (LandmarkName(name, out _) != null ? 32 : 0);
                     locationKinds[name] = kinds;
                 }
-                for (int i = 0; i < 5; i++) if ((kinds & (1 << i)) != 0) lists[i].Add(li);
+                for (int i = 0; i < 6; i++) if ((kinds & (1 << i)) != 0) lists[i].Add(li);
             }
             return lists;
         }
 
         private static IEnumerable<object> BuildParts(JsonWriter j, bool slice)
         {
-            var locs = LocationsByKind();   // altars, lairs, dungeons, traders, camps: each loop below visits only its own
+            var locs = LocationsByKind();   // altars, lairs, dungeons, traders, camps, landmarks: each loop below visits only its own
             j.BeginObject();
             j.Prop("rev", rev + 1);
             j.Key("sets").BeginArray();
@@ -613,8 +655,26 @@ namespace MuninMap.World
 
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
-            // --- Fuling camps and tar pits, on explored ground
-            j.BeginObject().Prop("id", "camps").Prop("label", "Camps & tar pits").Key("markers").BeginArray();
+            // --- landmarks (the Forge of Potential, memorials, Fimbulvinter orbs, hot springs), on explored ground
+            j.BeginObject().Prop("id", "landmarks").Prop("label", "Landmarks").Key("markers").BeginArray();
+            try
+            {
+                    foreach (var li in locs[5])
+                    {
+                        string name = li.m_location?.m_prefabName;
+                        string ln = LandmarkName(name, out string icon);
+                        if (ln == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
+                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
+                         .Prop("cat", "landmark").Prop("icon", icon).Prop("label", ln).Prop("prefab", name).End();
+                    }
+            }
+            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: landmarks: " + e.Message); }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- Fuling camps, tar pits, drake nests and guck trees, on explored ground
+            j.BeginObject().Prop("id", "camps").Prop("label", "Camps & resources").Key("markers").BeginArray();
             try
             {
                     foreach (var li in locs[4])
@@ -718,6 +778,18 @@ namespace MuninMap.World
                 j.Prop("label", r.vegvisir ? (string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic) : !string.IsNullOrEmpty(r.topic) ? r.topic : r.name).Prop("text", r.text);
                 if (r.vegvisir) j.Prop("vegvisir", true);
                 j.End();
+            }
+            j.End().End();
+
+            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+
+            // --- signs with something written on them, on explored ground
+            j.BeginObject().Prop("id", "signs").Prop("label", "Signs").Key("markers").BeginArray();
+            foreach (var s in signs)
+            {
+                if (!Visible(s.x, s.z)) continue;
+                j.BeginObject().Prop("x", s.x, 1).Prop("z", s.z, 1).Prop("y", s.y, 1).Prop("cat", "sign").Prop("icon", "sign")
+                 .Prop("label", s.text).Prop("author", s.author).End();
             }
             j.End().End();
 

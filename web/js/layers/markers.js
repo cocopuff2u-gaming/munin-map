@@ -65,7 +65,7 @@ export class MarkerLayers {
     this.listeners = new Set();
     // everything is painted on one canvas (markercanvas.js), not a DOM element per marker
     this.canvas = new MarkerCanvas(() => this.drawList(), { gl: !!opts.gl }).addTo(map);
-    layerState.onChange((k) => { if (k === 'labels') this.canvas.draw(); });
+    layerState.onChange((k) => { if (k === 'labels' || k === 'iconScale' || k === 'iconDots') this.canvas.draw(); });
     store.onChange((sets) => this.render(sets));
     on('pin', (f) => this.addPin(f));
     on('rmpin', (f) => this.removePin(f.id));
@@ -320,6 +320,7 @@ function popupHtml(m, set) {
   else if (m.cat === 'portal') extra = `<small>Portal tag: ${escape(m.tag || '(none)')}</small>`;
   else if (m.cat === 'base') extra = `<small>${m.pieces} pieces</small>`;
   else if (m.cat === 'tablepin') extra = m.checked ? '<small>Crossed out on the map</small>' : '';
+  else if (m.cat === 'sign') extra = m.author ? `<small>Written by ${escape(m.author)}</small>` : '';
   else if (m.cat === 'bed') extra = '<small>Claimed bed (a player keeps old beds too: their spawn is the one they slept in last)</small>';
   else if (m.cat === 'runestone') extra = m.text ? `<div class="runetext">${escape(m.text)}</div>` : '';
   else if (m.cat === 'ward') extra = `<small>${m.on ? 'On' : 'Off'} · protects ${Math.round(m.r)} m around</small>` + (m.permitted && m.permitted.length ? `<br><small>Can build here: ${m.permitted.map(escape).join(', ')}</small>` : '');

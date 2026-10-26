@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using MuninMap.Util;
 
 namespace MuninMap.Live
 {
@@ -55,6 +56,61 @@ namespace MuninMap.Live
             }
             catch { return false; }
             finally { UnityEngine.Random.state = state; }
+        }
+
+        // The weather to come in each biome: the same draw as above for the next periods. Picked by the
+        // period alone, so it holds for everyone (alt biome variants aside, which add or block a few).
+        // Main thread; made again only when the period changes.
+        private static readonly KeyValuePair<Heightmap.Biome, string>[] forecastBiomes =
+        {
+            new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.Meadows, "Meadows"), new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.BlackForest, "Black Forest"),
+            new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.Swamp, "Swamp"), new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.Mountain, "Mountains"),
+            new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.Plains, "Plains"), new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.Mistlands, "Mistlands"),
+            new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.AshLands, "Ashlands"), new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.DeepNorth, "Deep North"),
+            new KeyValuePair<Heightmap.Biome, string>(Heightmap.Biome.Ocean, "Ocean"),
+        };
+        private const int ForecastPeriods = 6;
+        private static string forecastJson = "null";
+        private static long forecastPeriod = -1;
+
+        public static string ForecastJson()
+        {
+            var env = EnvMan.instance;
+            if (env == null || ZNet.instance == null) return forecastJson;
+            long dur = Math.Max(1L, env.m_environmentDuration);
+            long period = (long)ZNet.instance.GetTimeSeconds() / dur;
+            if (period == forecastPeriod) return forecastJson;
+            var state = UnityEngine.Random.state;
+            try
+            {
+                var j = new JsonWriter(1024);
+                j.BeginObject().Prop("start", period * dur).Prop("period", dur).Key("biomes").BeginArray();
+                foreach (var b in forecastBiomes)
+                {
+                    var list = env.GetAvailableEnvironments(new BiomeSector(null, b.Key));
+                    if (list == null || list.Count == 0) continue;
+                    list = new List<EnvEntry>(list);   // (the game hands back a shared list)
+                    j.BeginObject().Prop("biome", b.Value).Key("weather").BeginArray();
+                    for (int k = 0; k < ForecastPeriods; k++)
+                    {
+                        UnityEngine.Random.InitState((int)(period + k));
+                        EnvSetup setup = env.SelectWeightedEnvironment(list);
+                        foreach (var e in list)
+                        {
+                            if (e.m_ashlandsOverride && b.Key == Heightmap.Biome.AshLands) setup = e.m_env;
+                            if (e.m_deepnorthOverride && b.Key == Heightmap.Biome.DeepNorth) setup = e.m_env;
+                        }
+                        j.Value(setup != null ? Name(setup.m_name) : "");
+                    }
+                    j.End().End();
+                }
+                j.End().End();
+                forecastJson = j.ToString();
+                forecastPeriod = period;
+            }
+            catch { }
+            finally { UnityEngine.Random.state = state; }
+            return forecastJson;
         }
 
         // "ThunderStorm" -> "Thunderstorm", "Twilight_SnowStorm" -> "Snowstorm", "DeepForest Mist" -> "Forest mist"

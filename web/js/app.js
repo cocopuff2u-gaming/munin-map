@@ -147,6 +147,7 @@ class App {
 
   async start() {
     if (/[?&]fps=1\b/.test(location.search)) this.showFps();
+    this.embedMode(new URLSearchParams(location.search));
     this.config = await getJSON('config').catch(() => ({}));
     this.applyConfig(this.config);
     this.layers.fog = new FogLayer(this.map, this.config, { gl: this.gl });
@@ -260,6 +261,23 @@ class App {
       if (pan) { e.preventDefault(); this.layers.players.follow(null); this.map.panBy(pan, { animate: true, duration: 0.15 }); }
     });
     window.addEventListener('hashchange', () => this.applyHash());
+  }
+
+  // ?embed: the map alone (no bars, buttons or sidebar), for a stream overlay or a page of its own;
+  // ?follow=<name>: keep following that player (picked up again whenever they come back online)
+  embedMode(qs) {
+    if (qs.has('embed')) {
+      this.root.classList.add('embed', 'sidebar-hidden');
+      setTimeout(() => this.map.invalidateSize(), 0);
+    }
+    const name = (qs.get('follow') || '').trim().toLowerCase();
+    if (!name) return;
+    setInterval(() => {
+      const PL = this.layers.players;
+      if (!PL || PL.following) return;
+      const p = PL.players.find((x) => x.name.toLowerCase() === name && x.x !== undefined);
+      if (p) PL.follow(p.id);
+    }, 3000);
   }
 
   // P: follow the next player on the list (2D and 3D)

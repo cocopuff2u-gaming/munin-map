@@ -18,6 +18,14 @@ const glyphs = {
   // the Deep North: a shaft going down, and Mörkhalla's dark keep
   hole: '<ellipse cx="12" cy="13" rx="9" ry="6" fill="COLOR" stroke="#111" stroke-width="1.2"/><ellipse cx="12" cy="13.5" rx="5.5" ry="3.4" fill="#111"/><path d="M12 3v6M9.5 6.5 12 9l2.5-2.5" fill="none" stroke="COLOR" stroke-width="1.8"/>',
   morkhalla: '<path d="M4 21V9l3-3 3 3V6l2-3 2 3v3l3-3 3 3v12z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 21v-5a2 2 0 0 1 4 0v5z" fill="#111"/>',
+  // landmarks: the Forge of Potential, an ancestral memorial, a Fimbulvinter orb, a hot spring
+  forge: '<path d="M4 12h12l4-3v3l-2 2v2H6v-2z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M9 16v3H7v2h10v-2h-2v-3" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M11 9c0-2 2-3 1-6 2 2 3 4 1 6" fill="none" stroke="COLOR" stroke-width="1.5"/>',
+  memorial: '<path d="M7 21V8l5-5 5 5v13z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M4 21h16" stroke="#111" stroke-width="2"/><path d="M12 8v7M9.5 10.5h5" stroke="#111" stroke-width="1.6"/>',
+  orb: '<circle cx="12" cy="11" r="7" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 6v10M7.5 8.5l9 5M16.5 8.5l-9 5" stroke="#fff" stroke-width="1.2" opacity=".8"/><path d="M8 21h8l-1.5-3h-5z" fill="#111"/>',
+  hotspring: '<path d="M3 17c0-2.5 4-4 9-4s9 1.5 9 4-4 4-9 4-9-1.5-9-4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M8 11c-1-2 1-3 0-5M12 11c-1-2 1-3 0-5M16 11c-1-2 1-3 0-5" fill="none" stroke="COLOR" stroke-width="1.6"/>',
+  drakenest: '<path d="M3 15c2 5 16 5 18 0z" fill="COLOR" stroke="#111" stroke-width="1.2"/><ellipse cx="9" cy="12" rx="2.6" ry="3.4" fill="#e9f3ff" stroke="#111"/><ellipse cx="15" cy="12" rx="2.6" ry="3.4" fill="#e9f3ff" stroke="#111"/>',
+  gucktree: '<path d="M11 21V12M13 21V12" stroke="#5a4632" stroke-width="2"/><path d="M12 13c-4 0-7-2-7-5 2 0 3-2 7-4 4 2 5 4 7 4 0 3-3 5-7 5z" fill="#4b4a32" stroke="#111" stroke-width="1.2"/><circle cx="9" cy="9" r="1.6" fill="COLOR" stroke="none"/><circle cx="14.5" cy="8" r="1.5" fill="COLOR" stroke="none"/><circle cx="12" cy="11" r="1.3" fill="COLOR" stroke="none"/>',
+  sign: '<path d="M4 5h16v9H4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 14v7" stroke="#111" stroke-width="2.4"/><path d="M7 8.5h10M7 11h7" stroke="#111" stroke-width="1.3"/>',
   fulingcamp: '<path d="M12 4l9 16H3z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 12l4 8H8z" fill="#111"/><path d="M12 4V1.5M12 2l3 1-3 1" fill="COLOR" stroke="#111" stroke-width="1"/>',
   tarpit: '<path d="M3 15c0-3 4-5 9-5s9 2 9 5-4 5-9 5-9-2-9-5z" fill="COLOR" stroke="#111" stroke-width="1.2"/><circle cx="9" cy="14" r="1.6" fill="#111"/><circle cx="14.5" cy="15.5" r="1.2" fill="#111"/><path d="M12 9c0-2 1-3 0-5" fill="none" stroke="COLOR" stroke-width="1.6"/>',
   village: '<path d="M3 20V10l5-5 5 5v10z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M13 20V12l4-4 4 4v8z" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
@@ -50,6 +58,7 @@ export const colors = {
   // dungeon kinds, each its own colour, from its biome and clear of the other markers' colours
   crypt: '#7fa86a', sunkencrypt: '#9aa04e', trollcave: '#a7764c', frostcave: '#9fd1ee', infestedmine: '#7f95b8', fortress: '#c94a32',
   bearcave: '#b08a5e', hole: '#b9d4e6', morkhalla: '#9b86e0', fulingcamp: '#d9b26b', tarpit: '#8f8578',
+  forge: '#ff8a4c', memorial: '#c7d4e6', orb: '#7fd3ff', hotspring: '#6fd6c4', drakenest: '#a9c7e8', gucktree: '#9fd35a', sign: '#c9a46a', landmark: '#7fd3ff',
   trader: '#f2c14e', hildir: '#f2c14e', bogwitch: '#9be37a', miniboss: '#ff9d4d', hildir1: '#ff9d4d', hildir2: '#ff9d4d', hildir3: '#ff9d4d', dungeon: '#c9a5ff', cave: '#9fd8ff', camp: '#ff9d4d',
   village: '#e0c39a', ruin: '#bfc7d2', runestone: '#8fd3ff', wreck: '#bfc7d2', poi: '#9aa5b5', portal: '#5ce0e6',
   tombstone: '#d6d6d6', boat: '#8fc7ff', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',

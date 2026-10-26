@@ -6,6 +6,7 @@
 import { iconSvg, colors } from '../icons.js';
 import { ShapesCanvas } from './shapes.js';
 import { metersPerPixel } from '../crs.js';
+import { layerState } from '../layerstate.js';
 
 const LABEL_FONT = '600 11px';
 const iconCache = new Map();   // "name|color" -> canvas with the icon and its drop shadow, or 'loading'
@@ -36,6 +37,10 @@ function countBadge(s) {
 
 // name: one of our SVG icons, or img: the URL of one of the game's own map icons (World/MapIcons),
 // which get a dark round badge with a ring in the marker's colour behind them
+// "dots" style: a plain dot in the marker's colour, but pins and the few always-labelled markers
+// (spawn, bosses, traders) keep their icons
+const asDot = (it) => layerState.iconDots && !it.pin && !it.always;
+
 function iconImage(name, color, onReady, img, gamePin) {
   if (gamePin && img) return gamePinImage(img, gamePin, onReady);
   const key = img ? `${img}|${color}` : `${name}|${color}`;
@@ -273,12 +278,12 @@ export class MarkerCanvas extends L.Layer {
     }
 
     // icons grow in smoothly with zoom (like valheim.tools' badges), at any in-between size
-    const placed = this.placed(), grow = Math.max(16, Math.min(26, 16 + (map.getZoom() - 2) * 4));
+    const placed = this.placed(), grow = Math.max(16, Math.min(26, 16 + (map.getZoom() - 2) * 4)) * layerState.iconScale;
     g.imageSmoothingQuality = 'high';
     for (let i = placed.length - 1; i >= 0; i--) {   // last-first: the list's first end up on top (as in MarkerGL)
       const { it, p } = placed[i];
-      const px = it.pin ? 18 : grow;
-      const im = iconImage(it.icon, it.color, redraw, it.img, it.gamePin);
+      const dot = asDot(it), px = it.pin ? 18 * layerState.iconScale : dot ? grow * 0.55 : grow;
+      const im = dot ? iconImage('dot', it.color, redraw) : iconImage(it.icon, it.color, redraw, it.img, it.gamePin);
       if (!im) continue;
       // markers sit centred on their spot, pins stand on it
       const pad = px * im.padShare, x = p.x - px / 2 - pad, y = (it.pin ? p.y - px : p.y - px / 2) - pad;
@@ -475,7 +480,7 @@ class MarkerGL extends L.Layer {
     gl.uniform1i(p.u.u_tex, 0);
     gl.uniform4f(p.u.u_uv, 0, 0, 1, 1);
     gl.uniform1f(p.u.u_alpha, 1);
-    const grow = Math.max(16, Math.min(26, 16 + (v.zoom - 2) * 4));
+    const grow = Math.max(16, Math.min(26, 16 + (v.zoom - 2) * 4)) * layerState.iconScale;
     let placed = [];
     for (const it of src.items) {
       const [x, y] = toPx(it.x, it.z);
@@ -509,7 +514,8 @@ class MarkerGL extends L.Layer {
     let n = 0;
     for (let i = placed.length - 1; i >= 0; i--) {
       const { it, x, y } = placed[i];
-      const px = it.pin ? 18 : grow, im = iconImage(it.icon, it.color, redraw, it.img, it.gamePin);
+      const dot = asDot(it), px = it.pin ? 18 * layerState.iconScale : dot ? grow * 0.55 : grow;
+      const im = dot ? iconImage('dot', it.color, redraw) : iconImage(it.icon, it.color, redraw, it.img, it.gamePin);
       if (!im) continue;
       const uv = this.atlasSlot(gl, im);
       if (!uv) continue;

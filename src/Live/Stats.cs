@@ -323,6 +323,7 @@ namespace MuninMap.Live
                 j.PropRaw("tiles", TileStore.StatusJson());
                 j.End();
                 World(j);
+                j.PropRaw("forecast", Weather.ForecastJson());
                 j.Key("onlineHistory").BeginArray();
                 int from = Math.Max(0, onlineHistory.Count - 288);
                 for (int i = from; i < onlineHistory.Count; i++) j.BeginArray().Value(onlineHistory[i].Key).Value(onlineHistory[i].Value).End();

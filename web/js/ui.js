@@ -173,6 +173,10 @@ export class Sidebar {
     people.append(row(ico('player', '#6fb7ff'), 'Players', 'Where everyone online is right now', S.players, (v) => { L.players.setVisible(v); S.set('players', v); }));
     people.append(row(ico('pin'), 'Pins', 'Pins placed on the map', S.pins, (v) => { L.markers.setVisible('pins', v); S.set('pins', v); }));
     people.append(row(LABEL_SVG, 'Names', 'Labels under the markers', S.labels, (v) => { document.body.classList.toggle('no-labels', !v); S.set('labels', v); }));
+    people.append(row(ico('dot', '#9aa5b5'), 'Dots', 'Plain dots instead of icons', S.iconDots, (v) => S.set('iconDots', v)));
+    const size = el(`<div class="lrow"><span class="lico">${ico('poi', '#9aa5b5')}</span><span class="ltext"><b>Marker size</b></span><input class="lrange" type="range" min="0.5" max="2" step="0.1" value="${S.iconScale}"></div>`);
+    size.querySelector('input').addEventListener('input', (e) => S.set('iconScale', +e.target.value));
+    people.append(size);
     this.markerSetRows = el('<div class="lsets"></div>');
     people.append(el('<div class="lsub">Markers</div>'), this.markerSetRows);
 
@@ -207,7 +211,7 @@ export class Sidebar {
     for (const [kind, name] of VEG_KEY) if (VEG[kind]) legend.querySelector('.lv').append(el(`<span><i class="${VEG[kind][2] ? 'rock' : 'round'}" style="background:${VEG[kind][1]}"></i>${name}</span>`));
     p.append(legend);
 
-    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', camps: 'fulingcamp', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
+    const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
     L.markers.onChange((sets) => {
       this.markerSetRows.replaceChildren();
       for (const s of sets) {
@@ -288,7 +292,7 @@ export class Sidebar {
     }
     if (!p.contains(this.mkSearch)) p.replaceChildren(this.mkSearch, this.mkBody);
     const q = this.mkSearch.querySelector('input').value.trim().toLowerCase();
-    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', camps: 'fulingcamp', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
+    const ICON = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion' };
     const go = (x, z) => this.app.goTo(x, z, Math.max(this.app.map.getZoom(), 6));
     this.mkBody.replaceChildren();
     let any = false;
@@ -358,6 +362,17 @@ export class Sidebar {
     </div>`));
     p.append(el('<div class="sub">Players online, last 24 h</div>'));
     p.append(sparkline(d.onlineHistory || []));
+
+    // ---- the weather to come in each biome (the game draws it by time alone, so it holds for everyone)
+    const fc = d.forecast;
+    if (fc && fc.biomes && fc.biomes.length && s.worldTime !== undefined) {
+      const cols = 3, when = [];
+      for (let k = 0; k < cols; k++) { const m = Math.round((fc.start + k * fc.period - s.worldTime) / 60); when.push(k === 0 ? 'Now' : `in ${m} min`); }
+      p.append(el('<h3>Weather</h3>'));
+      p.append(el(`<table class="forecast"><thead><tr><th></th>${when.map((w) => `<th>${w}</th>`).join('')}</tr></thead><tbody>${fc.biomes.map((b) =>
+        `<tr><td>${escape(b.biome)}</td>${b.weather.slice(0, cols).map((w, k) => `<td class="${k > 0 && w === b.weather[k - 1] ? 'same' : ''}">${escape(w)}</td>`).join('')}</tr>`).join('')}</tbody></table>`));
+      p.append(el('<div class="sub">Each change comes on game time: sleeping through the night skips ahead</div>'));
+    }
 
     // ---- bosses: the world's own record of which have fallen
     if (d.bosses && d.bosses.length) {

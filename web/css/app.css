@@ -62,6 +62,7 @@ a { color: var(--accent); }
 /* sidebar */
 .sidebar { position: absolute; top: var(--topbar-h); bottom: 0; left: 0; width: var(--sidebar-w); background: rgba(22,27,34,.96); border-right: 1px solid var(--line); z-index: 900; display: flex; flex-direction: column; transform: translateX(0); transition: transform .2s ease; }
 .app.sidebar-hidden .sidebar { transform: translateX(-100%); }
+.app.embed .topbar, .app.embed .sidebar, .app.embed .hud, .app.embed .leaflet-control-container { display: none; }
 .tabs { display: flex; border-bottom: 1px solid var(--line); }
 .tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 6px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; font-size: 11px; position: relative; }
 .tabs button svg { width: 20px; height: 20px; }
@@ -84,6 +85,7 @@ a { color: var(--accent); }
 .row .ico { width: 20px; height: 20px; flex: none; }
 .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
 .row input[type=range] { width: 100px; accent-color: var(--accent); }
+.lrow .lrange { width: 110px; accent-color: var(--accent); flex: none; }
 .hp { height: 5px; background: var(--bg-3); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .hp i { display: block; height: 100%; background: var(--ok); }
 .hp i.low { background: var(--danger); }
@@ -333,6 +335,12 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .serverlog [hidden] { display: none !important; }
 
 /* stats: boss progress, leaderboard */
+.forecast { width: 100%; border-collapse: collapse; font-size: 11px; margin: 4px 0; table-layout: fixed; }
+.forecast th { font-weight: 600; color: var(--muted); text-align: left; padding: 2px 3px; }
+.forecast td { padding: 3px 6px 3px 3px; border-top: 1px solid var(--line); line-height: 1.25; vertical-align: top; }
+.forecast td:first-child { color: var(--muted); }
+.forecast th:first-child { width: 24%; }
+.forecast td.same { color: var(--muted); opacity: .6; }
 .boss-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 4px 0; }
 .boss { background: var(--bg-3); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 11px; color: var(--muted); opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .boss span { display: block; font-size: 14px; font-weight: 700; }

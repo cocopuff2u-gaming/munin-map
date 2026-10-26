@@ -15,14 +15,24 @@ export const layerState = {
   vegHidden: new Set(), // single kinds hidden within a group that is on
   time3d: 'live',       // 3D lighting: 'live' follows the server's clock, or noon/morning/evening/night
   shadows: !matchMedia('(max-width: 720px)').matches,   // real shadows in 3D (off on phones by default)
-  sets: new Map([["dungeons", false], ["camps", false], ["tablepins", false], ["wards", false], ["runestones", false], ["vegvisirs", false], ["beds", false]]),   // marker set id -> bool (missing = visible); dungeon entrances, camps and tar pits, cartography table pins, wards, runestones, Vegvisirs and beds start off (hundreds of them)
+  sets: new Map([["dungeons", false], ["camps", false], ["signs", false], ["tablepins", false], ["wards", false], ["runestones", false], ["vegvisirs", false], ["beds", false]]),   // marker set id -> bool (missing = visible); dungeon entrances, camps and resource spots, signs, cartography table pins, wards, runestones, Vegvisirs and beds start off (hundreds of them)
   cats: new Map(),      // location category -> bool (missing = visible)
+  iconScale: 1, iconDots: false,   // marker size, and plain dots instead of icons (bosses, traders and pins keep theirs); kept per browser
   listeners: new Set(),
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
-  set(key, value) { this[key] = value; this.emit(key); },
+  set(key, value) {
+    this[key] = value;
+    if (key === 'iconScale' || key === 'iconDots') { try { localStorage.setItem('munin-icons', JSON.stringify({ scale: this.iconScale, dots: this.iconDots })); } catch (e) { /* this visit only */ } }
+    this.emit(key);
+  },
   setSet(id, v) { this.sets.set(id, v); this.emit('sets'); },
   setCat(cat, v) { this.cats.set(cat, v); this.emit('cats'); },
   setVisible(id) { return this.sets.get(id) !== false; },
   catVisible(cat) { return this.cats.get(cat) !== false; },
   emit(key) { for (const fn of this.listeners) fn(key, this); },
 };
+
+try {
+  const saved = JSON.parse(localStorage.getItem('munin-icons') || 'null');
+  if (saved) { layerState.iconScale = Math.min(2, Math.max(0.5, +saved.scale || 1)); layerState.iconDots = !!saved.dots; }
+} catch (e) { /* defaults */ }
