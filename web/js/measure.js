@@ -17,6 +17,17 @@ export const TRAVEL = [
   { id: 'drakkar', label: 'Drakkar', speed: 11, kind: 'water' },
 ];
 const MINUTES = [2, 5, 10, 15, 30];
+// Reach in bands, each its own colour from green (close) to red (the limit), five or so whatever
+// the minutes: one colour fading out was hard to read
+const BAND_COLOURS = [[46, 204, 113], [163, 214, 92], [241, 196, 15], [243, 156, 18], [231, 96, 60], [192, 57, 43]];
+export function reachBands(minutes) {
+  const step = minutes <= 2 ? 0.5 : minutes <= 5 ? 1 : minutes <= 10 ? 2 : minutes <= 15 ? 3 : 5, n = Math.round(minutes / step);
+  return Array.from({ length: n }, (_, i) => ({
+    from: i * step, to: (i + 1) * step,
+    colour: BAND_COLOURS[n === 1 ? 0 : Math.round((i * (BAND_COLOURS.length - 1)) / (n - 1))],
+  }));
+}
+const fmtMin = (m) => (m % 1 ? `${Math.round(m * 60)} s` : `${m} min`);
 
 export const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 2 : 1)} km`);
 export const fmtTime = (s) => (!isFinite(s) ? '–' : s < 60 ? `${Math.max(1, Math.round(s))} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
@@ -88,7 +99,8 @@ export class MeasureTool {
       body = `<div class="mp-row"><select class="sel" data-act="travel">${TRAVEL.map((t) => `<option value="${t.id}"${t.id === this.travel ? ' selected' : ''}>${t.label}</option>`).join('')}</select>
         <span class="mp-chips">${MINUTES.map((m) => `<button data-min="${m}" class="${m === this.minutes ? 'on' : ''}">${m} min</button>`).join('')}</span></div>`;
       const r = this.reach;
-      body += r ? `<div class="mp-hint">${r.busy ? 'Working it out…' : r.none ? 'No way to travel like that from there.' : `Within ${this.minutes} min ${this.travelInfo().kind === 'water' ? 'by water' : 'over land'} from ${escape(r.label || `${Math.round(r.x)}, ${Math.round(r.z)}`)}. Lines every ${this.minutes <= 10 ? 2 : 5} min.`}</div>`
+      body += r ? (r.busy || r.none ? `<div class="mp-hint">${r.busy ? 'Working it out…' : 'No way to travel like that from there.'}</div>` : `<div class="mp-hint">${this.travelInfo().label} from ${escape(r.label || `${Math.round(r.x)}, ${Math.round(r.z)}`)}, ${this.travelInfo().kind === 'water' ? 'over water' : 'over land'}:</div>
+          <div class="mp-key">${reachBands(this.minutes).map((b) => `<span><i style="background:rgb(${b.colour.join(',')})"></i>${b.from ? fmtMin(b.from).replace(' min', '') + '–' : 'under '}${fmtMin(b.to)}</span>`).join('')}</div>`)
         : '<div class="mp-hint">Click the map where you start.</div>';
     }
     p.innerHTML = `<div class="mp-head"><span class="mp-seg">${seg('measure', 'Measure')}${seg('reach', 'Reach')}</span><button class="icon-btn" data-act="close" title="Close (Esc)"><svg><use href="#i-close"/></svg></button></div>${body}`;
@@ -220,8 +232,8 @@ class ReachGL extends L.Layer {
     gl.bindVertexArray(null);
   }
   texture(gl) {
-    const { w, h, t } = this.res, max = this.maxSec, band = max <= 600 ? 120 : 300;
-    const col = this.kind === 'water' ? [90, 170, 255] : [110, 230, 190];
+    const water = this.kind === 'water';
+    const { w, h, t } = this.res, max = this.maxSec, bands = reachBands(max / 60), band = (bands[0].to - bands[0].from) * 60;
     const img = new Uint8Array(w * h * 4);
     const bandOf = (s) => (s <= max ? Math.floor(s / band) : -1);
     for (let j = 0; j < h; j++)
@@ -230,7 +242,7 @@ class ReachGL extends L.Layer {
         if (!(s <= max)) continue;
         const b = bandOf(s);
         const edge = (i + 1 < w && bandOf(t[k + 1]) !== b) || (j + 1 < h && bandOf(t[k + w]) !== b) || (i > 0 && bandOf(t[k - 1]) !== b) || (j > 0 && bandOf(t[k - w]) !== b);
-        const a = edge ? 0.8 : 0.5 - 0.25 * (s / max);
+        const col = bands[Math.min(bands.length - 1, b)].colour, a = edge ? 0.9 : water ? 0.55 : 0.42;   // (stronger over the dark sea)
         const o = k * 4;   // premultiplied
         img[o] = col[0] * a; img[o + 1] = col[1] * a; img[o + 2] = col[2] * a; img[o + 3] = a * 255;
       }
