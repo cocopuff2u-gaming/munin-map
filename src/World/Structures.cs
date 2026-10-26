@@ -63,6 +63,13 @@ namespace MuninMap.World
         public static int Total { get; private set; }
         // building pieces per creator (a player's id) from the last sweep: the stats' "pieces built"
         public static Dictionary<long, int> Builders { get; private set; } = new Dictionary<long, int>();
+        // the crafting stations each player has standing (by creator), a sign of how far they've come
+        public static Dictionary<long, HashSet<string>> Stations { get; private set; } = new Dictionary<long, HashSet<string>>();
+        private static Dictionary<long, HashSet<string>> byCreatorStations;
+        private static readonly HashSet<string> stationNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+            "piece_workbench", "forge", "piece_stonecutter", "piece_artisanstation", "blackforge", "piece_magetable",
+            "piece_cauldron", "piece_MeadCauldron", "piece_preptable", "piece_oven", "smelter", "blastfurnace", "charcoal_kiln",
+            "eitrrefinery", "piece_spinningwheel", "windmill", "fermenter", "piece_beehive", "piece_FrostKiln" };
 
         // kept from one sweep to the next and only emptied: less garbage, fewer collection pauses
         private static readonly Dictionary<int, List<Piece>> pool = new Dictionary<int, List<Piece>>();
@@ -74,6 +81,7 @@ namespace MuninMap.World
             byPrefab = new Dictionary<int, int>();
             byMaterial = new Dictionary<int, int>();
             byCreator = new Dictionary<long, int>();
+            byCreatorStations = new Dictionary<long, HashSet<string>>();
             total = 0;
         }
 
@@ -95,6 +103,11 @@ namespace MuninMap.World
             byPrefab.TryGetValue(prefabHash, out int n); byPrefab[prefabHash] = n + 1;
             byMaterial.TryGetValue((int)shape.mat, out int m); byMaterial[(int)shape.mat] = m + 1;
             byCreator.TryGetValue(creator, out int c); byCreator[creator] = c + 1;
+            if (stationNames.Contains(shape.name))
+            {
+                if (!byCreatorStations.TryGetValue(creator, out var set)) byCreatorStations[creator] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                set.Add(shape.name);
+            }
         }
 
         public static int LastChanged { get; private set; }   // chunks the last Finish changed
@@ -141,6 +154,7 @@ namespace MuninMap.World
             Total = total;
             statsJson = BuildStats();
             Builders = new Dictionary<long, int>(byCreator);
+            if (byCreatorStations != null) Stations = byCreatorStations;
             // the index lists only chunks under explored ground, so it also has to follow the fog
             int explored = Fog.ExploredCells;
             if (changed > 0 || explored != indexExplored) { indexRev++; indexExplored = explored; indexJson = BuildIndex(); }
@@ -200,7 +214,7 @@ namespace MuninMap.World
 
         public static string IndexJson => indexJson;
 
-        public struct Base { public float x, y, z; public int pieces; }
+        public struct Base { public float x, y, z; public int pieces; public long builder; }   // builder: who placed most of it
 
         // Player bases: player-placed pieces binned into 64 m cells, neighbouring busy cells merged,
         // clusters of at least minPieces reported at their centroid. Cheap enough to run every sweep.
@@ -223,6 +237,7 @@ namespace MuninMap.World
         {
             const float CELL = 64f;
             var cells = new Dictionary<long, (int n, double sx, double sz, double sy)>();
+            var cellBuilders = new Dictionary<long, Dictionary<long, int>>();
             foreach (var c in chunks.Values)
                 foreach (var p in c.pieces ?? Array.Empty<Piece>())   // none in chunks from the cache: the next sweep fills them
                 {
@@ -230,6 +245,8 @@ namespace MuninMap.World
                     long key = ((long)(int)Math.Floor((p.x + 10240f) / CELL) << 32) | (uint)(int)Math.Floor((p.z + 10240f) / CELL);
                     cells.TryGetValue(key, out var v);
                     cells[key] = (v.n + 1, v.sx + p.x, v.sz + p.z, v.sy + p.y);
+                    if (!cellBuilders.TryGetValue(key, out var cb)) cellBuilders[key] = cb = new Dictionary<long, int>(2);
+                    cb.TryGetValue(p.creator, out int cn); cb[p.creator] = cn + 1;
                 }
             var busy = new HashSet<long>();
             foreach (var kv in cells) if (kv.Value.n >= minPerCell) busy.Add(kv.Key);
@@ -240,11 +257,13 @@ namespace MuninMap.World
             {
                 if (seen.Contains(start)) continue;
                 int n = 0; double sx = 0, sz = 0, sy = 0;
+                var by = new Dictionary<long, int>();
                 stack.Push(start); seen.Add(start);
                 while (stack.Count > 0)
                 {
                     long k = stack.Pop();
                     var v = cells[k]; n += v.n; sx += v.sx; sz += v.sz; sy += v.sy;
+                    foreach (var cb in cellBuilders[k]) { by.TryGetValue(cb.Key, out int bn); by[cb.Key] = bn + cb.Value; }
                     int cx = (int)(k >> 32), cz = (int)(uint)(k & 0xffffffff);
                     for (int dx = -1; dx <= 1; dx++)
                         for (int dz = -1; dz <= 1; dz++)
@@ -254,7 +273,9 @@ namespace MuninMap.World
                             if (busy.Contains(nk) && !seen.Contains(nk)) { seen.Add(nk); stack.Push(nk); }
                         }
                 }
-                if (n >= minPieces) result.Add(new Base { x = (float)(sx / n), z = (float)(sz / n), y = (float)(sy / n), pieces = n });
+                long top = 0; int topN = 0;
+                foreach (var kv in by) if (kv.Value > topN) { topN = kv.Value; top = kv.Key; }
+                if (n >= minPieces) result.Add(new Base { x = (float)(sx / n), z = (float)(sz / n), y = (float)(sy / n), pieces = n, builder = top });
             }
             result.Sort((a, b) => b.pieces.CompareTo(a.pieces));
             return result;

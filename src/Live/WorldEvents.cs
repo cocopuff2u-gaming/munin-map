@@ -46,7 +46,7 @@ namespace MuninMap.Live
                 ZNetPeer peer = ZNet.instance != null ? ZNet.instance.GetPeer(data.m_senderPeerID) : null;
                 var there = peer != null ? NearbyPeers(peer.m_refPos, peer) : new List<ZNetPeer>();
                 string who = Names(there);
-                Stats.OnBossKill(there);
+                Stats.OnBossKill(there, boss);
                 if (peer != null) Events.Add("boss", boss, "was defeated" + (who.Length > 0 ? " by " + who : ""), peer.m_refPos.x, peer.m_refPos.z);
                 else Events.Add("boss", boss, "was defeated");
             }
@@ -264,8 +264,8 @@ namespace MuninMap.Live
                 var there = NearbyPeers(f.pos, null, 200f);
                 string who = Names(there);
                 foundInfo[f.key] = new[] { DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture), who };
-                Stats.OnFound(there);
                 string what = f.kind == "boss" ? f.label + "'s altar" : f.kind == "trader" ? f.label + "'s camp" : f.label;
+                Stats.OnFound(there, what);
                 Events.Add("found", what, "found" + (who.Length > 0 ? " by " + who : ""), f.pos.x, f.pos.z);
             }
             foreach (var f in findables) if (seededKinds.Add(f.kind)) changed = true;

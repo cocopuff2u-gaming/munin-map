@@ -42,6 +42,9 @@ namespace MuninMap.Live
             public long sessionStart;
             public Dictionary<string, double> days = new Dictionary<string, double>();
             public Dictionary<string, string> gear = new Dictionary<string, string>();   // what they wore when last seen (slot -> prefab)
+            public List<string> bossesSeen = new List<string>();   // bosses they were there for, first time each
+            public List<string> found = new List<string>();        // places they were first to find (the last 30)
+            public long deathAt; public float deathX, deathZ; public string deathBiome = "";   // their last death (unix, where)
         }
 
         private static long Unix() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -107,6 +110,12 @@ namespace MuninMap.Live
                         if (rs != null) foreach (var ro in rs) if (ro is List<object> pr && pr.Count == 2 && pr[0] is double a0 && pr[1] is double a1) s.recent.Add(new[] { (long)a0, (long)a1 });
                         var ds = JsonParser.Obj(d, "days");
                         if (ds != null) foreach (var kv in ds) if (kv.Value is double sec) s.days[kv.Key] = sec;
+                        var bsn = JsonParser.Arr(d, "bossesSeen");
+                        if (bsn != null) foreach (var b in bsn) if (b is string bn2) s.bossesSeen.Add(bn2);
+                        var fnd = JsonParser.Arr(d, "found");
+                        if (fnd != null) foreach (var f in fnd) if (f is string fn) s.found.Add(fn);
+                        s.deathAt = (long)JsonParser.Num(d, "deathAt"); s.deathBiome = JsonParser.Str(d, "deathBiome") ?? "";
+                        s.deathX = (float)JsonParser.Num(d, "deathX"); s.deathZ = (float)JsonParser.Num(d, "deathZ");
                         var gs = JsonParser.Obj(d, "gear");
                         if (gs != null) foreach (var kv in gs) if (kv.Value is string item && item.Length > 0) s.gear[kv.Key] = item;
                         if (string.IsNullOrEmpty(s.key)) continue;
@@ -186,6 +195,17 @@ namespace MuninMap.Live
             j.Key("gear").BeginObject();
             foreach (var kv in s.gear) j.Prop(kv.Key, kv.Value);
             j.End();
+            j.Key("bossesSeen").BeginArray(); foreach (var b in s.bossesSeen) j.Value(b); j.End();
+            j.Key("found").BeginArray(); foreach (var f in s.found) j.Value(f); j.End();
+            if (s.deathAt > 0)
+            {
+                j.Prop("deathAt", s.deathAt).Prop("deathBiome", s.deathBiome);
+                if (s.deathX != 0f || s.deathZ != 0f) j.Prop("deathX", s.deathX, 1).Prop("deathZ", s.deathZ, 1);
+            }
+            if (s.playerId != 0L && Structures.Stations.TryGetValue(s.playerId, out var stations) && stations.Count > 0)
+            {
+                j.Key("stations").BeginArray(); foreach (var n in stations) j.Value(n); j.End();
+            }
             j.End();
         }
 
@@ -224,12 +244,31 @@ namespace MuninMap.Live
             dirty = true;
         }
 
-        public static void OnDeath(string name)
+        // the player whose game id this is (a building piece's creator), or null
+        public static string NameOfPlayerId(long id)
         {
-            foreach (var s in players.Values)
-                if (s.name == name && s.online) { s.deaths++; dirty = true; return; }
-            foreach (var s in players.Values)
-                if (s.name == name) { s.deaths++; dirty = true; return; }
+            if (id == 0L) return null;
+            foreach (var s in players.Values) if (s.playerId == id && !MuninConfig.IsHidden(s.name)) return s.name;
+            return null;
+        }
+
+        // a death: counted for the character of that name (the one online, if two share it), with
+        // when and where (the place only when the game sent one)
+        public static void OnDeath(string name, float? x = null, float? z = null)
+        {
+            PlayerStat who = null;
+            foreach (var s in players.Values) if (s.name == name && s.online) { who = s; break; }
+            if (who == null) foreach (var s in players.Values) if (s.name == name) { who = s; break; }
+            if (who == null) return;
+            who.deaths++;
+            who.deathAt = Unix();
+            who.deathX = who.deathZ = 0f; who.deathBiome = "";
+            if (x.HasValue && z.HasValue)
+            {
+                who.deathX = x.Value; who.deathZ = z.Value;
+                try { who.deathBiome = Tiles.Palette.BiomeName((int)WorldGenerator.instance.GetBiome(x.Value, z.Value)); } catch { }
+            }
+            dirty = true;
         }
 
         // Main thread, once per snapshot. `visible` players report a position.
@@ -319,8 +358,27 @@ namespace MuninMap.Live
 
         // world events (Live/WorldEvents), each credited to the players who were there
         public static void OnRaid(List<ZNetPeer> there) { raidsTotal++; foreach (var p in there) Get(Players.KeyOf(p), p.m_playerName).raids++; dirty = true; Rebuild(-1); }
-        public static void OnBossKill(List<ZNetPeer> there) { bossKillsTotal++; foreach (var p in there) Get(Players.KeyOf(p), p.m_playerName).bossKills++; dirty = true; Rebuild(-1); }
-        public static void OnFound(List<ZNetPeer> there) { foreach (var p in there) Get(Players.KeyOf(p), p.m_playerName).finds++; dirty = true; Rebuild(-1); }
+        public static void OnBossKill(List<ZNetPeer> there, string boss = null)
+        {
+            bossKillsTotal++;
+            foreach (var p in there)
+            {
+                var s = Get(Players.KeyOf(p), p.m_playerName);
+                s.bossKills++;
+                if (!string.IsNullOrEmpty(boss) && !s.bossesSeen.Contains(boss)) s.bossesSeen.Add(boss);
+            }
+            dirty = true; Rebuild(-1);
+        }
+        public static void OnFound(List<ZNetPeer> there, string what = null)
+        {
+            foreach (var p in there)
+            {
+                var s = Get(Players.KeyOf(p), p.m_playerName);
+                s.finds++;
+                if (!string.IsNullOrEmpty(what)) { s.found.Add(what); if (s.found.Count > 30) s.found.RemoveAt(0); }
+            }
+            dirty = true; Rebuild(-1);
+        }
         public static void OnNightSlept() { nightsSlept++; dirty = true; Rebuild(-1); }
 
         // the bosses in the order the game has them, and whether the world has beaten each

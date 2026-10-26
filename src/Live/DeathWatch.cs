@@ -130,7 +130,7 @@ namespace MuninMap
             }
             catch { }
             Live.Events.Add("death", name, "died", x, z);
-            Live.Stats.OnDeath(name);
+            Live.Stats.OnDeath(name, x, z);
             if (x.HasValue && z.HasValue) Live.Activity.OnDeath(x.Value, z.Value);
         }
 

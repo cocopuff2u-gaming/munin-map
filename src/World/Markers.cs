@@ -16,7 +16,7 @@ namespace MuninMap.World
     // it, and that is a spoiler.
     internal static class Markers
     {
-        private struct Portal { public ZDOID id; public int prefab; public float x, y, z; public string tag; }
+        private struct Portal { public ZDOID id; public int prefab; public float x, y, z; public string tag; public long creator; }
         private struct Tomb { public float x, y, z; public string owner; public long when; }
 
         private static List<Portal> portals = new List<Portal>();
@@ -237,7 +237,9 @@ namespace MuninMap.World
             {
                 string tag = "";
                 try { tag = zdo.GetString(hashPortalTag, "") ?? ""; } catch { }
-                buildingPortals.Add(new Portal { id = zdo.m_uid, prefab = zdo.GetPrefab(), x = pos.x, y = pos.y, z = pos.z, tag = tag });
+                long creator = 0L;
+                try { creator = zdo.GetLong(ZDOVars.s_creator, 0L); } catch { }
+                buildingPortals.Add(new Portal { id = zdo.m_uid, prefab = zdo.GetPrefab(), x = pos.x, y = pos.y, z = pos.z, tag = tag, creator = creator });
                 return true;
             }
             if (n.Equals("Player_tombstone", StringComparison.OrdinalIgnoreCase))
@@ -715,7 +717,10 @@ namespace MuninMap.World
             {
                 if (!Visible(p.x, p.z)) continue;
                 j.BeginObject().Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("y", p.y, 1).Prop("cat", "portal").Prop("icon", "portal");
-                j.Prop("label", string.IsNullOrEmpty(p.tag) ? "(untagged)" : p.tag).Prop("tag", p.tag).End();
+                j.Prop("label", string.IsNullOrEmpty(p.tag) ? "(untagged)" : p.tag).Prop("tag", p.tag);
+                string by = Live.Stats.NameOfPlayerId(p.creator);   // who built it (a player the map has seen)
+                if (by != null) j.Prop("by", by);
+                j.End();
             }
             j.End().End();
 
@@ -854,6 +859,8 @@ namespace MuninMap.World
                         }
                     j.BeginObject().Prop("x", b.x, 1).Prop("z", b.z, 1).Prop("y", b.y, 1).Prop("cat", "base").Prop("icon", "house");
                     j.Prop("label", label != null ? label : "Base").Prop("pieces", b.pieces);
+                    string builder = Live.Stats.NameOfPlayerId(b.builder);
+                    if (builder != null) j.Prop("by", builder);
                     if (ov != null && ov.label != null) j.Prop("renamed", true);
                     j.End();
                 }

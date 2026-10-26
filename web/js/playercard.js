@@ -1,7 +1,8 @@
 // A card that pops up when a player is clicked, on the 2D map, in the 3D view or in the sidebar
 // (online or not): who they are and whether they're on, health, stamina and eitr, what they wear
 // (the game's own item icons and names), when they play (the last two weeks and recent sessions),
-// their lifetime stats and their places (beds, tombstones, wards) with a way to each. Stays open
+// their lifetime stats, bosses and first finds, the crafting stations they've built, leaderboard
+// badges, and their places (bases, portals, beds, tombstones, wards, last death) with a way to each. Stays open
 // and keeps updating until dismissed. ?player=<name> opens one from a link.
 
 import { escape } from './layers/markers.js';
@@ -107,7 +108,35 @@ export class PlayerCard {
       const sessions = (st.recent || []).slice(-4).reverse();
       const list = sessions.map(([a, b]) => `<div class="pc-sess"><span>${dayLabel(a)}</span><span>${clock(a)}–${clock(b)}</span><b>${fmtDuration(b - a)}</b></div>`).join('');
       if (total || sessions.length) activity = `<div class="pc-section">Last two weeks <small>${total ? fmtDuration(total) + ' played' : ''}</small></div>${chart}${list}`;
+      // when in the day they're usually on (their recent sessions, this browser's clock)
+      const hours = new Array(24).fill(0);
+      for (const [a, b] of st.recent || []) for (let t = a; t < b; t += 600) hours[new Date(t * 1000).getHours()] += 10;
+      const busiest = Math.max(...hours);
+      if (busiest >= 30) {
+        const on = hours.map((m) => m >= busiest * 0.35);
+        let best = [0, 0];   // the longest run of busy hours (wrapping past midnight)
+        for (let h = 0; h < 24; h++) { let n = 0; while (n < 24 && on[(h + n) % 24]) n++; if (n > best[1]) best = [h, n]; }
+        const hh = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString([], { hour: 'numeric' });
+        activity += `<div class="pc-hours" title="When their recent sessions were">${hours.map((m) => `<i style="opacity:${m ? 0.25 + 0.75 * m / busiest : 0.08}"></i>`).join('')}</div>
+          <div class="pc-first">Usually on ${best[1] >= 24 ? 'around the clock' : `${hh(best[0])} – ${hh(best[0] + best[1])}`}</div>`;
+      }
     }
+    // badges: top of a leaderboard
+    let badges = '';
+    const all = (statsStore.data?.players || []);
+    if (st && all.length > 1) {
+      const BOARDS = [['playtime', 'Never logs off'], ['distance', 'Wanderer'], ['built', 'Master builder'], ['revealed', 'Pathfinder'], ['bossKills', 'Boss slayer'], ['raids', 'Raid veteran'], ['finds', 'Explorer'], ['portalTrips', 'Portal hopper']];
+      badges = BOARDS.filter(([k]) => (st[k] || 0) > 0 && all.every((o) => o === st || (o[k] || 0) < st[k])).map(([, t]) => `<span class="pc-badge">${t}</span>`).join('');
+    }
+    // progress: the crafting stations they've built (in the order the game unlocks them)
+    const STATIONS = [['piece_workbench', 'Workbench'], ['forge', 'Forge'], ['piece_cauldron', 'Cauldron'], ['charcoal_kiln', 'Charcoal kiln'], ['smelter', 'Smelter'], ['fermenter', 'Fermenter'],
+      ['piece_beehive', 'Beehive'], ['piece_stonecutter', 'Stonecutter'], ['piece_artisanstation', 'Artisan table'], ['piece_spinningwheel', 'Spinning wheel'], ['windmill', 'Windmill'],
+      ['blastfurnace', 'Blast furnace'], ['blackforge', 'Black forge'], ['piece_magetable', 'Galdr table'], ['eitrrefinery', 'Eitr refinery'], ['piece_oven', 'Stone oven'],
+      ['piece_preptable', 'Food prep table'], ['piece_MeadCauldron', 'Mead ketill'], ['piece_FrostKiln', 'Frost kiln']];
+    const has = new Set((st?.stations || []).map((n) => n.toLowerCase()));
+    const stations = STATIONS.filter(([k]) => has.has(k.toLowerCase())).map(([, t]) => `<span class="chip">${t}</span>`).join('');
+    const bosses = (st?.bossesSeen || []).map((b) => `<span class="chip boss">${escape(b)}</span>`).join('');
+    const found = (st?.found || []).slice(-6).reverse();
     // lifetime
     const cell = (v, label, title = '') => `<div${title ? ` title="${escape(title)}"` : ''}><b>${v}</b><span>${label}</span></div>`;
     const km2 = (cells) => { const a = (cells || 0) * 144 / 1e6; return a >= 10 ? a.toFixed(0) + ' km²' : a.toFixed(1) + ' km²'; };   // explored cells are 12 m
@@ -123,22 +152,33 @@ export class PlayerCard {
         ${cell(st.raids || 0, 'raids weathered')}
       </div>
       ${(st.biomes || []).length ? `<div class="pc-biomes">${st.biomes.filter((b) => b !== 'Ocean' && b !== 'Unknown').map((b) => `<span class="chip">${escape(b)}</span>`).join('')}</div>` : ''}
-      ${st.firstSeen ? `<div class="pc-first">First seen ${escape(new Date(st.firstSeen).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }))}${st.finds ? ` · first to find ${st.finds} place${st.finds > 1 ? 's' : ''}` : ''}</div>` : ''}` : '';
-    // their places: claimed beds, tombstones, wards (from the markers)
+      ${st.firstSeen ? `<div class="pc-first">First seen ${escape(new Date(st.firstSeen).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }))}</div>` : ''}
+      ${bosses ? `<div class="pc-sub">Bosses they fought</div><div class="pc-biomes">${bosses}</div>` : ''}
+      ${found.length ? `<div class="pc-sub">First to find</div><div class="pc-first">${found.map(escape).join(' · ')}${st.finds > found.length ? ` and ${st.finds - found.length} more` : ''}</div>` : st.finds ? `<div class="pc-first">First to find ${st.finds} place${st.finds > 1 ? 's' : ''}</div>` : ''}` : '';
+    // their places: the bases they built most of, their portals, claimed beds, tombstones, wards
+    // (from the markers), and where they last died
     const places = [];
     for (const set of this.app.layers.markers?.sets || []) {
-      if (set.id !== 'beds' && set.id !== 'tombstones' && set.id !== 'wards') continue;
-      for (const m of set.markers || []) if (m.owner === name) places.push({ m, kind: set.id === 'beds' ? 'bed' : set.id === 'wards' ? 'ward' : 'tombstone' });
+      const kind = { bases: 'house', portals: 'portal', beds: 'bed', tombstones: 'tombstone', wards: 'ward' }[set.id];
+      if (!kind) continue;
+      for (const m of set.markers || []) if ((kind === 'house' || kind === 'portal' ? m.by : m.owner) === name) places.push({ m, kind });
     }
-    // the same kind close together (a base's wards) is one row; beds first, then tombstones, wards
-    const label = { bed: 'Bed', tombstone: 'Tombstone', ward: 'Ward' }, order = { bed: 0, tombstone: 1, ward: 2 }, groups = [];
+    if (st?.deathAt && (st.deathX || st.deathZ)) places.push({ m: { x: st.deathX, z: st.deathZ }, kind: 'death' });
+    // the same kind close together (a base's wards) is one row; bases, last death, portals, beds, tombstones, wards
+    const label = { house: 'Base', portal: 'Portal', bed: 'Bed', tombstone: 'Tombstone', ward: 'Ward', death: 'Last died' }, order = { house: 0, death: 1, portal: 2, bed: 3, tombstone: 4, ward: 5 }, groups = [];
     for (const pl of places) {
-      const g = groups.find((q) => q.kind === pl.kind && Math.hypot(q.m.x - pl.m.x, q.m.z - pl.m.z) < 150);
+      const g = pl.kind !== 'house' && pl.kind !== 'portal' && groups.find((q) => q.kind === pl.kind && Math.hypot(q.m.x - pl.m.x, q.m.z - pl.m.z) < 150);
       if (g) g.n++; else groups.push({ ...pl, n: 1 });
     }
     groups.sort((a, b) => order[a.kind] - order[b.kind]);
     places.length = 0; places.push(...groups);
-    const placeRows = groups.slice(0, 8).map(({ m, kind, n }, i) => `<div class="pc-place" data-i="${i}">${iconSvg(kind)}<span>${label[kind]}${n > 1 ? ` ×${n}` : ''}${kind === 'ward' && n === 1 && m.on === false ? ' (off)' : ''}</span><small>${escape(this.app.sidebar?.whereText?.(m.x, m.z) || `${Math.round(m.x)}, ${Math.round(m.z)}`)}</small></div>`).join('');
+    const what = ({ m, kind, n }) => kind === 'house' ? `${escape(m.label || 'Base')} <em>${(m.pieces || 0).toLocaleString()} pieces</em>`
+      : kind === 'portal' ? `Portal <em>${escape(m.tag || 'untagged')}</em>`
+      : kind === 'death' ? `Last died <em>${fmtAgo(new Date(st.deathAt * 1000).toISOString())}${st.deathBiome ? ' · ' + escape(st.deathBiome) : ''}</em>`
+      : `${label[kind]}${n > 1 ? ` ×${n}` : ''}${kind === 'ward' && n === 1 && m.on === false ? ' (off)' : ''}`;
+    const shown = groups.slice(0, 12);
+    const placeRows = shown.map((g, i) => `<div class="pc-place" data-i="${i}">${iconSvg(g.kind === 'death' ? 'tombstone' : g.kind)}<span>${what(g)}</span><small>${escape(this.app.sidebar?.whereText?.(g.m.x, g.m.z) || `${Math.round(g.m.x)}, ${Math.round(g.m.z)}`)}</small></div>`).join('')
+      + (groups.length > shown.length ? `<div class="pc-first">and ${groups.length - shown.length} more</div>` : '');
     const can3d = this.app.config?.enable_3d !== false;
     const following = p && PL.following === p.id;
     const there = p && p.x !== undefined ? [p.x, p.z] : st && st.lastX !== undefined ? [st.lastX, st.lastZ] : null;
@@ -150,8 +190,10 @@ export class PlayerCard {
       ${p && p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : ''}
       ${p && p.eitr !== undefined && p.eitr > 0 ? bar('Eitr', p.eitr, Math.max(p.eitr, 100), 'hp-eitr') : ''}
       ${gear ? `<div class="pc-section">${p ? 'Wearing' : 'Last seen wearing'}</div><div class="pc-items${p ? '' : ' was'}">${gear}</div>` : ''}
+      ${badges ? `<div class="pc-badges">${badges}</div>` : ''}
       ${activity}
       ${life ? `<div class="pc-section">All time</div>${life}` : ''}
+      ${stations ? `<div class="pc-section">Crafting stations built</div><div class="pc-biomes">${stations}</div>` : ''}
       ${placeRows ? `<div class="pc-section">Their places</div>${placeRows}` : ''}
       <div class="pc-actions">
         ${p ? `<button class="btn small ${following ? 'on' : ''}" data-act="follow" ${p.x === undefined ? 'disabled' : ''}>${following ? 'Unfollow' : 'Follow'}</button>` : ''}

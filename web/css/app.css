@@ -288,6 +288,13 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .player-card .pc-place svg { width: 18px; height: 18px; flex: none; }
 .player-card .pc-place small { margin-left: auto; color: var(--muted); }
 .player-card .pc-actions .btn:disabled { opacity: .45; }
+.player-card .pc-hours { display: flex; gap: 1px; height: 8px; margin-top: 6px; }
+.player-card .pc-hours i { flex: 1; background: var(--accent, #6fb7ff); border-radius: 1px; }
+.player-card .pc-badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+.player-card .pc-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: rgba(255,207,92,.14); color: #ffcf5c; border: 1px solid rgba(255,207,92,.4); }
+.player-card .pc-sub { font-size: 10.5px; color: var(--muted); margin: 8px 0 2px; }
+.player-card .chip.boss { border-color: rgba(255,92,92,.45); }
+.player-card .pc-place span em { font-style: normal; color: var(--muted); margin-left: 4px; }
 .player-card[hidden] { display: none; }
 .player-card .pc-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .player-card .pc-head .ico svg { width: 22px; height: 22px; }
