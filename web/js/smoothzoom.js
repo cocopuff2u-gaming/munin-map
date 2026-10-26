@@ -12,7 +12,8 @@ const TAU = 90;   // ms: the remaining distance shrinks by e every TAU, whatever
 L.Marker.include({
   update() {
     if (this._icon && this._map) {
-      const pos = this._map.latLngToLayerPoint(this._latlng);
+      // (latLngToLayerPoint rounds to whole pixels: unrounded for a gliding player, layers/players.js)
+      const pos = this._exactPos ? this._map.project(this._latlng, this._map.getZoom()).subtract(this._map.getPixelOrigin()) : this._map.latLngToLayerPoint(this._latlng);
       this._setPos(this._map._gliding || this._exactPos ? pos : pos.round());   // (_exactPos: a gliding player, layers/players.js)
     }
     return this;

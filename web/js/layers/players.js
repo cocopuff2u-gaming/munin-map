@@ -141,7 +141,8 @@ export class PlayersLayer {
   keepCentred(x, z) {
     const map = this.map;
     if (map._animatingZoom || (map.dragging && map.dragging._draggable && map.dragging._draggable._moving) || (map._smooth && map._smooth.running)) return;
-    const off = map.latLngToContainerPoint(toLatLng(x, z)).subtract(map.getSize().divideBy(2));
+    // (unrounded: latLngToContainerPoint snaps to whole pixels, and the map stepped a pixel at a time)
+    const off = map.project(toLatLng(x, z), map.getZoom()).subtract(map.getPixelOrigin()).add(map._getMapPanePos()).subtract(map.getSize().divideBy(2));
     if (Math.abs(off.x) < 0.05 && Math.abs(off.y) < 0.05) return;
     if (!this.centring) { this.centring = true; map.fire('movestart'); }
     map._rawPanBy(off);
