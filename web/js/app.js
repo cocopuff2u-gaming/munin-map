@@ -17,6 +17,7 @@ import { PlayersLayer } from './layers/players.js';
 import { RaidLayer } from './layers/raid.js';
 import { ActivityLayers } from './layers/activity.js';
 import { ContourGL } from './layers/contours.js';
+import { MeasureTool } from './measure.js';
 import { chunks, objects, prefabs, markers, stats } from './data.js';
 import { Sidebar } from './ui.js';
 import { BiomeHover } from './biomehover.js';
@@ -162,7 +163,14 @@ class App {
     this.layers.markers = new MarkerLayers(this.map, { gl: this.gl });
     this.layers.activity = new ActivityLayers(this.map);
     // right click (long press on a phone) places a pin, unless the server turned web pins off
-    this.map.on('contextmenu', (e) => { if (this.config?.web_pins !== false) this.layers.markers.openPinEditor(e.latlng); });
+    this.map.on('contextmenu', (e) => { if (this.measure?.active) { this.measure.undo(); return; } if (this.config?.web_pins !== false) this.layers.markers.openPinEditor(e.latlng); });
+    // the ruler: distances, travel times and reach (drawn in the WebGL map)
+    if (this.gl) {
+      this.measure = new MeasureTool(this);
+      const mb = $('#btn-measure');
+      mb.hidden = false;
+      mb.addEventListener('click', () => this.measure.toggle());
+    }
     // middle click: ping the spot, shown in game like a player's ping (Server/WebPing.cs); the pin
     // form has a Ping button too, for touch screens
     const box = this.map.getContainer();

@@ -339,7 +339,7 @@ export class MarkerCanvas extends L.Layer {
   onMouseOut() { if (this.hover) { this.hover = null; this._map.getContainer().classList.remove('marker-hover'); this.draw(); } }
 
   onClick(e) {
-    if (!this.src) return;
+    if (!this.src || window.app?.measuring) return;   // (the ruler snaps to markers instead)
     const it = this.hit(e.containerPoint);
     if (it && it.open) it.open(L.latLng(it.z, it.x));
   }

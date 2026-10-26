@@ -136,7 +136,7 @@ export class ActivityLayers {
 
   // a click on a hotspot zone (not on a marker): what is there
   onClick(e) {
-    if (!this.on.hotspots || !this.hotByZone) return;
+    if (!this.on.hotspots || !this.hotByZone || window.app?.measuring) return;
     const mc = window.app?.layers?.markers?.canvas;
     if (mc?.hit?.(e.containerPoint)) return;
     const { x, z } = fromLatLng(e.latlng);

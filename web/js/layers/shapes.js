@@ -1247,16 +1247,23 @@ class ChunkShapes extends L.Layer {
   // pieces of one ruin or house pile hundreds of dots on the same few pixels. So each block also
   // keeps one piece per dotCell metres (per kind of place, so the Layers filter still works), and
   // drawBlock draws those while this.dots is on: the same picture from a fraction of the shapes.
+  // The biggest piece of each square stands for it, and pieces under a metre across (torches,
+  // candles, small decoration) make no dot at all: a dot is the same size whatever it stands for,
+  // and a lone mist torch came out as a bright orange spot as big as a wall.
   buildDots(gl, blk, all, count) {
     const f = new Float32Array(all.buffer, all.byteOffset, all.byteLength >> 2), st = this.stride, cell = this.dotCell;
-    const seen = new Set(), keep = [];
+    const best = new Map();   // square -> [offset, size]
+    let tiny = 0;
     for (let i = 0; i < count; i++) {
-      const o = i * st;
-      const k = ((Math.floor(f[o >> 2] / cell) + 8192) * 16384 + Math.floor(f[(o >> 2) + 1] / cell) + 8192) * 256 + all[o + st - 1];
-      if (!seen.has(k)) { seen.add(k); keep.push(o); }
+      const o = i * st, q = o >> 2, size = Math.max(f[q + 2], f[q + 3]);
+      if (size < 1) { tiny++; continue; }
+      const k = ((Math.floor(f[q] / cell) + 8192) * 16384 + Math.floor(f[q + 1] / cell) + 8192) * 256 + all[o + st - 1];
+      const b = best.get(k);
+      if (!b || size > b[1]) best.set(k, [o, size]);
     }
+    const keep = [...best.values()].map((b) => b[0]).sort((a, b) => a - b);
     this.dropDots(gl, blk);
-    if (keep.length > count * 0.8) return;   // hardly any fewer: draw them all
+    if (!tiny && keep.length > count * 0.8) return;   // hardly any fewer: draw them all
     const out = new Uint8Array(keep.length * st);
     keep.forEach((o, j) => out.set(all.subarray(o, o + st), j * st));
     blk.dotBuf = gl.createBuffer();
