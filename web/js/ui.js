@@ -241,6 +241,9 @@ export class Sidebar {
     this.lastPlayers = players;
     $('#online-pill').textContent = `${players.length} online`;
     $('#online-pill').classList.toggle('on', players.length > 0);
+    // the list itself at most every 2 s (it's remade whole; with fast updates that was twice a second)
+    if (Date.now() - (this.playersBuilt || 0) < 2000) { clearTimeout(this.playersTimer); this.playersTimer = setTimeout(() => this.renderPlayers(this.lastPlayers), 2000); return; }
+    this.playersBuilt = Date.now();
     this.later('players', () => this.playersPanel(this.lastPlayers));
   }
 

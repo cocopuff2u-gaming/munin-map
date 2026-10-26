@@ -39,7 +39,10 @@ export class PlayersLayer {
   update(data) {
     this.players = data.players || [];
     const ts = data.ts || Date.now();
-    if (this.lastTs && ts > this.lastTs) this.gap = Math.max(300, Math.min(2500, this.gap * 0.8 + (ts - this.lastTs) * 0.2));
+    if (this.lastTs && ts > this.lastTs) {
+      this.gap = Math.max(300, Math.min(2500, this.gap * 0.8 + (ts - this.lastTs) * 0.2));
+      this.gaps = (this.gaps || []).concat(ts - this.lastTs).slice(-240);   // the last couple of minutes' gaps
+    }
     this.lastTs = ts;
     if (ts !== this.prevTs) { this.offsets.push(performance.timeOrigin + performance.now() - ts); if (this.offsets.length > 30) this.offsets.shift(); }   // (a repeat, sent on connecting, is old news)
     this.prevTs = ts;
@@ -110,12 +113,17 @@ export class PlayersLayer {
     return { x: cr(p0.x, a.x, b.x, p3.x), z: cr(p0.z, a.z, b.z, p3.z), yaw: a.yaw + dy * u };
   }
 
-  // the moment shown: one update and the usual lateness behind the newest, on the server's clock.
+  // the moment shown: a comfortable way behind the newest, on the server's clock.
   // When that target moves (a new estimate of the delay, every update) the playback eases toward it,
   // never more than 5% faster or slower than real time: a straight change made the player skip a
   // few centimetres along their path twice a second. `now`: this frame's time (performance clock).
   shownTime(now = performance.now()) {
-    const target = (this.offset || 0) + this.gap + (this.margin || 250);
+    // generous on purpose: being a couple of seconds behind doesn't matter, running out of positions
+    // and pausing does. The server itself stalls now and then (the game's memory clean-up freezes a
+    // big world for a second or more, 1.6 s measured), so: the longest gap between updates of the
+    // last couple of minutes and the usual lateness on top, and never under 2 s
+    const longest = Math.max(this.gap, ...(this.gaps || [0]));
+    const target = (this.offset || 0) + Math.max(2000, longest + (this.margin || 250) + 300);
     if (this.delay === undefined || Math.abs(target - this.delay) > 3000) this.delay = target;
     else if (this.lastFrame !== undefined) {
       const room = Math.max(0, now - this.lastFrame) * 0.05;
