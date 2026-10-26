@@ -156,6 +156,7 @@ namespace MuninMap.Live
             j.BeginObject();
             int shown = 0; foreach (var p in current) if (!MuninConfig.IsHidden(p.name)) shown++;
             j.Prop("count", shown);
+            j.Prop("ts", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());   // when these positions were taken: the page plays them back on this clock
             if (hasWorldWind) j.Prop("windDeg", worldWind.windDeg, 0);
             j.Key("players").BeginArray();
             foreach (var s in current)

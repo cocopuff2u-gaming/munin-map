@@ -1,8 +1,9 @@
 // Live players: an arrow that points where they are facing, name, health
-// bar, follow mode, and map pings. Positions come about once a second; in between each player
-// glides from where it was shown to the new spot over the time the updates take to come (one
-// update behind, so never ahead of the truth), turning smoothly, and a followed player keeps the
-// map centred on them every frame instead of a pan each second. A jump (a portal) is not glided.
+// bar, follow mode, and map pings. Positions come about once a second, each update stamped with
+// the server's clock (ts). They are played back a little over one update late on that clock, on a
+// smooth curve through the last few (Catmull-Rom), so a player moves at an even pace whatever the
+// network does to the updates' arrival; the arrow turns the same way. A jump of over 100 m (a
+// portal) is not curved through. A followed player keeps the map centred on them every frame.
 
 import { toLatLng } from '../crs.js';
 import { iconSvg } from '../icons.js';
@@ -20,8 +21,9 @@ export class PlayersLayer {
     this.following = null;        // player id
     this.listeners = new Set();
     this.colorOf = new Map();
-    this.motion = new Map();      // id -> { fx, fz, fyaw, tx, tz, tyaw, t0, dur }
-    this.gap = 1000;              // ms between updates, as they come (smoothed)
+    this.tracks = new Map();      // id -> [{ t (server ms), x, z, yaw }...], the last few updates
+    this.gap = 1000;              // ms between updates on the server's clock (smoothed)
+    this.offsets = [];            // recent (our clock - server clock) readings: the smallest is the least delayed
     on('players', (f) => this.update(f.data));
     on('ping', (f) => this.ping(f));
     on('shout', (f) => this.shout(f));
@@ -36,9 +38,12 @@ export class PlayersLayer {
 
   update(data) {
     this.players = data.players || [];
-    const now = performance.now();
-    if (this.lastUpdate) this.gap = Math.max(300, Math.min(2500, this.gap * 0.7 + (now - this.lastUpdate) * 0.3));
-    this.lastUpdate = now;
+    const ts = data.ts || Date.now();
+    if (this.lastTs && ts > this.lastTs) this.gap = Math.max(300, Math.min(2500, this.gap * 0.8 + (ts - this.lastTs) * 0.2));
+    this.lastTs = ts;
+    this.offsets.push(Date.now() - ts);
+    if (this.offsets.length > 30) this.offsets.shift();
+    this.offset = Math.min(...this.offsets);
     const seen = new Set();
     for (const p of this.players) {
       seen.add(p.id);
@@ -56,11 +61,11 @@ export class PlayersLayer {
       } else {
         this.refresh(mk, p);
       }
-      // glide from where it is shown now to the new spot (a jump of over 100 m: straight there)
-      const m = this.motion.get(p.id), at = m ? this.at(m, now) : null, yaw = p.yaw || 0;
-      if (!at || Math.hypot(p.x - at.x, p.z - at.z) > 100) this.motion.set(p.id, { fx: p.x, fz: p.z, fyaw: yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: 1 });
-      else this.motion.set(p.id, { fx: at.x, fz: at.z, fyaw: at.yaw, tx: p.x, tz: p.z, tyaw: yaw, t0: now, dur: this.gap * 1.15 });   // (a little longer than the gap: never stopping to wait for the next)
-      if (!m) mk.setLatLng(ll);
+      // this update on the player's track (the last few kept)
+      let tr = this.tracks.get(p.id);
+      if (!tr) { this.tracks.set(p.id, (tr = [])); mk.setLatLng(ll); }
+      if (!tr.length || ts > tr[tr.length - 1].t) tr.push({ t: ts, x: p.x, z: p.z, yaw: p.yaw || 0 });
+      if (tr.length > 6) tr.shift();
       mk.setTooltipContent(`<b>${escape(p.name)}</b><br>${p.health}/${p.maxHealth} hp · ${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}` : ''}<br>${p.x}, ${p.z}${p.dead ? ' · dead' : ''}${p.pvp ? ' · PvP' : ''}${p.inBed ? ' · sleeping' : ''}`);
     }
     for (const id of [...this.markers.keys()]) if (!seen.has(id)) this.remove(id);
@@ -72,38 +77,52 @@ export class PlayersLayer {
   remove(id) {
     const mk = this.markers.get(id);
     if (mk) { this.group.removeLayer(mk); this.markers.delete(id); }
-    this.motion.delete(id);
+    this.tracks.delete(id);
   }
 
-  // where a glide is at a moment (yaw the short way round)
-  at(m, now) {
-    const t = Math.min(1, (now - m.t0) / m.dur), e = t;   // (linear: steady walking looks steady)
-    let dy = ((m.tyaw - m.fyaw + 540) % 360) - 180;
-    return { x: m.fx + (m.tx - m.fx) * e, z: m.fz + (m.tz - m.fz) * e, yaw: m.fyaw + dy * e, done: t >= 1 };
+  // where a player is shown at a moment of the server's clock: on a Catmull-Rom curve through the
+  // updates around it (straight across a jump), held at the newest when the next is late
+  at(tr, t) {
+    if (!tr.length) return null;
+    let i = tr.length - 2;
+    while (i >= 0 && tr[i].t > t) i--;
+    if (i < 0) return tr[0];
+    const a = tr[i], b = tr[i + 1];
+    if (!b || t >= b.t) return tr[tr.length - 1];
+    const u = (t - a.t) / (b.t - a.t);
+    if (Math.hypot(b.x - a.x, b.z - a.z) > 100) return u < 1 ? a : b;   // a portal: no flying across the map
+    const p0 = tr[i - 1] && Math.hypot(a.x - tr[i - 1].x, a.z - tr[i - 1].z) <= 100 ? tr[i - 1] : a;
+    const p3 = tr[i + 2] && Math.hypot(tr[i + 2].x - b.x, tr[i + 2].z - b.z) <= 100 ? tr[i + 2] : b;
+    const cr = (q0, q1, q2, q3) => 0.5 * (2 * q1 + (q2 - q0) * u + (2 * q0 - 5 * q1 + 4 * q2 - q3) * u * u + (3 * q1 - q0 - 3 * q2 + q3) * u * u * u);
+    const dy = ((b.yaw - a.yaw + 540) % 360) - 180;
+    return { x: cr(p0.x, a.x, b.x, p3.x), z: cr(p0.z, a.z, b.z, p3.z), yaw: a.yaw + dy * u };
   }
 
-  // a frame of the glides: each marker to its spot now, the followed one under the map's centre
+  // the moment shown: a little over one update behind the newest, on the server's clock
+  shownTime() { return Date.now() - (this.offset || 0) - this.gap * 1.25; }
+
+  // every frame while anyone's on: each marker to where it is now, a followed one under the centre
   animate() {
     if (this.raf) return;
     const step = () => {
       this.raf = 0;
-      const now = performance.now();
-      let moving = false;
-      for (const [id, m] of this.motion) {
-        const mk = this.markers.get(id);
-        if (!mk) continue;
-        const a = this.at(m, now);
-        if (!a.done) moving = true;
+      if (!this.tracks.size) { this.endCentring(); return; }
+      const t = this.shownTime();
+      for (const [id, tr] of this.tracks) {
+        const mk = this.markers.get(id), a = this.at(tr, t);
+        if (!mk || !a) continue;
         mk.setLatLng(toLatLng(a.x, a.z));
         const arrow = mk.getElement()?.querySelector('.arrow');
-        if (arrow) arrow.style.transform = `rotate(${Math.round(a.yaw)}deg)`;
+        if (arrow) arrow.style.transform = `rotate(${a.yaw.toFixed(1)}deg)`;
         if (this.following === id) this.keepCentred(a.x, a.z);
       }
-      if (moving) this.raf = requestAnimationFrame(step);
-      else this.endCentring();
+      this.raf = requestAnimationFrame(step);
     };
     this.raf = requestAnimationFrame(step);
   }
+
+  // where a player is shown right now (follow starts there, not where the server last said)
+  shownAt(id) { const tr = this.tracks.get(id); return tr ? this.at(tr, this.shownTime()) : null; }
 
   // follow: the map slid along with the player each frame, the way a drag moves it (the map pane
   // shifted and "move" fired), unless someone is dragging or zooming it; "moveend" once it settles
@@ -132,7 +151,7 @@ export class PlayersLayer {
     if (mk._look !== look || !el) { mk._look = look; mk.setIcon(this.icon(p)); return; }
     const hp = p.maxHealth > 0 ? Math.max(0, Math.min(1, p.health / p.maxHealth)) : 1;
     const arrow = el.querySelector('.arrow'), bar = el.querySelector('.hp i');
-    if (arrow) arrow.style.transform = `rotate(${Math.round(p.yaw || 0)}deg)`;
+    if (arrow && !this.tracks.has(p.id)) arrow.style.transform = `rotate(${Math.round(p.yaw || 0)}deg)`;   // (a tracked one turns smoothly in animate)
     if (bar) { bar.style.width = `${Math.round(hp * 100)}%`; bar.classList.toggle('low', hp < 0.3); }
   }
 
@@ -155,8 +174,10 @@ export class PlayersLayer {
     for (const p of this.players) { const mk = this.markers.get(p.id); if (mk) this.refresh(mk, p); }
     const p = this.players.find((q) => q.id === id);
     if (p && p.x !== undefined) {
-      const ll = toLatLng(p.x, p.z), z = Math.max(this.map.getZoom(), 6);
-      if (this.map._smooth) this.map._smooth.glideTo(ll, z); else this.map.setView(ll, z);
+      // straight onto them where they're shown, no fly: a glide landed where they had been and
+      // then had to catch up
+      const a = this.shownAt(id) || p, z = Math.max(this.map.getZoom(), 6);
+      this.map.setView(toLatLng(a.x, a.z), z, { animate: false });
     }
     for (const fn of this.listeners) fn(this.players);
   }
