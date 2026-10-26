@@ -159,9 +159,9 @@ namespace MuninMap
 
             Fog.Init(MuninConfig.TEXTURE_SIZE, MuninConfig.PIXEL_SIZE);
             string fogPath = Path.Combine(worldDataPath, "fog.png");
-            if (!Fog.Load(fogPath))
+            if (!Fog.Load(fogPath) || Fog.Dirty)   // dirty: converted from another grid
             {
-                ZLog.Log("MuninMap: starting a fresh fog of war");
+                if (!Fog.Dirty) ZLog.Log("MuninMap: starting a fresh fog of war");
                 Fog.Save(fogPath);
             }
 

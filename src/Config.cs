@@ -345,6 +345,8 @@ namespace MuninMap
             config["default_zoom"] = DEFAULT_ZOOM;
             config["texture_size"] = TEXTURE_SIZE;
             config["pixel_size"] = PIXEL_SIZE;
+            config["fog_size"] = World.Fog.GRID;
+            config["fog_pixel"] = World.Fog.CELL;
             config["update_interval"] = PLAYER_UPDATE_INTERVAL;
             config["explore_radius"] = EXPLORE_RADIUS;
             config["max_messages"] = MAX_MESSAGES;

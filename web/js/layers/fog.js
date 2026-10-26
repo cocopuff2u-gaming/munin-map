@@ -31,8 +31,8 @@ export class FogLayer {
   constructor(map, cfg, opts = {}) {
     this.gl = !!opts.gl;
     this.map = map;
-    this.size = cfg.texture_size || 2048;
-    this.px = cfg.pixel_size || 12;
+    this.size = cfg.fog_size || 2048;   // the game's map grid (World/Fog.cs), not texture_size
+    this.px = cfg.fog_pixel || 12;
     this.radius = cfg.explore_radius || 100;
     const half = this.size / 2;
     // the mask's pixel (i, j) is centred on world ((i - half) * px, (j - half) * px)

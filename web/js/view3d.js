@@ -110,7 +110,7 @@ export class View3D {
 
     // fog of war is drawn by the ground itself: every terrain (and water) material is patched to
     // sample the explored mask in world space
-    this.fogSize = config.texture_size || 2048; this.fogPx = config.pixel_size || 12;
+    this.fogSize = config.fog_size || 2048; this.fogPx = config.fog_pixel || 12;
     this.ground = {
       uFog: { value: null }, uFogOn: { value: layerState.fog ? 1 : 0 }, uFogOpacity: { value: layerState.fogOpacity },
       uFogScale: { value: new THREE.Vector2(1 / (this.fogSize * this.fogPx), 1 / (this.fogSize * this.fogPx)) },

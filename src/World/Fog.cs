@@ -8,9 +8,10 @@ namespace MuninMap.World
 {
     // The shared explored mask ("fog of war").
     //
-    // One byte per cell on the same 2048 x 12 m grid the mod has always used,
-    // so an existing fog.png keeps every metre players have already uncovered
-    // when upgrading. Row 0 is the SOUTH edge of the world (that is how the
+    // One byte per cell on the game's own map grid (2048 x 12 m, Minimap), whatever
+    // texture_size and pixel_size say: those once set this grid too, and a small
+    // product (8192 x 2 m) left the world's edge outside the fog. A fog.png saved on
+    // another grid is converted once; fog.grid records the grid fog.png is on. Row 0 is the SOUTH edge of the world (that is how the
     // old Texture2D was laid out); the PNG written to disk and served to the
     // browser has north at the top, like any map.
     //
@@ -28,9 +29,14 @@ namespace MuninMap.World
         public static int Size => size;
         public static int PixelSize => pixelSize;
 
-        public static void Init(int textureSize, int pixel)
+        public const int GRID = 2048, CELL = 12;
+        private static int legacySize, legacyPixel;
+
+        // legacy*: texture_size and pixel_size, the grid a fog.png without fog.grid was saved on
+        public static void Init(int legacyTextureSize, int legacyPixelSize)
         {
-            size = textureSize; pixelSize = pixel; half = size / 2;
+            size = GRID; pixelSize = CELL; half = size / 2;
+            legacySize = legacyTextureSize; legacyPixel = legacyPixelSize;
             mask = new byte[size * size];
             exploredCount = 0;
             pngCache = null;
@@ -45,17 +51,48 @@ namespace MuninMap.World
                 if (!File.Exists(path)) return false;
                 var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 if (!ImageConv.LoadImage(tex, File.ReadAllBytes(path))) return false;
-                if (tex.width != size || tex.height != size)
+                int fileSize = legacySize, filePixel = legacyPixel;
+                string gridPath = GridPath(path);
+                if (File.Exists(gridPath))
                 {
-                    ZLog.LogWarning($"MuninMap: fog.png is {tex.width}x{tex.height}, expected {size}x{size}; starting a fresh fog");
+                    var g = File.ReadAllText(gridPath).Split(' ');
+                    if (g.Length != 2 || !int.TryParse(g[0], out fileSize) || !int.TryParse(g[1], out filePixel)) { fileSize = legacySize; filePixel = legacyPixel; }
+                }
+                if (tex.width != fileSize || tex.height != fileSize || filePixel <= 0)
+                {
+                    ZLog.LogWarning($"MuninMap: fog.png is {tex.width}x{tex.height}, expected {fileSize}x{fileSize}; starting a fresh fog");
                     UnityEngine.Object.Destroy(tex);
                     return false;
                 }
                 Color32[] px = tex.GetPixels32();      // row 0 = bottom = south
-                int n = 0;
-                for (int i = 0; i < px.Length; i++) { bool e = px[i].r > 127; mask[i] = e ? (byte)255 : (byte)0; if (e) n++; }
-                exploredCount = n;
                 UnityEngine.Object.Destroy(tex);
+                int n = 0;
+                if (fileSize == size && filePixel == pixelSize)
+                    for (int i = 0; i < px.Length; i++) { bool e = px[i].r > 127; mask[i] = e ? (byte)255 : (byte)0; if (e) n++; }
+                else
+                {
+                    // another grid: a cell here is explored if any file cell under it was
+                    int fhalf = fileSize / 2;
+                    for (int y = 0; y < size; y++)
+                    {
+                        int fy0 = Math.Max(0, (int)Math.Floor((float)(y - half) * pixelSize / filePixel + fhalf));
+                        int fy1 = Math.Min(fileSize - 1, (int)Math.Ceiling((float)(y + 1 - half) * pixelSize / filePixel + fhalf) - 1);
+                        for (int x = 0; x < size; x++)
+                        {
+                            int fx0 = Math.Max(0, (int)Math.Floor((float)(x - half) * pixelSize / filePixel + fhalf));
+                            int fx1 = Math.Min(fileSize - 1, (int)Math.Ceiling((float)(x + 1 - half) * pixelSize / filePixel + fhalf) - 1);
+                            bool e = false;
+                            for (int fy = fy0; fy <= fy1 && !e; fy++)
+                                for (int fx = fx0; fx <= fx1; fx++) if (px[fy * fileSize + fx].r > 127) { e = true; break; }
+                            if (e) { mask[y * size + x] = 255; n++; }
+                        }
+                    }
+                    string old = Path.Combine(Path.GetDirectoryName(path), $"fog.{fileSize}x{filePixel}m.png");
+                    if (!File.Exists(old)) File.Copy(path, old);
+                    ZLog.Log($"MuninMap: fog.png converted from {fileSize} x {filePixel} m to the map's {size} x {pixelSize} m grid (old file kept as {Path.GetFileName(old)})");
+                    Dirty = true;
+                }
+                exploredCount = n;
                 pngCache = null;
                 return true;
             }
@@ -71,6 +108,7 @@ namespace MuninMap.World
             try
             {
                 File.WriteAllBytes(path, Png());
+                File.WriteAllText(GridPath(path), $"{size} {pixelSize}");
                 Dirty = false;
             }
             catch (Exception e)
@@ -78,6 +116,8 @@ namespace MuninMap.World
                 ZLog.LogError("MuninMap: FAILED TO WRITE FOG FILE! " + e.Message);
             }
         }
+
+        private static string GridPath(string fogPath) => Path.Combine(Path.GetDirectoryName(fogPath), "fog.grid");
 
         private static byte[] revealedPng;
 
