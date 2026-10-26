@@ -41,7 +41,7 @@ export class PlayersLayer {
     const ts = data.ts || Date.now();
     if (this.lastTs && ts > this.lastTs) this.gap = Math.max(300, Math.min(2500, this.gap * 0.8 + (ts - this.lastTs) * 0.2));
     this.lastTs = ts;
-    if (ts !== this.prevTs) { this.offsets.push(Date.now() - ts); if (this.offsets.length > 30) this.offsets.shift(); }   // (a repeat, sent on connecting, is old news)
+    if (ts !== this.prevTs) { this.offsets.push(performance.timeOrigin + performance.now() - ts); if (this.offsets.length > 30) this.offsets.shift(); }   // (a repeat, sent on connecting, is old news)
     this.prevTs = ts;
     this.offset = Math.min(...this.offsets);
     // how late updates come past the quickest one: the playback waits that much more (the 80th
@@ -110,16 +110,28 @@ export class PlayersLayer {
     return { x: cr(p0.x, a.x, b.x, p3.x), z: cr(p0.z, a.z, b.z, p3.z), yaw: a.yaw + dy * u };
   }
 
-  // the moment shown: one update and the usual lateness behind the newest, on the server's clock
-  shownTime() { return Date.now() - (this.offset || 0) - this.gap - (this.margin || 250); }
+  // the moment shown: one update and the usual lateness behind the newest, on the server's clock.
+  // When that target moves (a new estimate of the delay, every update) the playback eases toward it,
+  // never more than 5% faster or slower than real time: a straight change made the player skip a
+  // few centimetres along their path twice a second. `now`: this frame's time (performance clock).
+  shownTime(now = performance.now()) {
+    const target = (this.offset || 0) + this.gap + (this.margin || 250);
+    if (this.delay === undefined || Math.abs(target - this.delay) > 3000) this.delay = target;
+    else if (this.lastFrame !== undefined) {
+      const room = Math.max(0, now - this.lastFrame) * 0.05;
+      this.delay += Math.max(-room, Math.min(room, target - this.delay));
+    }
+    this.lastFrame = now;
+    return performance.timeOrigin + now - this.delay;
+  }
 
   // every frame while anyone's on: each marker to where it is now, a followed one under the centre
   animate() {
     if (this.raf) return;
-    const step = () => {
+    const step = (frame) => {
       this.raf = 0;
       if (!this.tracks.size) { this.endCentring(); return; }
-      const t = this.shownTime();
+      const t = this.shownTime(frame);   // (the frame's own timestamp: the same moment the frame is shown)
       for (const [id, tr] of this.tracks) {
         const mk = this.markers.get(id), a = this.at(tr, t);
         if (!mk || !a) continue;
@@ -134,7 +146,7 @@ export class PlayersLayer {
   }
 
   // where a player is shown right now (follow starts there, not where the server last said)
-  shownAt(id) { const tr = this.tracks.get(id); return tr ? this.at(tr, this.shownTime()) : null; }
+  shownAt(id) { const tr = this.tracks.get(id); return tr ? this.at(tr, performance.timeOrigin + performance.now() - (this.delay ?? 1200)) : null; }
 
   // follow: the map slid along with the player each frame, the way a drag moves it (the map pane
   // shifted and "move" fired), unless someone is dragging or zooming it; "moveend" once it settles
