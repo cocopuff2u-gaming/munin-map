@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.2.0
+
+**New on the map**
+
+* **World progress** (Stats): every raid the world can have, and whether it can come now, isn't unlocked yet (and what it waits for) or is over because a later boss ended it, worked out by the game's own rules. With `playerevents` set, raids follow each player's own progress, and the list says so.
+* **The game's zones on the grid**: the grid now follows the game's own 64 m zones and shows their numbers, the same ones commands such as Upgrade World's take.
+* **Stats** sections fold away like the Layers cards and remember it, in a new order: Now, Weather, Bosses, World progress, World modifiers, Players, Leaderboard, Totals, Discoveries (with the distances from the spawn), Server details.
+* **Layers**: your switches are remembered in your browser, and a click on a marker set's name (Bosses, Portals...) takes you to its next marker, round and round.
+* Morgen holes (Ashlands) are in Dungeons.
+
+**Smoother**
+
+* **No more long hitches from the markers.** With players exploring, every marker set was rebuilt each world sweep, a whole set at once: on a big world a frame of over 200 ms. A set is now rebuilt only when what it shows changes, and spread over frames.
+* **The world sweep is lighter and faster.** The trees and 3D objects are sorted on a worker thread instead of the game's (about 2 seconds of it per sweep on a big world), the buildings, ruins and 3D objects indexes are made a slice at a time, and the walk over every object skips the name checks for things that can't be a marker. A sweep of a large world takes about a quarter less time.
+* **The stats are made only when a browser wants them.** They were remade every player update, page open or not: less work for the server, and its memory clean-ups (which pause the whole server) come about half as often.
+* With `perf_report` on, the sweep's log line names any part of the markers that took 10 ms or more in a frame.
+
+**Fixes (GitHub issues)**
+
+* Going far (a marker in a list, search, "Go to the other end") jumps straight there: trees and raids no longer slide along with the view, and the portal's popup no longer goes missing (#2, #14).
+* World modifiers set on their own (fire spread, raids for each player...) show next to the preset (#3).
+* Search shows every match, 50 at a time with "Show more" (it stopped at 30) (#12).
+* The Writhan and the Eyeless One are rare creatures, not mini bosses, and are no longer listed as such (#18).
+* Layer switches only toggle from the switch itself, not the name (#17).
+
+**Upgrading:** replace `MuninMap.dll` and restart the server. Nothing to convert. The grid is the game's 64 m zones on the WebGL map; the plain map keeps its 256 m squares.
+
 ## 3.1.0
 
 **New on the map**

@@ -624,7 +624,7 @@ namespace MuninMap.World
         // shows is worked out first, cheaply (which of its items stand on explored ground), so exploring
         // that uncovers nothing new no longer rebuilds every set: the signature used to include all the
         // explored ground, and with players about every set was rebuilt each sweep, a whole set in one
-        // frame (224 ms seen with 5 players). Both passes are spread over frames when sliced.
+        // frame (over 200 ms on a big world). Both passes are spread over frames when sliced.
         private static IEnumerable<object> Set<T>(JsonWriter j, bool slice, string id, string label, List<T> items, long sig,
             Func<T, bool> shown, Func<long, T, long> mix, Action<JsonWriter, T> write)
         {
