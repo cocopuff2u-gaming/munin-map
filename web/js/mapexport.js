@@ -112,9 +112,31 @@ export async function mapImage(app, a, opts, report = () => {}) {
   }
 
   report('Saving');
-  const type = opts.format === 'jpeg' ? 'image/jpeg' : opts.format === 'webp' ? 'image/webp' : 'image/png';
-  const blob = await new Promise((resolve, reject) => cv.toBlob((b) => (b ? resolve(b) : reject(new Error('The picture was too big for this browser'))), type, 0.9));
+  const type = opts.format === 'jpeg' || opts.format === 'pdf' ? 'image/jpeg' : opts.format === 'webp' ? 'image/webp' : 'image/png';
+  let blob = await new Promise((resolve, reject) => cv.toBlob((b) => (b ? resolve(b) : reject(new Error('The picture was too big for this browser'))), type, opts.format === 'pdf' ? 0.92 : 0.9));
+  if (opts.format === 'pdf') return { blob: pdfOf(new Uint8Array(await blob.arrayBuffer()), W, H), w: W, h: H, mpp, ext: 'pdf' };
   return { blob, w: W, h: H, mpp, ext: blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png' };   // (a browser without WebP writes PNG)
+}
+
+// A one-page PDF holding the picture (a JPEG, which PDF takes as it is), fitted to an A4 page
+// either way round with a 1 cm margin: for printing
+function pdfOf(jpeg, W, H) {
+  const land = W > H, pw = land ? 842 : 595, ph = land ? 595 : 842, k = Math.min((pw - 56) / W, (ph - 56) / H);
+  const iw = W * k, ih = H * k, x = (pw - iw) / 2, y = (ph - ih) / 2;
+  const draw = `q ${iw.toFixed(2)} 0 0 ${ih.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
+  const enc = new TextEncoder(), parts = [], offsets = [];
+  let len = 0;
+  const put = (b) => { const u = typeof b === 'string' ? enc.encode(b) : b; parts.push(u); len += u.length; };
+  const obj = (n, body) => { offsets[n] = len; put(`${n} 0 obj\n`); body(); put('\nendobj\n'); };
+  put('%PDF-1.4\n%\xff\xff\n');
+  obj(1, () => put('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, () => put('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+  obj(3, () => put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>`));
+  obj(4, () => put(`<< /Length ${draw.length} >>\nstream\n${draw}\nendstream`));
+  obj(5, () => { put(`<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`); put(jpeg); put('\nendstream'); });
+  const xref = len;
+  put(`xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map((o) => String(o).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
 }
 
 // the markers in an area: every set, or only the ones the map shows; with each one's biome (where
@@ -134,9 +156,15 @@ export function markerRows(app, a, onlyShown) {
   return rows;
 }
 
-// CSV for spreadsheets, JSON, or GeoJSON points for map tools (QGIS and the like: x east, z north, in metres)
+// CSV for spreadsheets, plain text, JSON, or GeoJSON points for map tools (QGIS and the like: x east, z north, in metres)
 export function markerFile(rows, format) {
   if (format === 'json') return new Blob([JSON.stringify(rows, null, 1)], { type: 'application/json' });
+  if (format === 'txt') {   // to read or paste in a chat: a heading per set, a line per marker
+    const bySet = new Map();
+    for (const r of rows) { if (!bySet.has(r.set)) bySet.set(r.set, []); bySet.get(r.set).push(r); }
+    const text = [...bySet].map(([set, rs]) => `${set} (${rs.length})\n` + rs.map((r) => `  ${r.name || r.kind} · ${r.x}, ${r.z}${r.biome ? ' · ' + r.biome : ''} · ${r.fromSpawn < 1000 ? r.fromSpawn + ' m' : (r.fromSpawn / 1000).toFixed(1) + ' km'} from spawn`).join('\n')).join('\n\n');
+    return new Blob([text + '\n'], { type: 'text/plain' });
+  }
   if (format === 'geojson') {
     const features = rows.map(({ x, z, ...props }) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [x, z] }, properties: props }));
     return new Blob([JSON.stringify({ type: 'FeatureCollection', features }, null, 1)], { type: 'application/geo+json' });

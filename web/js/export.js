@@ -7,6 +7,8 @@
 //   flat       one node per object (Unreal, Unity, anything that lacks the extension)
 //   unreal     zip: flat scene.glb, 16-bit heightmap PNG for a Landscape, instances.csv
 //              in Unreal units, markers.csv, an editor Python helper, README
+//   heightmap  the 16-bit heightmap PNG alone (World Machine, Gaea, Unity terrain)
+//   stl        the ground as a closed solid for a 3D printer
 //
 // Everything comes from the data the map already publishes, so only explored ground and
 // what the server shows can leave it. The prefab meshes and textures are the game's own
@@ -276,6 +278,18 @@ export class Exporter {
         w.node({ name: `terrain_${cx}_${cz}`, mesh }, terrainRoot);
       }
     if (terrainHeights.length === 0) throw new Error('no explored ground in that area');
+    const area = `x${Math.round(bounds.x0)}_z${Math.round(bounds.z0)}_${Math.round(bounds.x1 - bounds.x0)}m`;
+
+    // --- the ground alone: a 16-bit heightmap for terrain tools, or a solid for a 3D printer
+    if (opts.mode === 'heightmap') {
+      this.report('heightmap');
+      const png = await heightmapPng(terrainHeights, c0x, c0z, c1x, c1z, hMin, hMax);
+      return { blob: new Blob([png.bytes], { type: 'image/png' }), name: `valheim_heightmap_${area}_h${Math.floor(hMin)}-${Math.ceil(hMax)}m.png`, meta: { objects: 0 } };
+    }
+    if (opts.mode === 'stl') {
+      this.report('3D print model');
+      return { blob: terrainStl(terrainHeights, bounds, step, hMin), name: `valheim_print_${area}.stl`, meta: { objects: 0 } };
+    }
 
     // --- water
     if (opts.water !== false) {
@@ -382,7 +396,7 @@ export class Exporter {
     this.report('writing');
     const glb = w.finish();
     const meta = { bounds, chunks: { x0: c0x, z0: c0z, x1: c1x, z1: c1z }, step, objects: total, prefabs: byPrefab.size, waterLevel, hMin, hMax };
-    if (opts.mode !== 'unreal') return { blob: new Blob([glb], { type: 'model/gltf-binary' }), name: `valheim_x${Math.round(bounds.x0)}_z${Math.round(bounds.z0)}_${Math.round(bounds.x1 - bounds.x0)}m.glb`, meta };
+    if (opts.mode !== 'unreal') return { blob: new Blob([glb], { type: 'model/gltf-binary' }), name: `valheim_${area}.glb`, meta };
 
     // --- Unreal pack
     this.report('heightmap');
@@ -397,11 +411,54 @@ export class Exporter {
       ['README.txt', unrealReadme(meta, heightPng.width, heightPng.height)],
     ];
     const zip = makeZip(files.map(([n, d]) => [n, typeof d === 'string' ? new TextEncoder().encode(d) : (d.bytes || d)]));
-    return { blob: new Blob([zip], { type: 'application/zip' }), name: `valheim_unreal_x${Math.round(bounds.x0)}_z${Math.round(bounds.z0)}_${Math.round(bounds.x1 - bounds.x0)}m.zip`, meta };
+    return { blob: new Blob([zip], { type: 'application/zip' }), name: `valheim_unreal_${area}.zip`, meta };
   }
 }
 
 function csv(rows) { return rows.map((r) => r.map((v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(',')).join('\n') + '\n'; }
+
+// ---------------------------------------------------------------- 3D print (binary STL)
+
+// The ground as one closed solid: the surface, four walls and a floor 5 m under the lowest point.
+// 1 unit = 1 m, Z up, north +Y; unexplored ground sits on the floor. At most 400 x 400 cells (about
+// 16 MB): the grid gets coarser on a big area. A slicer scales it to the printer.
+function terrainStl(tiles, b, step, hMin) {
+  const byKey = new Map(tiles.map((t) => [`${t.cx}_${t.cz}`, t.heights]));
+  const W = b.x1 - b.x0, H = b.z1 - b.z0, s = Math.max(step, W / 400, H / 400);
+  const nx = Math.round(W / s), nz = Math.round(H / s), base = hMin - 5, mpp = metersPerPixel(MAX_ZOOM);
+  const z = new Float32Array((nx + 1) * (nz + 1));
+  for (let j = 0; j <= nz; j++)
+    for (let i = 0; i <= nx; i++) {
+      const x = Math.min(b.x1 - 0.01, b.x0 + i * W / nx), zz = Math.min(b.z1 - 0.01, b.z0 + j * H / nz);
+      const cx = chunkOf(x), cz = chunkOf(zz), h = byKey.get(`${cx}_${cz}`);
+      const lx = x - (-WORLD_HALF + cx * CHUNK), lz = zz - (-WORLD_HALF + cz * CHUNK);
+      z[j * (nx + 1) + i] = h ? sampleH(h, lx / mpp - 0.5, (CHUNK - lz) / mpp - 0.5) - base : 0;
+    }
+  const tris = nx * nz * 2 + (nx + nz) * 4 + 2;
+  const buf = new ArrayBuffer(84 + tris * 50), dv = new DataView(buf);
+  new TextEncoder().encodeInto('Munin Map terrain, 1 unit = 1 m', new Uint8Array(buf, 0, 80));
+  dv.setUint32(80, tris, true);
+  let o = 84;
+  const P = (i, j, top) => [i * W / nx, j * H / nz, top ? z[j * (nx + 1) + i] : 0];
+  // a triangle, wound so its normal points along `out` (the side it faces)
+  const tri = (a, c, d, out) => {
+    let n = [(c[1] - a[1]) * (d[2] - a[2]) - (c[2] - a[2]) * (d[1] - a[1]), (c[2] - a[2]) * (d[0] - a[0]) - (c[0] - a[0]) * (d[2] - a[2]), (c[0] - a[0]) * (d[1] - a[1]) - (c[1] - a[1]) * (d[0] - a[0])];
+    if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0) { [c, d] = [d, c]; n = n.map((v) => -v); }
+    const l = Math.hypot(...n) || 1;
+    for (const v of [n.map((x) => x / l), a, c, d]) for (const k of v) { dv.setFloat32(o, k, true); o += 4; }
+    o += 2;
+  };
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      const a = P(i, j, 1), bb = P(i + 1, j, 1), c = P(i, j + 1, 1), d = P(i + 1, j + 1, 1);
+      tri(a, bb, d, [0, 0, 1]); tri(a, d, c, [0, 0, 1]);
+    }
+  const wall = (p, q, out) => { const p0 = [p[0], p[1], 0], q0 = [q[0], q[1], 0]; tri(p0, q0, q, out); tri(p0, q, p, out); };
+  for (let i = 0; i < nx; i++) { wall(P(i, 0, 1), P(i + 1, 0, 1), [0, -1, 0]); wall(P(i, nz, 1), P(i + 1, nz, 1), [0, 1, 0]); }
+  for (let j = 0; j < nz; j++) { wall(P(0, j, 1), P(0, j + 1, 1), [-1, 0, 0]); wall(P(nx, j, 1), P(nx, j + 1, 1), [1, 0, 0]); }
+  tri([0, 0, 0], [W, 0, 0], [W, H, 0], [0, 0, -1]); tri([0, 0, 0], [W, H, 0], [0, H, 0], [0, 0, -1]);
+  return new Blob([buf], { type: 'model/stl' });
+}
 
 // ---------------------------------------------------------------- 16-bit heightmap PNG
 

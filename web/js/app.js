@@ -218,7 +218,6 @@ class App {
     $('#title').textContent = c.title || 'Valheim';
     document.title = `${c.title || 'Valheim'} · Munin Map`;
     if (c.world_name) $('#subtitle').textContent = c.world_name;
-    $('#btn-mode').disabled = c.enable_3d === false;
     // with 3D off, hide what only works with it (inline style: CSS display would override `hidden`)
     $('#btn-mode').style.display = c.enable_3d === false ? 'none' : '';
     $('#export-kind-scene').style.display = c.enable_3d === false ? 'none' : '';
@@ -231,15 +230,30 @@ class App {
   bindUi() {
     $('#btn-menu').addEventListener('click', () => this.toggleSidebar());
     $('#btn-home').addEventListener('click', () => this.goToSpawn(true));
-    $('#btn-mode').addEventListener('click', () => this.setMode(this.mode === '2d' ? '3d' : '2d'));
+    for (const b of $('#btn-mode').querySelectorAll('button')) b.addEventListener('click', () => this.setMode(b.dataset.mode));
     this.playerCard = new PlayerCard(this);
     this.layers.players.onClick = (p, x, y) => this.playerCard.show(p, x, y);
     this.layers.players.onChange((list) => this.playerCard.update(list));
     $('#btn-export').addEventListener('click', () => this.openExport());
     $('#export-close').addEventListener('click', () => this.closeExport());
-    $('#export-dialog').addEventListener('click', (e) => { if (e.target.id === 'export-dialog') this.closeExport(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#export-dialog').hidden) this.closeExport(); });
+    // the outlined area follows the map while the dialog is open
+    this.map.on('move', () => { if (!$('#export-dialog').hidden && !this.exportMoving) { this.exportMoving = true; requestAnimationFrame(() => { this.exportMoving = false; this.exportChanged(); }); } });
     $('#export-form').addEventListener('submit', (e) => { e.preventDefault(); this.runExport(); });
     $('#export-form').addEventListener('change', () => this.exportChanged());
+    // light or dark menus (the map stays as it is), kept by the browser; index.html sets it before drawing
+    const themeBtn = $('#btn-theme'), showTheme = () => {
+      const light = document.documentElement.dataset.theme === 'light';
+      themeBtn.querySelector('use').setAttribute('href', light ? '#i-moon' : '#i-sun');
+      themeBtn.title = light ? 'Dark menus' : 'Light menus';
+    };
+    themeBtn.addEventListener('click', () => {
+      const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+      try { localStorage.setItem('munin-theme', t); } catch (e) { /* this visit only */ }
+      showTheme();
+    });
+    showTheme();
     $('#btn-fullscreen').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); });
     $('#btn-link').addEventListener('click', async () => {
       this.updateHash();
@@ -530,9 +544,10 @@ class App {
   async setMode(mode) {
     if (mode === this.mode) return;
     if (mode === '3d' && this.config?.enable_3d === false) return;   // 3D switched off on the server (button, card, key M, links)
-    const btn = $('#btn-mode');
+    // the switch shows which view is on, not which one a click leads to
+    const sw = $('#btn-mode'), mark = (m) => { for (const b of sw.querySelectorAll('button')) { b.classList.toggle('on', b.dataset.mode === m); b.setAttribute('aria-pressed', String(b.dataset.mode === m)); } };
     if (mode === '3d') {
-      btn.disabled = true;
+      sw.classList.add('busy');
       try {
         await this.ensureView3D();
         const c = fromLatLng(this.map.getCenter());
@@ -543,13 +558,12 @@ class App {
         this.mode = '3d';
         if (this.layers.players.following) this.view3d.follow(this.layers.players.following);
         this.root.dataset.mode = '3d';
-        btn.innerHTML = '<svg><use href="#i-2d"/></svg><span>2D</span>';
-        btn.title = 'Back to 2D';
+        mark('3d');
       } catch (e) {
         console.error(e);
         this.toast('3D view could not start: ' + e.message);
       }
-      btn.disabled = false;
+      sw.classList.remove('busy');
     } else {
       const c = this.view3d ? this.view3d.center() : null;
       this.view3d?.hide();
@@ -557,8 +571,7 @@ class App {
       $('#map').style.visibility = '';
       this.mode = '2d';
       this.root.dataset.mode = '2d';
-      btn.innerHTML = '<svg><use href="#i-3d"/></svg><span>3D</span>';
-      btn.title = 'Switch to 3D';
+      mark('2d');
       if (c) this.map.setView(toLatLng(c.x, c.z), this.map.getZoom(), { animate: false });
       this.map.invalidateSize();
     }
@@ -610,6 +623,8 @@ class App {
     area.querySelector('option[value=world]').disabled = kind === 'scene';
     if (area.selectedOptions[0]?.disabled) area.value = '512';
     form.imgLabels.disabled = form.imgPortals.disabled = !form.imgMarkers.checked;
+    const groundOnly = form.mode.value === 'heightmap' || form.mode.value === 'stl';   // (the ground alone: nothing else to include)
+    for (const x of form.querySelectorAll('[data-kind=scene] .checks input')) x.disabled = groundOnly;
     const saved = {};
     for (const [k, v] of f.entries()) if (k !== 'cat') saved[k] = v;
     for (const x of form.querySelectorAll('input[type=checkbox]:not([name=cat])')) saved[x.name] = x.checked;
