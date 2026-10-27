@@ -497,8 +497,13 @@ export class Sidebar {
     }
     // Hildir's sisters, each the boss of one of her quest dungeons
     bossCard.append(el('<div class="sub">Mini bosses</div>'));
-    bossCard.append(el(`<div class="boss-track">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
-      return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${breakable(n)}</div>`; }).join('')}</div>`));
+    // and Lord Reto, who leaves no world key: the server reads his fortress spawners (beaten = he came
+    // out and is gone, the game's own rule for not bringing him back)
+    const lr = d.lordReto || {}, minis = Object.entries(MINI_BOSSES).map(([k, [n, where]]) => [n, where, keySet.has(k), '']);
+    if (lr.fortresses) minis.push(['Lord Reto', 'Charred Fortress, Ashlands', lr.beaten > 0,
+      lr.fortresses > 1 ? ` (beaten in ${lr.beaten} of the ${lr.fortresses} fortresses so far)` : '']);
+    bossCard.append(el(`<div class="boss-track">${minis.map(([n, where, down, more]) =>
+      `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}${escape(more)}"><span>${down ? '&#10003;' : '?'}</span>${breakable(n)}</div>`).join('')}</div>`));
     if (quests.length) {
       bossCard.append(el('<div class="sub">Hildir\'s quests</div>'));
       bossCard.append(el(`<div class="chips">${quests.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));

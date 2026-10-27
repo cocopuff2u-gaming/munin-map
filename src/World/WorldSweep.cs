@@ -160,6 +160,7 @@ namespace MuninMap.World
             WorldObjects.Begin();
             Demisters.Begin();
             Hotspots.Begin();
+            SpawnerBosses.Begin();
             var changedZones = new HashSet<long>();
             var mapTables = new List<ZDO>();
 
@@ -183,6 +184,7 @@ namespace MuninMap.World
                             int pref = zdo.GetPrefab();
                             if (pref == mapTableHash) mapTables.Add(zdo);   // read after the walk, a slice at a time
                             if (Runestones.IsProxy(pref)) { try { Markers.ObserveProxy(zdo, p); } catch { } }
+                            if (SpawnerBosses.Is(pref)) SpawnerBosses.Observe(zdo);   // Lord Reto, who leaves no world key
                             if (pref == tombstoneHash) Fog.AddTrace(p);   // where a player died   // recorded maps: exact explored areas (and still a building piece below)
                             if (pref == terrainCompilerHash)
                             {
@@ -277,6 +279,7 @@ namespace MuninMap.World
             yield return Step("ruins", Ruins.Finish());
             Vehicles.Finish(); Dungeons.Finish(); Demisters.Finish();
             yield return Step("hotspots", Once(Hotspots.Finish));
+            SpawnerBosses.Finish();
             yield return Step("markers", Markers.Finish());
             yield return Step("structure map", Once(StructureMap.Finish));
             StructureMap.LastScanned = seen;

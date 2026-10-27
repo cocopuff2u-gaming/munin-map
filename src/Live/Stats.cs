@@ -434,6 +434,7 @@ namespace MuninMap.Live
             foreach (var b in BossOrder) j.BeginObject().Prop("name", b[1]).Prop("defeated", keys.Contains(b[0])).End();
             j.End();
             Raids(j, keys);
+            SpawnerBosses.Write(j);
             j.PropRaw("discoveries", WorldEvents.DiscoveriesJson());
             int deaths = 0; foreach (var s in players.Values) deaths += s.deaths;
             j.Key("totals").BeginObject().Prop("raids", raidsTotal).Prop("nightsSlept", nightsSlept).Prop("bossKills", bossKillsTotal)
