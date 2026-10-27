@@ -208,13 +208,13 @@ namespace MuninMap.World
                                     Fog.AddTrace(p);   // built or moved by a player: someone stood there
                                     var veh = Vehicles.Classify(pref);
                                     if (veh != Vehicles.Kind.None) Vehicles.Observe(zdo.m_uid, pref, veh, p);
-                                    else if (!Markers.Observe(zdo, NameOf(pref), p))
+                                    else if (!Markers.Observe(zdo, pref, p))
                                     {
                                         Structures.Observe(zdo, pref, p, creator);
                                         if (inLegacy) StructureMap.Observe(pref, legacyIdx);
                                     }
                                 }
-                                else if (!Markers.Observe(zdo, NameOf(pref), p))
+                                else if (!Markers.Observe(zdo, pref, p))
                                 {
                                     if (Vegetation.Observe(pref, p)) { if (inLegacy) ForestMap.Observe(pref, legacyIdx); }
                                     else Ruins.Observe(zdo, pref, p);

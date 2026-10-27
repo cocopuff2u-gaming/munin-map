@@ -14,13 +14,18 @@ namespace MuninMap.World
     {
         public struct Line { public int key, rev, count; public string json; }
 
-        public static void Save(string path, List<Line> lines)
+        public static void Save(string path, List<Line> lines) => Save(path, () => lines);
+
+        // lines: listed on the writing thread, off the game's (a big world's listing took a good part
+        // of a frame); the chunk tables are concurrent dictionaries whose chunks are replaced, never changed
+        public static void Save(string path, Func<List<Line>> listLines)
         {
             if (path == null) return;
             new Thread(() =>
             {
                 try
                 {
+                    var lines = listLines();
                     var sb = new StringBuilder(lines.Count * 256);
                     sb.Append("grid ").Append(Tiles.TileMath.WORLD_SIZE).Append('\n');   // chunk keys only mean something on this grid
                     foreach (var l in lines) sb.Append(l.key).Append(' ').Append(l.rev).Append(' ').Append(l.count).Append('\t').Append(l.json).Append('\n');

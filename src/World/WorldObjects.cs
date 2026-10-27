@@ -127,11 +127,56 @@ namespace MuninMap.World
         {
             LastChanged = 0;
             if (building == null) yield break;
-            int changed = 0, total = 0;
-            var seen = new HashSet<int>();
-            foreach (var kv in building)
+            // fingerprints and sorting on a worker thread (most of a second of the game's thread a sweep
+            // on a big world): Munin's own lists, which the sweep is done with (cleared at the next
+            // sweep's start), and the concurrent chunk table the web threads already read
+            var work = building;
+            var crunch = System.Threading.Tasks.Task.Run(() => Crunch(work));
+            while (!crunch.IsCompleted) yield return null;
+            if (crunch.IsFaulted) { building = null; ZLog.LogWarning("MuninMap: 3D objects: " + crunch.Exception?.GetBaseException().Message); yield break; }
+            int changed = crunch.Result.changed, total = crunch.Result.total;
+            var seen = crunch.Result.seen;
+            // chunks that emptied out: only when there are any (every chunk seen is in chunks, so none
+            // emptied when the counts match), a slice at a time; listing every chunk's key and checking
+            // each took most of a frame on a big world, every sweep
+            if (chunks.Count != seen.Count)
             {
-                if (WorldSweep.Due) yield return null;   // the rest next frame
+                int k = 0;
+                foreach (int key in new List<int>(chunks.Keys))
+                {
+                    if ((++k & 1023) == 0 && WorldSweep.Due) yield return null;
+                    if (seen.Contains(key)) continue;
+                    chunks.TryRemove(key, out _);
+                    chunkHash.TryRemove(key, out _);
+                    changed++;
+                }
+            }
+            Total = total;
+            // the index lists only chunks under explored ground, so it also has to follow the fog
+            int explored = Fog.ExploredCells;
+            if (changed > 0 || explored != indexExplored)
+            {
+                // a slice at a time: every chunk is checked against the explored ground, and with players
+                // exploring that's nearly every sweep (11-16 ms in one frame on a big world)
+                indexRev++; indexExplored = explored;
+                var index = new string[1];
+                foreach (var _ in IndexParts(index, true)) yield return null;
+                indexJson = index[0];
+            }
+            building = null;
+            LastChanged = changed;
+        }
+
+        private sealed class Crunched { public readonly HashSet<int> seen = new HashSet<int>(); public int changed, total; }
+
+        // any thread: each chunk's fingerprint; changed chunks sorted and published
+        private static Crunched Crunch(Dictionary<int, List<Obj>> work)
+        {
+            var r = new Crunched();
+            var seen = r.seen;
+            int changed = 0, total = 0;
+            foreach (var kv in work)
+            {
                 var list = kv.Value;
                 if (list.Count == 0) continue;   // nothing there this sweep
                 total += list.Count;
@@ -147,34 +192,28 @@ namespace MuninMap.World
                 chunks[kv.Key] = new Chunk { rev = rev, objs = list.ToArray() };
                 changed++;
             }
-            foreach (int key in new List<int>(chunks.Keys))
-            {
-                if (seen.Contains(key)) continue;
-                chunks.TryRemove(key, out _);
-                chunkHash.TryRemove(key, out _);
-                changed++;
-            }
-            Total = total;
-            // the index lists only chunks under explored ground, so it also has to follow the fog
-            int explored = Fog.ExploredCells;
-            if (changed > 0 || explored != indexExplored) { indexRev++; indexExplored = explored; indexJson = BuildIndex(); }
-            building = null;
-            LastChanged = changed;
+            r.changed = changed; r.total = total;
+            return r;
         }
 
-        private static string BuildIndex()
+        private static string BuildIndex() { var r = new string[1]; foreach (var _ in IndexParts(r, false)) { } return r[0]; }
+
+        // the index of chunks under explored ground; sliced over frames from Finish
+        private static IEnumerable<object> IndexParts(string[] result, bool slice)
         {
+            int n = 0;
             var j = new JsonWriter(chunks.Count * 24 + 64);
             j.BeginObject().Prop("rev", indexRev).Prop("chunkSize", TileMath.CHUNK_SIZE).Key("chunks").BeginArray();
             foreach (var kv in chunks)
             {
+                if (slice && (++n & 31) == 0 && WorldSweep.Due) yield return null;
                 int cx = kv.Key / 4096, cz = kv.Key % 4096;
                 float minX = TileMath.ChunkMin(cx), minZ = TileMath.ChunkMin(cz);
                 if (!MuninConfig.REVEAL_ALL && !Fog.AnyExplored(minX, minZ, minX + TileMath.CHUNK_SIZE, minZ + TileMath.CHUNK_SIZE)) continue;
                 j.BeginArray().Value(cx).Value(cz).Value(kv.Value.rev).Value(kv.Value.objs.Length).End();
             }
             j.End().End();
-            return j.ToString();
+            result[0] = j.ToString();
         }
 
         // Any thread. Binary chunk, little-endian:

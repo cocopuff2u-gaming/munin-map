@@ -229,7 +229,26 @@ namespace MuninMap.World
         }
 
         // Main thread. Returns true if the ZDO was a marker-worthy object.
-        public static bool Observe(ZDO zdo, string prefabName, Vector3 pos)
+        // The sweep's walk asks this of nearly every object in the world (3 million on a big one). Most
+        // can't be a marker (trees, rocks, building pieces); which prefabs can is worked out once each and
+        // kept by the prefab's number, so those skip the name and its text checks.
+        private static readonly Dictionary<int, bool> canBeMarker = new Dictionary<int, bool>();
+        public static bool Observe(ZDO zdo, int prefab, Vector3 pos)
+        {
+            if (buildingPortals == null) return false;
+            string name = null;
+            if (!canBeMarker.TryGetValue(prefab, out bool can))
+            {
+                name = WorldSweep.NameOf(prefab);
+                can = name != null && (name.StartsWith("portal", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("Player_tombstone", StringComparison.OrdinalIgnoreCase)
+                    || IsBed(name) || IsSign(name) || WardRadius(name) > 0f);
+                canBeMarker[prefab] = can;
+            }
+            return can && Observe(zdo, name ?? WorldSweep.NameOf(prefab), pos);
+        }
+
+        private static bool Observe(ZDO zdo, string prefabName, Vector3 pos)
         {
             if (buildingPortals == null || prefabName == null) return false;
             string n = prefabName;

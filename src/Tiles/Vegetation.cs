@@ -83,30 +83,18 @@ namespace MuninMap.Tiles
         // whose vegetation changed to `changedZones`.
         public static IEnumerator Finish(HashSet<long> changedZones)
         {
-            var changed = new List<long>();
             if (building == null) yield break;
-            int trees = 0, rocks = 0;
-            var seen = new HashSet<long>();
-            foreach (var kv in building)
-            {
-                if (WorldSweep.Due) yield return null;   // the rest next frame
-                var list = kv.Value;
-                if (list.Count == 0) continue;   // nothing there this sweep
-                long sum = 0;
-                foreach (var p in list)
-                {
-                    sum += WorldSweep.Mix(unchecked((int)(p.x * 4) * 7 + (int)(p.z * 4) * 13 + (int)p.kind * 101 + (int)(p.size * 8)));
-                    if (Palette.Base(p.kind) == Palette.Veg.Rock || Palette.Base(p.kind) == Palette.Veg.Ore) rocks++;
-                    else if (!Palette.IsLowPlant(p.kind)) trees++;
-                }
-                int h = WorldSweep.Fold(sum, list.Count);
-                seen.Add(kv.Key);
-                if (zoneHash.TryGetValue(kv.Key, out int old) && old == h && zones.ContainsKey(kv.Key)) continue;
-                changed.Add(kv.Key);
-                list.Sort((a, b) => a.z != b.z ? a.z.CompareTo(b.z) : a.x.CompareTo(b.x));   // nicer draw order
-                zones[kv.Key] = list.ToArray();
-                zoneHash[kv.Key] = h;
-            }
+            // the zones' fingerprints and sorting on a worker thread: about a second of the game's thread
+            // a sweep on a big world. It only touches Munin's own lists, which the sweep is done with
+            // (they're cleared at the next sweep's start, after this), and the concurrent tables the web
+            // threads already read
+            var work = building;
+            var crunch = System.Threading.Tasks.Task.Run(() => Crunch(work));
+            while (!crunch.IsCompleted) yield return null;
+            if (crunch.IsFaulted) { building = null; ZLog.LogWarning("MuninMap: trees: " + crunch.Exception?.GetBaseException().Message); yield break; }
+            var changed = crunch.Result.changed;
+            var seen = crunch.Result.seen;
+            int trees = crunch.Result.trees, rocks = crunch.Result.rocks;
             // zones that emptied out entirely: only when there are any (every zone seen is in zones, so
             // none emptied when the counts match); listing all the zones' keys and checking each took
             // most of a frame on a big world, every sweep
@@ -127,6 +115,37 @@ namespace MuninMap.Tiles
             DumpKinds();
             if (changed.Count > 0) { version++; SaveCache(); }
             foreach (long z in changed) changedZones.Add(z);
+        }
+
+        private sealed class Crunched { public readonly List<long> changed = new List<long>(); public readonly HashSet<long> seen = new HashSet<long>(); public int trees, rocks; }
+
+        // any thread: each zone's fingerprint; changed zones sorted and published
+        private static Crunched Crunch(Dictionary<long, List<Point>> work)
+        {
+            var r = new Crunched();
+            var changed = r.changed; var seen = r.seen;
+            int trees = 0, rocks = 0;
+            foreach (var kv in work)
+            {
+                var list = kv.Value;
+                if (list.Count == 0) continue;   // nothing there this sweep
+                long sum = 0;
+                foreach (var p in list)
+                {
+                    sum += WorldSweep.Mix(unchecked((int)(p.x * 4) * 7 + (int)(p.z * 4) * 13 + (int)p.kind * 101 + (int)(p.size * 8)));
+                    if (Palette.Base(p.kind) == Palette.Veg.Rock || Palette.Base(p.kind) == Palette.Veg.Ore) rocks++;
+                    else if (!Palette.IsLowPlant(p.kind)) trees++;
+                }
+                int h = WorldSweep.Fold(sum, list.Count);
+                seen.Add(kv.Key);
+                if (zoneHash.TryGetValue(kv.Key, out int old) && old == h && zones.ContainsKey(kv.Key)) continue;
+                changed.Add(kv.Key);
+                list.Sort((a, b) => a.z != b.z ? a.z.CompareTo(b.z) : a.x.CompareTo(b.x));   // nicer draw order
+                zones[kv.Key] = list.ToArray();
+                zoneHash[kv.Key] = h;
+            }
+            r.trees = trees; r.rocks = rocks;
+            return r;
         }
 
         // ---- cache on disk: every zone's points, served at once after a restart until the first

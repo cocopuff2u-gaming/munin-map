@@ -144,12 +144,20 @@ namespace MuninMap.World
                 chunks[kv.Key] = new Chunk { rev = rev, count = pieces.Length, pieces = pieces, json = WithRev(built[0], rev) };
                 changed++;
             }
-            foreach (int key in new List<int>(chunks.Keys))
+            // chunks that emptied out: only when there are any (every chunk seen is in chunks, so none
+            // emptied when the counts match), a slice at a time; listing every chunk's key and checking
+            // each took most of a frame on a big world, every sweep
+            if (chunks.Count != seen.Count)
             {
-                if (seen.Contains(key)) continue;
-                chunks.TryRemove(key, out _);
-                chunkHash.TryRemove(key, out _);
-                changed++;
+                int k = 0;
+                foreach (int key in new List<int>(chunks.Keys))
+                {
+                    if ((++k & 1023) == 0 && WorldSweep.Due) yield return null;
+                    if (seen.Contains(key)) continue;
+                    chunks.TryRemove(key, out _);
+                    chunkHash.TryRemove(key, out _);
+                    changed++;
+                }
             }
             Total = total;
             statsJson = BuildStats();
@@ -157,7 +165,15 @@ namespace MuninMap.World
             if (byCreatorStations != null) Stations = byCreatorStations;
             // the index lists only chunks under explored ground, so it also has to follow the fog
             int explored = Fog.ExploredCells;
-            if (changed > 0 || explored != indexExplored) { indexRev++; indexExplored = explored; indexJson = BuildIndex(); }
+            if (changed > 0 || explored != indexExplored)
+            {
+                // a slice at a time: every chunk is checked against the explored ground, and with players
+                // exploring that's nearly every sweep (11-16 ms in one frame on a big world)
+                indexRev++; indexExplored = explored;
+                var index = new string[1];
+                foreach (var _ in IndexParts(index, true)) yield return null;
+                indexJson = index[0];
+            }
             if (changed > 0) { piecesRev++; SaveCache(); }
             building = null;
             LastChanged = changed;
@@ -176,9 +192,12 @@ namespace MuninMap.World
 
         private static void SaveCache()
         {
-            var lines = new List<ChunkCache.Line>(chunks.Count);
-            foreach (var kv in chunks) lines.Add(new ChunkCache.Line { key = kv.Key, rev = kv.Value.rev, count = kv.Value.count, json = kv.Value.json });
-            ChunkCache.Save(cachePath, lines);
+            ChunkCache.Save(cachePath, () =>
+            {
+                var lines = new List<ChunkCache.Line>(chunks.Count);
+                foreach (var kv in chunks) lines.Add(new ChunkCache.Line { key = kv.Key, rev = kv.Value.rev, count = kv.Value.count, json = kv.Value.json });
+                return lines;
+            });
         }
 
         public static string ChunkJson(int cx, int cz)
@@ -322,8 +341,12 @@ namespace MuninMap.World
             result[0] = j.ToString();
         }
 
-        private static string BuildIndex()
+        private static string BuildIndex() { var r = new string[1]; foreach (var _ in IndexParts(r, false)) { } return r[0]; }
+
+        // the index of chunks under explored ground; sliced over frames from Finish
+        private static IEnumerable<object> IndexParts(string[] result, bool slice)
         {
+            int n = 0;
             var j = new JsonWriter(chunks.Count * 24 + 64);
             j.BeginObject();
             j.Prop("rev", indexRev);
@@ -331,6 +354,7 @@ namespace MuninMap.World
             j.Key("chunks").BeginArray();
             foreach (var kv in chunks)
             {
+                if (slice && (++n & 31) == 0 && WorldSweep.Due) yield return null;
                 int cx = kv.Key / 4096, cz = kv.Key % 4096;
                 // only chunks over explored ground are advertised; the fog is enforced here, not in the browser
                 float minX = TileMath.ChunkMin(cx), minZ = TileMath.ChunkMin(cz);
@@ -340,7 +364,7 @@ namespace MuninMap.World
             j.End();
             Regions.WriteIndex(j, ListedRev);
             j.End();
-            return j.ToString();
+            result[0] = j.ToString();
         }
 
         private static string BuildStats()
