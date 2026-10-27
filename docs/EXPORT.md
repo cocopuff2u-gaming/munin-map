@@ -1,7 +1,23 @@
-# Export to Blender, Unreal, Unity, Godot
+# Export
 
-Top bar, download icon. Choose area, detail, content, format. File downloads.
-Everything is built in the browser from the data the map already has.
+Top bar, download icon. Pick what to export, the area (outlined on the map,
+which you can still move), and the options; the line by the button says what
+will come out. Everything is built in the browser from the data the map
+already has, and only explored ground leaves it.
+
+* **Map image**: PNG, JPEG, WebP, or PDF (A4, to print). 1, 2 or 4 m per
+  pixel; the whole world comes at 4 m (5250 px). Trees and rocks, markers,
+  names, portal links, players online and the zone grid as you choose.
+* **Markers**: CSV, plain text, JSON or GeoJSON. Columns: set, name, kind,
+  x, z (metres), biome, fromSpawn (metres), tag (portals). GeoJSON points are
+  `[x, z]`: x east, z north.
+* **3D scene**: the rest of this page. Besides the glTF files and the Unreal
+  pack, *Heightmap only* is the 16-bit PNG alone (1 px = 1 m, north up; its
+  height range is in the file name), and *3D print* is the ground as one
+  closed solid in binary STL (1 unit = 1 m, Z up, a 5 m base under the lowest
+  point; at most 400 x 400 cells, coarser on a big area).
+
+# 3D scene: Blender, Unreal, Unity, Godot
 
 ## What is in the file
 

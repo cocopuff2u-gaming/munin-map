@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.2.1
+
+**New on the map**
+
+* **Lord Reto** is in Stats with the mini bosses once a Charred Fortress has been found: how many fortresses there are, how many have been fought and how many beaten. The game keeps no "defeated" key for him, so Munin reads it from the fortress itself, which remembers him after he has come out, across restarts too (#18).
+* **Export does more than 3D** (top bar, download icon):
+  * **Map image**: PNG, JPEG, WebP, or a PDF fitted to an A4 page, of an area or the whole world, at 1, 2 or 4 m per pixel. Trees and rocks, markers and their names, portal links, players online and the zone grid are yours to pick. Unexplored ground stays dark.
+  * **Markers**: CSV, plain text (to read, or paste in a chat), JSON or GeoJSON, each marker with its biome and distance from the spawn. Every kind, or only the ones the map shows.
+  * **3D scene**: glTF and the Unreal pack as before, plus the ground alone as a 16-bit heightmap (World Machine, Gaea, Unity terrain) or as a solid for a 3D printer (.stl).
+  * The area is outlined on the map and you can move the map while the dialog is open. What will come out (size, pixels, marker count) is shown before you export, and your choices are remembered.
+* **Light menus**: a sun / moon button in the top bar. Until you pick one, the menus follow your browser's light or dark setting. Every coloured text has a darker shade for light menus, so chips, boss ticks, event and chat names stay easy to read. The map itself looks the same either way.
+* The view button is now a **2D | 3D switch** that shows which view you're in.
+
+**Smoother**
+
+* **Zooming with the grid on no longer stalls.** Each zone number was its own texture, made as it came into view, and every zoom step brought hundreds of new ones. They now come from one small texture of characters, all drawn at once: the grid costs the same at any zoom.
+
+**Smaller things**
+
+* Markers tab: the search box and biome buttons stay put when the list scrolls, with a line under them once it has.
+* Layers: the 3D card is now "3D map", and the grid's description is shorter.
+
+**Upgrading:** replace `MuninMap.dll` and restart the server. Nothing to convert. Lord Reto shows after the first world sweep (about a minute after the start).
+
 ## 3.2.0
 
 **New on the map**
