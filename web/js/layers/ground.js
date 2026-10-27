@@ -407,6 +407,24 @@ function textImage(s, color) {
   return c;
 }
 
+// The zone numbers' characters, drawn once into one small texture: a number is a row of them, and
+// every number on screen goes in one draw. (A texture per number, made as each came into view,
+// stalled a zoom for most of a second: every zoom step brought hundreds of new ones.)
+const GLYPHS = '0123456789-,';
+function glyphAtlas() {
+  const R = 3, font = `600 ${10 * R}px ui-monospace, monospace`;   // monospace: every character one width
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  g.font = font;
+  const adv = Math.ceil(g.measureText('0').width), pad = 4 * R, cw = adv + 2 * pad, chh = 14 * R;   // (pad: clear of the neighbours' mipmaps)
+  c.width = cw * GLYPHS.length; c.height = chh;
+  g.font = font; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  [...GLYPHS].forEach((ch, i) => {
+    g.lineWidth = 3 * R; g.strokeStyle = 'rgba(0,0,0,.65)'; g.strokeText(ch, i * cw + pad, chh / 2);
+    g.fillStyle = 'rgba(255,255,255,.75)'; g.fillText(ch, i * cw + pad, chh / 2);
+  });
+  return { canvas: c, adv: adv / R, pad: pad / R, cw: cw / R, ch: chh / R };
+}
+
 export class GuideGL extends L.Layer {
   constructor(radius, color) { super(); this.radius = radius; this.color = color; this.order = 9.5; this.grid = false; this.rings = null; this.tex = new Map(); }
   onAdd(map) { this.sc = ShapesCanvas.for(map); this.sc.add(this); }
@@ -463,6 +481,19 @@ export class GuideGL extends L.Layer {
       // take), in its north-west corner; every 2nd, 4th... zone when they would crowd (~90 px apart)
       const px = 64 * v.ppm;
       if (px >= 12) {
+        if (!this.glyphs) {
+          this.glyphs = glyphAtlas();
+          this.glyphTex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, this.glyphTex);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.glyphs.canvas);
+          gl.generateMipmap(gl.TEXTURE_2D);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        }
+        const G = this.glyphs, N = GLYPHS.length;
+        let n = 0;
         let step = 1;
         while (step * px < 90) step *= 2;
         const a = Math.min(1, (px - 12) / 20) * 0.8;
@@ -472,8 +503,21 @@ export class GuideGL extends L.Layer {
           for (let zz = zz1; zz >= zz0 - 1; zz -= step) {
             const x = zx * 64 - 32, z = zz * 64 + 32;   // the zone's north-west corner
             if (Math.hypot(zx * 64, zz * 64) > this.radius) continue;
-            label(textImage(`${zx}, ${zz}`, 'rgba(255,255,255,.75)'), x, z, 3, 2, a);
+            const str = `${zx}, ${zz}`;
+            if (!this.glyphData || this.glyphData.length < (n + str.length) * 8) { const d = new Float32Array(Math.max(4096, (n + str.length) * 16)); if (this.glyphData) d.set(this.glyphData); this.glyphData = d; }
+            for (let i = 0; i < str.length; i++) {
+              const k = GLYPHS.indexOf(str[i]);
+              if (k < 0) continue;   // (the space)
+              const o = n++ * 8, d = this.glyphData;
+              d[o] = x + (5 + i * G.adv - G.pad) / v.ppm; d[o + 1] = z - 2 / v.ppm; d[o + 2] = G.cw / v.ppm; d[o + 3] = G.ch / v.ppm;   // the text 5 px in, as before
+              d[o + 4] = k / N; d[o + 5] = 0; d[o + 6] = (k + 1) / N; d[o + 7] = 1;
+            }
           }
+        sc.drawSprites(this.glyphTex, this.glyphData, n, a);
+        sc.setView(t);   // (back to the labels' program for the rings)
+        gl.bindVertexArray(sc.quadVao);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.uniform4f(t.u.u_uv, 0, 0, 1, 1);
       }
     }
     if (this.rings) {

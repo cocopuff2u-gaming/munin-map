@@ -486,8 +486,9 @@ const SPRITE_FS = `#version 300 es
 precision mediump float;
 in vec2 v_uv;
 uniform sampler2D u_tex;
+uniform float u_alpha;
 out vec4 o;
-void main() { o = texture(u_tex, v_uv); }`;
+void main() { o = texture(u_tex, v_uv) * u_alpha; }`;
 
 // a dashed line between two world points, a set width in pixels (portal lines, layers/markercanvas.js)
 // A ward's protected ground: a dashed ring like the game's area marker, and a faint fill. The
@@ -868,8 +869,8 @@ export class ShapesCanvas {
   }
 
   // instanced attributes: [name, size, type, normalized] laid out in this order in one buffer
-  // draw `count` sprites from `data` (8 floats each: rect, uv) with the atlas texture `tex`
-  drawSprites(tex, data, count) {
+  // draw `count` sprites from `data` (8 floats each: rect, uv) with the atlas texture `tex`, faded by `alpha`
+  drawSprites(tex, data, count, alpha = 1) {
     if (!count) return;
     const gl = this.gl, p = this.sprite;
     if (!this.spriteBuf) {
@@ -882,6 +883,7 @@ export class ShapesCanvas {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.uniform1i(p.u.u_tex, 0);
+    gl.uniform1f(p.u.u_alpha, alpha);
     gl.bindVertexArray(this.spriteVao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     gl.bindVertexArray(null);
