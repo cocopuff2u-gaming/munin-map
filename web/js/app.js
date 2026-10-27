@@ -250,7 +250,7 @@ class App {
     search.addEventListener('focus', () => this.onSearch(search.value));
     search.addEventListener('keydown', (e) => {
       const res = $('#search-results');
-      const items = [...res.querySelectorAll('button')];
+      const items = [...res.querySelectorAll('button.hit')];
       let i = items.findIndex((b) => b.classList.contains('active'));
       if (e.key === 'ArrowDown') { i = Math.min(items.length - 1, i + 1); e.preventDefault(); }
       else if (e.key === 'ArrowUp') { i = Math.max(0, i - 1); e.preventDefault(); }
@@ -339,10 +339,15 @@ class App {
   }
 
   // ---------------------------------------------------------------- navigation
-  goTo(x, z, zoom) {
+  // jump: straight there, no glide (a far jump glided with cached layers riding along until it
+  // ended: trees, raids, a popup opened at the far end; issues #2, #14)
+  goTo(x, z, zoom, jump) {
     if (this.mode === '3d' && this.view3d) { this.view3d.lookAt(x, z); return; }
     this.layers.players.follow(null);
-    this.smoothZoom.glideTo(toLatLng(x, z), zoom ?? this.map.getZoom());
+    const to = toLatLng(x, z), zz = zoom ?? this.map.getZoom();
+    const size = this.map.getSize(), far = this.map.project(to, zz).distanceTo(this.map.project(this.map.getCenter(), zz));
+    if (jump || far > 3 * Math.max(size.x, size.y)) this.map.setView(to, zz, { animate: false });
+    else this.smoothZoom.glideTo(to, zz);
   }
 
   goToSpawn(animate) {
@@ -417,13 +422,26 @@ class App {
     out.push(...found.sort((a, b) => starts(a) - starts(b) || byName(a.label, b.label) || byName(a.kind, b.kind)));
     res.replaceChildren();
     this.searchAt = -1;
-    for (const r of out.slice(0, 30)) {
-      const b = document.createElement('button');
-      b.innerHTML = `<span>${escape(r.label)}</span><span class="kind">${escape(r.kind)} · ${Math.round(r.x)}, ${Math.round(r.z)}</span>`;
-      b.go = () => { this.goTo(r.x, r.z, Math.max(this.map.getZoom(), 6)); if (r.player) this.layers.players.follow(r.player); };
-      b.addEventListener('click', () => { b.go(); this.hideSearch(); });
-      res.append(b);
-    }
+    // 50 at a time, the rest behind "Show more" (it used to stop at 30, with no way to the others)
+    const page = (from) => {
+      for (const r of out.slice(from, from + 50)) {
+        const b = document.createElement('button');
+        b.className = 'hit';
+        b.innerHTML = `<span>${escape(r.label)}</span><span class="kind">${escape(r.kind)} · ${Math.round(r.x)}, ${Math.round(r.z)}</span>`;
+        b.go = () => { this.goTo(r.x, r.z, Math.max(this.map.getZoom(), 6)); if (r.player) this.layers.players.follow(r.player); };
+        b.addEventListener('click', () => { b.go(); this.hideSearch(); });
+        res.append(b);
+      }
+      const left = out.length - from - 50;
+      if (left > 0) {
+        const more = document.createElement('button');
+        more.className = 'more';
+        more.textContent = `Show more (${left} left)`;
+        more.addEventListener('click', (e) => { e.stopPropagation(); more.remove(); page(from + 50); });
+        res.append(more);
+      }
+    };
+    page(0);
     if (!out.length) res.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'No matches' }));
     res.hidden = false;
   }

@@ -404,10 +404,45 @@ namespace MuninMap.Live
             j.Key("bosses").BeginArray();
             foreach (var b in BossOrder) j.BeginObject().Prop("name", b[1]).Prop("defeated", keys.Contains(b[0])).End();
             j.End();
+            Raids(j, keys);
             j.PropRaw("discoveries", WorldEvents.DiscoveriesJson());
             int deaths = 0; foreach (var s in players.Values) deaths += s.deaths;
             j.Key("totals").BeginObject().Prop("raids", raidsTotal).Prop("nightsSlept", nightsSlept).Prop("bossKills", bossKillsTotal)
              .Prop("deaths", deaths).Prop("players", players.Count).Prop("peakOnline", peakOnline).Prop("peakOnlineUtc", peakOnlineUtc).End();
+        }
+
+        // The raids this world can have, by the game's own rules (RandEventSystem.HaveGlobalKeys):
+        // the world keys each needs and the ones that end it (the Eikthyr army stops once the Elder is
+        // down). With the "playerevents" key on, a raid with per-player conditions follows each
+        // player's own progress (what they know, their own keys), which only their game knows.
+        private static void Raids(JsonWriter j, HashSet<string> keys)
+        {
+            j.Prop("playerEvents", keys.Contains("playerevents"));
+            j.Key("raids").BeginArray();
+            try
+            {
+                var rs = RandEventSystem.instance;
+                if (rs != null)
+                    foreach (var ev in rs.m_events)
+                    {
+                        if (ev == null || !ev.m_enabled || ev.m_devDisabled || !ev.m_random) continue;
+                        bool needs = ev.m_requiredGlobalKeys.TrueForAll(k => keys.Contains((k ?? "").ToLowerInvariant()));
+                        bool over = ev.m_notRequiredGlobalKeys.Exists(k => keys.Contains((k ?? "").ToLowerInvariant()));
+                        bool perPlayer = ev.m_altRequiredKnownItems.Count > 0 || ev.m_altRequiredNotKnownItems.Count > 0 || ev.m_altNotRequiredPlayerKeys.Count > 0
+                            || ev.m_altRequiredPlayerKeysAny.Count > 0 || ev.m_altRequiredPlayerKeysAll.Count > 0;
+                        j.BeginObject().Prop("id", ev.m_name).Prop("text", WorldEvents.Localize(ev.m_startMessage, ""))
+                         .Prop("state", over ? "over" : needs ? "now" : "notyet").Prop("perPlayer", perPlayer).Prop("nearBase", ev.m_nearBaseOnly);
+                        j.Key("needs").BeginArray(); foreach (var k in ev.m_requiredGlobalKeys) j.Value((k ?? "").ToLowerInvariant()); j.End();
+                        j.Key("endsWith").BeginArray(); foreach (var k in ev.m_notRequiredGlobalKeys) j.Value((k ?? "").ToLowerInvariant()); j.End();
+                        // the per-player conditions, for the page to word: items a player must know
+                        j.Key("knows").BeginArray();
+                        foreach (var it in ev.m_altRequiredKnownItems) if (it != null) j.Value(WorldEvents.Localize(it.m_itemData.m_shared.m_name, it.name));
+                        j.End();
+                        j.End();
+                    }
+            }
+            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: raids: " + e.Message); }
+            j.End();
         }
 
         private static int lastOnlineCount;

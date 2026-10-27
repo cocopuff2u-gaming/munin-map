@@ -459,17 +459,20 @@ export class GuideGL extends L.Layer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     if (this.grid) {
-      // each chunk's north-west corner, as the old grid tiles had it; every 2nd, 4th... chunk when
-      // they would crowd (at least ~150 px apart)
-      const px = 256 * v.ppm;
-      if (px >= 20) {
-        let step = 256;
-        while (step * v.ppm < 150) step *= 2;
-        const a = Math.min(1, (px - 20) / 30) * 0.8;
-        for (let x = Math.floor(v.x / step) * step; x <= v.x1; x += step)
-          for (let z = Math.ceil(v.z / step) * step; z >= v.z0; z -= step) {
-            if (Math.hypot(x, z) > this.radius) continue;
-            label(textImage(`${x}, ${z}`, 'rgba(255,255,255,.75)'), x, z, 3, 2, a);
+      // each zone's number as the game has it (ZoneSystem.GetZone, what Upgrade World's commands
+      // take), in its north-west corner; every 2nd, 4th... zone when they would crowd (~90 px apart)
+      const px = 64 * v.ppm;
+      if (px >= 12) {
+        let step = 1;
+        while (step * px < 90) step *= 2;
+        const a = Math.min(1, (px - 12) / 20) * 0.8;
+        const zx0 = Math.ceil((v.x + 32) / 64 / step) * step - step, zx1 = Math.floor((v.x1 + 32) / 64);
+        const zz1 = Math.floor((v.z - 32) / 64 / step) * step + step, zz0 = Math.ceil((v.z0 - 32) / 64);
+        for (let zx = zx0; zx <= zx1; zx += step)
+          for (let zz = zz1; zz >= zz0 - 1; zz -= step) {
+            const x = zx * 64 - 32, z = zz * 64 + 32;   // the zone's north-west corner
+            if (Math.hypot(zx * 64, zz * 64) > this.radius) continue;
+            label(textImage(`${zx}, ${zz}`, 'rgba(255,255,255,.75)'), x, z, 3, 2, a);
           }
       }
     }

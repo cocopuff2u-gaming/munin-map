@@ -107,9 +107,18 @@ export class Sidebar {
       p.append(c);
       return c;
     };
-    const row = (icon, label, desc, checked, onToggle) => {
-      const r = el(`<label class="lrow"><span class="lico">${icon}</span><span class="ltext"><b>${label}</b>${desc ? `<small>${desc}</small>` : ''}</span><span class="switch"><input type="checkbox" ${checked ? 'checked' : ''}><i></i></span></label>`);
-      r.querySelector('input').addEventListener('change', (e) => onToggle(e.target.checked));
+    // A row with a switch. Only the switch toggles (a click on the name did too, by accident). Each
+    // switch is remembered in this browser (key: the row's name) and put back when the page loads.
+    let toggles = {};
+    try { toggles = JSON.parse(localStorage.getItem('munin-layer-toggles') || '{}') || {}; } catch (e) { /* none */ }
+    const remember = (key, v) => { toggles[key] = v; try { localStorage.setItem('munin-layer-toggles', JSON.stringify(toggles)); } catch (e) { /* this visit only */ } };
+    const row = (icon, label, desc, checked, onToggle, key) => {
+      key = key || label.replace(/<[^>]*>/g, '').trim();
+      const saved = toggles[key];
+      const on = typeof saved === 'boolean' ? saved : checked;
+      const r = el(`<div class="lrow"><span class="lico">${icon}</span><span class="ltext"><b>${label}</b>${desc ? `<small>${desc}</small>` : ''}</span><label class="switch"><input type="checkbox" ${on ? 'checked' : ''}><i></i></label></div>`);
+      r.querySelector('input').addEventListener('change', (e) => { remember(key, e.target.checked); onToggle(e.target.checked); });
+      if (on !== checked) onToggle(on);   // as this browser left it
       return r;
     };
     const ico = (name, color) => iconSvg(name, color || colors[name]);
@@ -183,7 +192,7 @@ export class Sidebar {
 
     // ---- guides drawn over the map
     const guides = card('Map guides');
-    guides.append(row(GRID_SVG, 'Grid', '256 m zones with coordinates', S.grid, (v) => { this.app.setGrid(v); S.set('grid', v); }));
+    guides.append(row(GRID_SVG, 'Grid', this.app.gl ? "The game's 64 m zones, with their numbers" : '256 m squares with coordinates', S.grid, (v) => { this.app.setGrid(v); S.set('grid', v); }));
     guides.append(row(RINGS_SVG, 'Distance rings', 'Every 500 m out from the spawn', S.rings, (v) => { this.app.setRings(v); S.set('rings', v); }));
     if (this.app.gl && (this.app.config?.height_max_zoom ?? -1) >= 0)   // (drawn in the WebGL map)
       guides.append(row(CONTOUR_SVG, 'Contour lines', 'Height lines, metres above sea', false, (v) => this.app.setContours(v)));
@@ -221,13 +230,27 @@ export class Sidebar {
     for (const [kind, name] of VEG_KEY) if (VEG[kind]) legend.querySelector('.lv').append(el(`<span><i class="${VEG[kind][2] ? 'rock' : 'round'}" style="background:${VEG[kind][1]}"></i>${name}</span>`));
     p.append(legend);
 
+    this.setAt = {};   // marker set id -> the marker its name's clicks last went to
     const setIcon = { spawn: 'spawn', bosses: 'boss', minibosses: 'miniboss', dungeons: 'dungeon', landmarks: 'forge', peaks: 'peak', camps: 'fulingcamp', signs: 'sign', traders: 'trader', portals: 'portal', tablepins: 'maptable', tombstones: 'tombstone', wards: 'ward', runestones: 'runestone', vegvisirs: 'vegvisir', beds: 'bed', bases: 'house', vehicles: 'boat', invasions: 'invasion', locations: 'poi' };
     L.markers.onChange((sets) => {
       this.markerSetRows.replaceChildren();
       for (const s of sets) {
         const n = (s.markers || []).length;
-        const r = row(ico(setIcon[s.id] || 'poi'), `${escape(s.label)} <span class="lcount">${n}</span>`, '', L.markers.visible.get(s.id) !== false, (v) => { L.markers.setVisible(s.id, v); S.setSet(s.id, v); });
+        const r = row(ico(setIcon[s.id] || 'poi'), `${escape(s.label)} <span class="lcount">${n}</span>`, '', L.markers.visible.get(s.id) !== false, (v) => { L.markers.setVisible(s.id, v); S.setSet(s.id, v); }, 'set:' + s.id);
         r.classList.add('compact');
+        // the name: to the next of its markers, round and round (switched on first if it's off)
+        if (n) {
+          const name = r.querySelector('.ltext');
+          name.classList.add('lgo'); name.title = 'Click: go to the next one';
+          name.addEventListener('click', () => {
+            const ms = s.markers || [];
+            if (!ms.length) return;
+            const sw = r.querySelector('input');
+            if (!sw.checked) { sw.checked = true; sw.dispatchEvent(new Event('change')); }
+            const i = this.setAt[s.id] = ((this.setAt[s.id] ?? -1) + 1) % ms.length;
+            this.app.goTo(ms[i].x, ms[i].z, Math.max(this.app.map.getZoom(), 6));
+          });
+        }
         this.markerSetRows.append(r);
       }
       this.later('markers', () => this.renderMarkers(sets));
@@ -298,7 +321,7 @@ export class Sidebar {
     }
     if (!near.size) return;
     const rows = [...near.values()].sort((a, b) => a.trader - b.trader || a.d - b.d);
-    p.append(el('<h3>Distances from the spawn</h3>'));
+    p.append(el('<div class="sub">Distances from the spawn</div>'));
     const table = el(`<table class="dist-table"><tbody>${rows.map((r) => `<tr class="clickable" data-x="${r.m.x}" data-z="${r.m.z}"><td>${escape(r.m.label)}</td><td>${fmtDist(r.d)} ${this.whereText(r.m.x, r.m.z).split(' ').slice(-3, -2)}</td><td class="walk">…</td></tr>`).join('')}</tbody></table>`);
     table.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => this.app.goTo(+tr.dataset.x, +tr.dataset.z, Math.max(this.app.map.getZoom(), 6))));
     p.append(table);
@@ -416,33 +439,43 @@ export class Sidebar {
     const count = (id, f) => { const set = markerStore.sets.find((x) => x.id === id); return set ? (f ? set.markers.filter(f).length : set.markers.length) : 0; };
     const tile = (v, label, title = '') => `<div class="stat-tile"${title ? ` title="${escape(title)}"` : ''}><b>${v}</b><span>${label}</span></div>`;
     p.replaceChildren();
+    // each section a card that folds away; this browser remembers which are open (issue #19)
+    let opened = {};
+    try { opened = JSON.parse(localStorage.getItem('munin-stat-folds') || '{}') || {}; } catch (e) { /* none */ }
+    const section = (key, title, open = true) => {
+      const c = el(`<details class="lcard scard"><summary><h4>${title}</h4><i class="chev"></i></summary></details>`);
+      c.open = opened[key] ?? open;
+      c.addEventListener('toggle', () => { opened[key] = c.open; try { localStorage.setItem('munin-stat-folds', JSON.stringify(opened)); } catch (e) { /* this visit only */ } });
+      p.append(c);
+      return c;
+    };
 
     // ---- now
-    p.append(el('<h3>Now</h3>'));
-    p.append(el(`<div class="stat-tiles">
+    let q = section('now', 'Now');
+    q.append(el(`<div class="stat-tiles">
       ${tile(s.day ?? '–', 'day' + (s.night ? ' · night' : ''))}
       ${tile(s.online ?? 0, (s.online === 1 ? 'player' : 'players') + ' online')}
       ${tile((s.exploredPercent ?? 0).toFixed(1) + '%', 'explored')}
     </div>`));
-    p.append(el('<div class="sub">Players online, last 24 h</div>'));
-    p.append(sparkline(d.onlineHistory || []));
+    q.append(el('<div class="sub">Players online, last 24 h</div>'));
+    q.append(sparkline(d.onlineHistory || []));
 
     // ---- the weather to come in each biome (the game draws it by time alone, so it holds for everyone)
     const fc = d.forecast;
     if (fc && fc.biomes && fc.biomes.length && s.worldTime !== undefined) {
       const cols = 3, when = [];
       for (let k = 0; k < cols; k++) { const m = Math.round((fc.start + k * fc.period - s.worldTime) / 60); when.push(k === 0 ? 'Now' : `in ${m} min`); }
-      p.append(el('<h3>Weather</h3>'));
-      p.append(el(`<table class="forecast"><thead><tr><th></th>${when.map((w) => `<th>${w}</th>`).join('')}</tr></thead><tbody>${fc.biomes.map((b) =>
+      q = section('weather', 'Weather');
+      q.append(el(`<table class="forecast"><thead><tr><th></th>${when.map((w) => `<th>${w}</th>`).join('')}</tr></thead><tbody>${fc.biomes.map((b) =>
         `<tr><td>${escape(b.biome)}</td>${b.weather.slice(0, cols).map((w, k) => `<td class="${k > 0 && w === b.weather[k - 1] ? 'same' : ''}">${escape(w)}</td>`).join('')}</tr>`).join('')}</tbody></table>`));
-      p.append(el('<div class="sub">Each change comes on game time: sleeping through the night skips ahead</div>'));
+      q.append(el('<div class="sub">Each change comes on game time: sleeping through the night skips ahead</div>'));
     }
 
     // ---- bosses: the world's own record of which have fallen
+    const down = (d.bosses || []).filter((b) => b.defeated).length;
+    const bossCard = section('bosses', `Bosses${d.bosses && d.bosses.length ? ` <span class="count">${down} of ${d.bosses.length}</span>` : ''}`);
     if (d.bosses && d.bosses.length) {
-      const down = d.bosses.filter((b) => b.defeated).length;
-      p.append(el(`<h3>Bosses <span class="count">${down} of ${d.bosses.length}</span></h3>`));
-      p.append(el(`<div class="boss-track">${d.bosses.map((b) => `<div class="boss${b.defeated ? ' down' : ''}" title="${escape(b.name)}${b.defeated ? ': defeated' : ': not yet'}"><span>${b.defeated ? '&#10003;' : '?'}</span>${breakable(b.name)}</div>`).join('')}</div>`));
+      bossCard.append(el(`<div class="boss-track">${d.bosses.map((b) => `<div class="boss${b.defeated ? ' down' : ''}" title="${escape(b.name)}${b.defeated ? ': defeated' : ': not yet'}"><span>${b.defeated ? '&#10003;' : '?'}</span>${breakable(b.name)}</div>`).join('')}</div>`));
     }
 
     // the world's other keys: what its first kills unlocked (raids), and the world modifiers it runs with
@@ -459,42 +492,49 @@ export class Sidebar {
       if (low === 'preset') { preset = val; continue; }
       // any other "beaten" key (other bosses, often from mods): defeated_x, x_defeated, x_killed, killedx
       const m = low.match(/^defeated_(.+)$|^(.+)_defeated$|^(.+)_killed$|^killed_?(.+)$/);
-      if (m && !MODIFIERS[low]) { const who = m[1] || m[2] || m[3] || m[4]; kills.push(KILL_NAMES[who] || prettyKey(who)); continue; }
+      if (m && !MODIFIERS[low]) { const who = m[1] || m[2] || m[3] || m[4]; if (!NOT_SHOWN_KILLS.has(who)) kills.push(KILL_NAMES[who] || prettyKey(who)); continue; }
       effects.push(modifierText(low, val));
     }
-    // Hildir's sisters, each the boss of one of her quest dungeons, and the Writhan
-    p.append(el('<div class="sub">Mini bosses</div>'));
-    p.append(el(`<div class="boss-track">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
+    // Hildir's sisters, each the boss of one of her quest dungeons
+    bossCard.append(el('<div class="sub">Mini bosses</div>'));
+    bossCard.append(el(`<div class="boss-track">${Object.entries(MINI_BOSSES).map(([k, [n, where]]) => { const down = keySet.has(k);
       return `<div class="boss${down ? ' down' : ''}" title="${escape(n)}${where ? ', ' + escape(where) : ''}${down ? ': defeated' : ': not yet'}"><span>${down ? '&#10003;' : '?'}</span>${breakable(n)}</div>`; }).join('')}</div>`));
-    this.renderDistances(p);
     if (quests.length) {
-      p.append(el('<div class="sub">Hildir\'s quests</div>'));
-      p.append(el(`<div class="chips">${quests.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));
+      bossCard.append(el('<div class="sub">Hildir\'s quests</div>'));
+      bossCard.append(el(`<div class="chips">${quests.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));
     }
     if (kills.length) {
-      p.append(el('<div class="sub">Other kills</div>'));
-      p.append(el(`<div class="chips">${kills.map((t) => `<span class="chip on" title="A world key the game (or a mod) set when this was beaten">${escape(t)}</span>`).join('')}</div>`));
+      bossCard.append(el('<div class="sub">Other kills</div>'));
+      bossCard.append(el(`<div class="chips">${kills.map((t) => `<span class="chip on" title="A world key the game (or a mod) set when this was beaten">${escape(t)}</span>`).join('')}</div>`));
     }
     // the world settings as picked when it was made ("combat_default:resources_more:..."), the exact
     // effects (resource rate 150%...) on hover; without a preset, the effects themselves
     if (preset) {
-      const fx = effects.map((e) => e[0]).join(', ');
+      const fx = effects.filter((e) => PRESET_KEYS.has(e[2])).map((e) => e[0]).join(', ');
       for (const part of preset.split(':')) {
         const [what, level] = part.split('_');
         if (!what) continue;
         mods.push([`${PRESET_NAMES[what] || what}: ${LEVELS[level] || level || ''}`, fx ? `In effect: ${fx}` : part]);
       }
+      // keys the presets don't set (fire spread, raids per player, no map...: set on their own, e.g.
+      // with -setkey) get chips of their own, or they'd only be in the hover text
+      mods.push(...effects.filter((e) => !PRESET_KEYS.has(e[2])));
     } else mods.push(...effects);
+    // ---- world progress: what first kills unlocked, and which raids can come now (the game's own
+    // rules for each, from the server)
+    q = section('progress', 'World progress');
     if (progress.length) {
-      p.append(el('<div class="sub">Unlocked by first kills</div>'));
-      p.append(el(`<div class="chips">${progress.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));
+      q.append(el('<div class="sub">Unlocked by first kills</div>'));
+      q.append(el(`<div class="chips">${progress.map(([t, tip]) => `<span class="chip on" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>`));
     }
-    p.append(el('<div class="sub">World modifiers</div>'));
-    p.append(el(mods.length ? `<div class="chips">${mods.map(([t, tip]) => `<span class="chip" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>` : '<div class="note">Normal world: no modifiers.</div>'));
+    this.renderRaids(q, d);
+
+    q = section('modifiers', 'World modifiers');
+    q.append(el(mods.length ? `<div class="chips">${mods.map(([t, tip]) => `<span class="chip" title="${escape(tip)}">${escape(t)}</span>`).join('')}</div>` : '<div class="note">Normal world: no modifiers.</div>'));
 
     // ---- players, then who leads what
-    p.append(el(`<h3>Players <span class="count">${ps.length}</span></h3>`));
-    if (!ps.length) p.append(el('<div class="empty">Nobody has played since the map was installed.</div>'));
+    q = section('players', `Players <span class="count">${ps.length}</span>`);
+    if (!ps.length) q.append(el('<div class="empty">Nobody has played since the map was installed.</div>'));
     else {
       // sorted by the column clicked (again: the other way round), remembered in this browser
       const [sk, sdir] = this.playerSort();
@@ -518,7 +558,7 @@ export class Sidebar {
         tr.style.cursor = 'pointer';
         tr.addEventListener('click', () => { const rect = tr.getBoundingClientRect(); this.app.playerCard.show({ name: tr.dataset.name }, rect.right, rect.top + rect.height / 2); });
       }
-      p.append(table);
+      q.append(table);
     }
     const boards = [
       ['playtime', 'Never logs off', 'most time played', (v) => fmtDuration(v)],
@@ -534,26 +574,26 @@ export class Sidebar {
       const top = ps.filter((x) => (x[k] || 0) > 0).sort((a, b) => b[k] - a[k])[0];
       return top ? `<div class="lead" title="${escape(what)}"><span class="lead-title">${escape(title)}</span><b>${escape(top.name)}</b><span class="lead-val">${fmt(top[k])}</span></div>` : '';
     }).join('');
-    if (cards) { p.append(el('<h3>Leaderboard</h3>')); p.append(el(`<div class="leads">${cards}</div>`)); }
+    if (cards) section('leaders', 'Leaderboard').append(el(`<div class="leads">${cards}</div>`));
 
     // ---- totals: the adventure so far, and what stands in the world
-    p.append(el('<h3>Totals</h3>'));
-    p.append(el('<div class="sub">Adventure</div>'));
-    p.append(el(`<div class="stat-tiles">
+    q = section('totals', 'Totals');
+    q.append(el('<div class="sub">Adventure</div>'));
+    q.append(el(`<div class="stat-tiles">
       ${tile(t.bossKills ?? 0, 'boss kills')}${tile(t.raids ?? 0, 'raids')}${tile(t.nightsSlept ?? 0, 'nights slept')}
       ${tile(t.deaths ?? 0, 'deaths')}${tile(t.players ?? 0, 'players ever')}${tile(t.peakOnline ?? 0, 'most online at once', t.peakOnlineUtc ? new Date(t.peakOnlineUtc).toLocaleString() : '')}
     </div>`));
-    p.append(el('<div class="sub">The built world</div>'));
-    p.append(el(`<div class="stat-tiles">
+    q.append(el('<div class="sub">The built world</div>'));
+    q.append(el(`<div class="stat-tiles">
       ${tile((s.structures ?? 0).toLocaleString(), 'pieces built')}${tile(count('bases'), 'bases')}${tile(count('portals'), 'portals')}
       ${tile(`${count('vehicles', (m) => m.cat !== 'cart')} / ${count('vehicles', (m) => m.cat === 'cart')}`, 'ships / carts')}${tile((s.terraformedZones ?? 0).toLocaleString(), 'terraformed zones')}${tile((s.trees ?? 0).toLocaleString(), 'trees standing')}
     </div>`));
-    p.append(el('<div class="note">Boss kills, raids and nights slept count from when the map started tracking them.</div>'));
+    q.append(el('<div class="note">Boss kills, raids and nights slept count from when the map started tracking them.</div>'));
 
     // ---- discoveries: boss altars and traders found, newest first
     const disc = d.discoveries || [];
-    p.append(el(`<h3>Discoveries <span class="count">${disc.length}</span></h3>`));
-    if (!disc.length) p.append(el('<div class="empty">Nothing found yet.</div>'));
+    q = section('discoveries', `Discoveries <span class="count">${disc.length}</span>`);
+    if (!disc.length) q.append(el('<div class="empty">Nothing found yet.</div>'));
     else {
       const list = el('<div></div>');
       for (const f of disc.slice().sort((a, b) => (b.when || '').localeCompare(a.when || ''))) {
@@ -565,11 +605,12 @@ export class Sidebar {
         r.addEventListener('click', () => this.app.goTo(f.x, f.z, Math.max(this.app.map.getZoom(), 6)));
         list.append(r);
       }
-      p.append(list);
+      q.append(list);
     }
+    this.renderDistances(q);   // how far the nearest of each is from the spawn
 
-    // ---- the server's own details, folded away (remembered open or shut)
-    const det = el(`<details class="server-details"${this.serverOpen ? ' open' : ''}><summary>Server details</summary><dl class="kv">
+    // ---- the server's own details, folded away at first
+    section('server', 'Server details', false).append(el(`<dl class="kv">
       <dt>Up since</dt><dd>${s.startedUtc ? new Date(s.startedUtc).toLocaleString() : '–'}</dd>
       <dt>Last world sweep</dt><dd>${s.lastSweepUtc ? fmtAgo(s.lastSweepUtc) + ` (${(s.lastSweepSeconds || 0).toFixed(1)} s)` : 'pending'}</dd>
       <dt>World objects</dt><dd>${(s.objects ?? 0).toLocaleString()}</dd>
@@ -578,9 +619,28 @@ export class Sidebar {
       <dt>Max detail</dt><dd>${Math.pow(2, 7 - (tiles.maxRenderZoom ?? 7))} m / px</dd>
       <dt>3D models</dt><dd>${prefabs.stats.exported ?? 0} prefabs${prefabs.stats.unreadable ? ` (${prefabs.stats.unreadable} unreadable)` : ''}${prefabs.stats.queued ? ` +${prefabs.stats.queued} queued` : ''}</dd>
       <dt>Munin Map</dt><dd>${escape(this.app.config?.version || '')}</dd>
-    </dl></details>`);
-    det.addEventListener('toggle', () => { this.serverOpen = det.open; });
-    p.append(det);
+    </dl>`));
+  }
+
+  // The raids the world can have (the server sends the game's rules for each): can come now, not
+  // yet (and what it waits for), or over (a later boss ended it). With "playerevents" on, raids with
+  // per-player conditions follow each player's own progress instead.
+  renderRaids(q, d) {
+    const raids = d.raids || [];
+    if (!raids.length) return;
+    q.append(el('<div class="sub">Raids</div>'));
+    if (d.playerEvents) q.append(el('<div class="note">Raids follow each player here (the playerevents key): each one\'s own kills and finds decide which can come for them.</div>'));
+    const words = (ks) => ks.map(keyWords).join(', ');
+    const order = { now: 0, notyet: 1, over: 2 };
+    const rows = raids.slice().sort((a, b) => order[a.state] - order[b.state] || raidName(a.id).localeCompare(raidName(b.id))).map((r) => {
+      const perPlayer = d.playerEvents && r.perPlayer;
+      const [cls, what] = perPlayer ? ['', 'per player'] : r.state === 'now' ? ['on', 'can come'] : r.state === 'over' ? ['gone', 'over'] : ['', 'not yet'];
+      const tip = [r.text, r.needs.length ? `Needs: ${words(r.needs)}` : '', r.endsWith.length ? `Ends once: ${words(r.endsWith)}` : '',
+        r.knows && r.knows.length ? `For a player who knows: ${r.knows.join(', ')}` : '', r.nearBase ? 'Only near a base' : ''].filter(Boolean).join('\n');
+      const why = !perPlayer && r.state === 'notyet' && r.needs.length ? ` <small>after ${escape(words(r.needs))}</small>` : !perPlayer && r.state === 'over' && r.endsWith.length ? ` <small>${escape(words(r.endsWith))}</small>` : '';
+      return `<div class="raid-row" title="${escape(tip)}"><span class="chip ${cls}">${what}</span><span>${escape(raidName(r.id))}${why}</span></div>`;
+    }).join('');
+    q.append(el(`<div class="raids">${rows}</div>`));
   }
 
   // ---------------------------------------------------------------- events
@@ -788,13 +848,32 @@ const MINI_BOSSES = {
   bosshildir1: ['Brenna', 'Smouldering Tomb, Black Forest'],
   bosshildir2: ['Geirrhafa', 'Howling Cavern, Mountains'],
   bosshildir3: ['Zil & Thungr', 'Sealed Tower, Plains'],
-  defeated_writhan: ['Writhan', ''],
 };
+// rare creatures, not bosses: their kill keys aren't shown (the Writhan, the Eyeless One)
+const NOT_SHOWN_KILLS = new Set(['writhan', 'elakingmole']);
 const HILDIR_QUESTS = {
   hildir1: ['Brenna\'s chest returned', 'Hildir\'s first quest done'],
   hildir2: ['Geirrhafa\'s chest returned', 'Hildir\'s second quest done'],
   hildir3: ['Zil & Thungr\'s chest returned', 'Hildir\'s third quest done'],
 };
+// the raids by name (the game's ids: army_eikthyr...); others are their id prettied
+const RAID_NAMES = {
+  army_eikthyr: "Eikthyr's army (boars, necks)", army_theelder: "The Elder's army (greydwarfs)", army_bonemass: "Bonemass's army (draugr, skeletons)",
+  army_moder: "Moder's army (drakes)", army_goblin: "Yagluth's army (fulings)", army_seekers: "The Queen's army (seekers)", army_gjall: 'Gjall',
+  foresttrolls: 'Trolls', blobs: 'Blobs', skeletons: 'Skeletons', surtlings: 'Surtlings', wolves: 'Wolves', bats: 'Bats', ghosts: 'Ghosts',
+  hildirboss1: 'Brenna (Hildir quest)', hildirboss2: 'Geirrhafa (Hildir quest)', hildirboss3: 'Zil & Thungr (Hildir quest)',
+  army_charred: 'The Charred', army_charredspawners: 'Charred summoners', army_elakingar: 'The Eyeless', army_jotuns: 'Jotuns',
+};
+function raidName(id) { return RAID_NAMES[id] || (id.startsWith('army_') ? prettyKey(id.slice(5)) + ' army' : prettyKey(id)); }
+// a world key in words, for the raids' conditions
+const KEY_WORDS = {
+  defeated_eikthyr: 'Eikthyr', defeated_gdking: 'The Elder', defeated_bonemass: 'Bonemass', defeated_dragon: 'Moder', defeated_goblinking: 'Yagluth',
+  defeated_queen: 'The Queen', defeated_fader: 'Fader', defeated_frozenking_p3: 'Kall Fimbulbringer',
+  killedtroll: 'a troll killed', killed_surtling: 'a surtling killed', killedbat: 'a bat killed',
+  hildir1: "Brenna's chest returned", hildir2: "Geirrhafa's chest returned", hildir3: "Zil & Thungr's chest returned",
+  elakingmole_defeated: 'the Eyeless One killed', jotun_killed: 'a Jotun killed',
+};
+function keyWords(k) { return KEY_WORDS[k] || prettyKey(k.replace(/^defeated_/, '')); }
 // kill keys whose game name is not just the key prettied
 const KILL_NAMES = { elakingmole: 'Eyeless One' };
 // a name for a narrow tile: a long word may break in its middle, with a hyphen (Fimbul-bringer)
@@ -822,17 +901,22 @@ const MODIFIERS = {
   noportals: 'No portals', nobossportals: 'No portals near bosses', dungeonbuild: 'Building in dungeons', teleportall: 'Portals carry everything',
   nopseudodrops: 'No extra drops', nobuildingfall: 'Buildings never collapse', noheavysnow: 'No heavy snow', allheavysnow: 'Heavy snow everywhere', preset: 'Preset',
 };
+// the keys the world-settings presets set (combat, death penalty, resources, raids, portals); any other
+// key was set on its own
+const PRESET_KEYS = new Set(['playerdamage', 'enemydamage', 'enemyspeedsize', 'enemyleveluprate', 'enemylevelupyrate',
+  'deathkeepequip', 'deathdeleteitems', 'deathdeleteunequipped', 'deathskillsreset', 'deathkeepinventory', 'skillreductionrate',
+  'resourcerate', 'eventrate', 'teleportall', 'noportals', 'nobossportals']);
 // the world-settings preset ("combat_hard:raids_more:...") in words
 const PRESET_NAMES = { combat: 'Combat', deathpenalty: 'Death penalty', resources: 'Resources', raids: 'Raids', portals: 'Portals' };
 const LEVELS = { default: 'Normal', veryeasy: 'Very easy', easy: 'Easy', hard: 'Hard', veryhard: 'Very hard', casual: 'Casual', hardcore: 'Hardcore',
   more: 'More', muchmore: 'Much more', most: 'Most', less: 'Less', muchless: 'Much less', none: 'None' };
 function modifierText(name, val) {
   const label = MODIFIERS[name] || name.replace(/_/g, ' ');
-  if (!val) return [label, name];
+  if (!val) return [label, name, name];
   const n = Number(val);
   // a scale on the game's normal amount (skill loss 15: 15% of what a death normally costs), not a share of the whole
   const shown = Number.isFinite(n) && name.endsWith('rate') || ['playerdamage', 'enemydamage', 'enemyspeedsize'].includes(name) ? `${n}% of normal` : val;
-  return [`${label}: ${shown}`, `${name} ${val}`];
+  return [`${label}: ${shown}`, `${name} ${val}`, name];   // [text, hover, key]
 }
 
 // the kinds of event, their names on the filter chips and what each covers

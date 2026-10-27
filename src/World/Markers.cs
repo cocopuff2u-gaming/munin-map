@@ -431,6 +431,7 @@ namespace MuninMap.World
             if (prefab.StartsWith("Mistlands_DvergrTownEntrance", StringComparison.Ordinal)) { icon = "infestedmine"; return "Infested mine"; }
             if (prefab == "CharredFortress") { icon = "fortress"; return "Charred fortress"; }
             if (prefab == "BearCave") { icon = "bearcave"; return "Bear cave"; }
+            if (prefab.StartsWith("MorgenHole", StringComparison.Ordinal)) { icon = "hole"; return "Morgen hole"; }   // the Ashlands' Morgen lairs
             // the Deep North's, by the game's own names (location_thehole, location_darkesthole, location_morkhalla)
             if (prefab.StartsWith("TheHole", StringComparison.Ordinal)) { icon = "hole"; return "Winding tunnels"; }
             if (prefab == "TheDarkestHole") { icon = "hole"; return "The Hole"; }

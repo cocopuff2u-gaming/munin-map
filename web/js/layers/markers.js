@@ -209,8 +209,9 @@ export class MarkerLayers {
       b.className = 'btn small'; b.type = 'button';
       b.textContent = `Go to the other end (${far < 1000 ? Math.round(far) + ' m' : (far / 1000).toFixed(1) + ' km'})`;
       b.addEventListener('click', () => {
+        // there first, then its popup: opened before a glide, the popup was left off-screen
+        window.app?.goTo(o.x, o.z, Math.max(this.map.getZoom(), 6), true);
         L.popup({ offset: [0, -8], autoPan: false }).setLatLng(toLatLng(o.x, o.z)).setContent(this.portalPopup(o, set, byTag)).openOn(this.map);
-        window.app?.goTo(o.x, o.z, Math.max(this.map.getZoom(), 6));
       });
       row.append(b);
     }

@@ -435,10 +435,12 @@ void main() {
   if (length(v_w) > u_radius) discard;
   float a = 0.0; vec3 c = vec3(1.0);
   if (u_grid > 0.5) {
-    float px = 256.0 / u_mpp;                         // a chunk in pixels: the grid fades out as it gets dense
-    float show = smoothstep(6.0, 16.0, px);
-    vec2 d = abs(fract(v_w / 256.0 + 0.5) - 0.5) * 256.0 / u_mpp;
-    a = max(a, line(min(d.x, d.y), 1.0) * 0.22 * show);
+    // the game's zones: 64 m, zone (0, 0) centred on the world's middle (edges at 32 + 64k). Zoomed
+    // out, every 2nd, 4th... zone's edge, so the lines stay at least ~16 px apart
+    float k = max(0.0, ceil(log2(16.0 * u_mpp / 64.0)));
+    float period = 64.0 * exp2(k);
+    vec2 d = abs(fract((v_w + 32.0) / period + 0.5) - 0.5) * period / u_mpp;
+    a = max(a, line(min(d.x, d.y), 1.0) * 0.22);
   }
   if (u_rings > 0.5) {
     vec2 rel = v_w - u_spawn;
