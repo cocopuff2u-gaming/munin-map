@@ -192,7 +192,7 @@ export class Sidebar {
 
     // ---- guides drawn over the map
     const guides = card('Map guides');
-    guides.append(row(GRID_SVG, 'Grid', this.app.gl ? "The game's 64 m zones, with their numbers" : '256 m squares with coordinates', S.grid, (v) => { this.app.setGrid(v); S.set('grid', v); }));
+    guides.append(row(GRID_SVG, 'Grid', this.app.gl ? '64 m game zones, numbered' : '256 m squares with coordinates', S.grid, (v) => { this.app.setGrid(v); S.set('grid', v); }));
     guides.append(row(RINGS_SVG, 'Distance rings', 'Every 500 m out from the spawn', S.rings, (v) => { this.app.setRings(v); S.set('rings', v); }));
     if (this.app.gl && (this.app.config?.height_max_zoom ?? -1) >= 0)   // (drawn in the WebGL map)
       guides.append(row(CONTOUR_SVG, 'Contour lines', 'Height lines, metres above sea', false, (v) => this.app.setContours(v)));
@@ -204,9 +204,9 @@ export class Sidebar {
     act.append(row(ico('tombstone', '#e0485a'), 'Deaths', 'Where players have died', false, (v) => L.activity.set('deaths', v)));
     act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Busy areas: click one for why', false, (v) => L.activity.set('hotspots', v)));
 
-    // ---- the 3D view (left out when the server has enable_3d = false)
+    // ---- the 3D map (left out when the server has enable_3d = false)
     if (this.app.config?.enable_3d !== false) {
-      const d3 = card('3D view', 'used when you switch to 3D');
+      const d3 = card('3D map');
       d3.append(el('<div class="lsub">Show</div>'));
       const objs = el('<div class="filters lchips"></div>');
       for (const [cat, label] of OBJECT_CATS) {
@@ -357,6 +357,7 @@ export class Sidebar {
       this.mkSearch.querySelector('input').addEventListener('input', () => this.renderMarkers(this.mkSets));
       this.mkBody = el('<div></div>');
       this.mkBiome = '';
+      p.addEventListener('scroll', () => this.mkSearch.classList.toggle('stuck', p.scrollTop > 0), { passive: true });
     }
     if (!p.contains(this.mkSearch)) p.replaceChildren(this.mkSearch, this.mkBody);
     const q = this.mkSearch.querySelector('input').value.trim().toLowerCase();
