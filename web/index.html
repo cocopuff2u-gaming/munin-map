@@ -7,8 +7,16 @@
 <meta name="theme-color" content="#0e1116">
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
 <script>
-// the menus' theme before anything is drawn (no dark flash on a light choice); the sun / moon button sets it
-try { document.documentElement.dataset.theme = localStorage.getItem('munin-theme') === 'light' ? 'light' : 'dark'; } catch (e) { /* dark */ }
+// the menus' theme before anything is drawn (no flash of the other one): the browser's own setting
+// until the sun / moon button picks one, which is then kept
+window.muninTheme = () => {
+  let t = null;
+  try { t = localStorage.getItem('munin-theme'); } catch (e) { /* none kept */ }
+  if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+};
+window.muninTheme();
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { window.muninTheme(); window.muninThemeShown?.(); });
 </script>
 <script>
 // the data every visit starts with, asked for now rather than once the scripts have loaded and

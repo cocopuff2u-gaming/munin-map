@@ -954,7 +954,7 @@ function hiddenEvent(e) {
 }
 
 // a steady, readable colour per player name
-const NAME_COLORS = ['#7cc7ff', '#ffb86b', '#9be37a', '#f590d0', '#ffd866', '#8fd8d0', '#c9a7ff', '#ff8f8f'];
+const NAME_COLORS = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => `var(--name-${i})`);   // (app.css: a lighter and a darker set, for dark and light menus)
 function nameColor(name) {
   let h = 0;
   for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) | 0;

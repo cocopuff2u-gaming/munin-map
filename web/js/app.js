@@ -252,6 +252,7 @@ class App {
       document.documentElement.dataset.theme = t;
       try { localStorage.setItem('munin-theme', t); } catch (e) { /* this visit only */ }
       showTheme();
+    window.muninThemeShown = showTheme;   // (the browser's setting changed while no choice is kept)
     });
     showTheme();
     $('#btn-fullscreen').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); });
