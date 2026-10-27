@@ -480,7 +480,7 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .llegend[open] > summary { margin-bottom: 6px; }
 
 /* markers: search, a card per set */
-.mk-search { position: sticky; top: -12px; z-index: 2; background: var(--bg); padding: 0 0 8px; }
+.mk-search { position: sticky; top: -10px; z-index: 2; background: var(--bg-2); margin: -10px 0 0; padding: 10px 0 8px; }   /* (-10px: the panel's padding, so it never moves; the sidebar's colour) */
 .mk-search input { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text); font-size: 13px; }
 .mk-card { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; margin: 0 0 8px; overflow: hidden; }
 .mk-card summary { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; list-style: none; user-select: none; }
