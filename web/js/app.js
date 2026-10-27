@@ -221,7 +221,7 @@ class App {
     $('#btn-mode').disabled = c.enable_3d === false;
     // with 3D off, hide what only works with it (inline style: CSS display would override `hidden`)
     $('#btn-mode').style.display = c.enable_3d === false ? 'none' : '';
-    $('#btn-export').style.display = c.enable_3d === false ? 'none' : '';
+    $('#export-kind-scene').style.display = c.enable_3d === false ? 'none' : '';
     if (c.world_start_pos && typeof c.world_start_pos === 'string') {
       const [x, y, z] = c.world_start_pos.split(',').map(Number);
       this.spawn = { x, z };
@@ -236,9 +236,10 @@ class App {
     this.layers.players.onClick = (p, x, y) => this.playerCard.show(p, x, y);
     this.layers.players.onChange((list) => this.playerCard.update(list));
     $('#btn-export').addEventListener('click', () => this.openExport());
-    $('#export-close').addEventListener('click', () => { $('#export-dialog').hidden = true; });
-    $('#export-dialog').addEventListener('click', (e) => { if (e.target.id === 'export-dialog') e.target.hidden = true; });
+    $('#export-close').addEventListener('click', () => this.closeExport());
+    $('#export-dialog').addEventListener('click', (e) => { if (e.target.id === 'export-dialog') this.closeExport(); });
     $('#export-form').addEventListener('submit', (e) => { e.preventDefault(); this.runExport(); });
+    $('#export-form').addEventListener('change', () => this.exportChanged());
     $('#btn-fullscreen').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); });
     $('#btn-link').addEventListener('click', async () => {
       this.updateHash();
@@ -565,42 +566,112 @@ class App {
   }
 
   // ---------------------------------------------------------------- export
+  // One dialog for every kind: a picture of the map, the markers as a list, or a 3D scene. The area
+  // is outlined on the 2D map while it's open, the line by the button says what will come out, and
+  // the choices are kept for next time.
   openExport() {
-    const d = $('#export-dialog');
-    const area = d.querySelector('select[name=area]');
-    area.querySelector('option[value=view]').disabled = this.mode !== '2d';
-    if (this.mode !== '2d' && area.value === 'view') area.value = '512';
-    $('#export-status').textContent = '';
+    const d = $('#export-dialog'), form = $('#export-form');
+    try {
+      const saved = JSON.parse(localStorage.getItem('munin-export') || '{}');
+      for (const [k, v] of Object.entries(saved)) {
+        const els = form.querySelectorAll(`[name="${k}"]`);
+        if (els.length && els[0].type === 'radio') els.forEach((x) => { x.checked = x.value === v; });
+        else if (els.length === 1 && els[0].type === 'checkbox') els[0].checked = !!v;
+        else if (els.length === 1) els[0].value = v;
+      }
+    } catch (e) { /* defaults */ }
+    if (this.config?.enable_3d === false && form.kind.value === 'scene') form.querySelector('[name=kind][value=image]').checked = true;
     d.hidden = false;
+    this.exportChanged();
+  }
+
+  closeExport() {
+    $('#export-dialog').hidden = true;
+    if (this.exportBox) { this.exportBox.remove(); this.exportBox = null; }
+  }
+
+  // the area asked for, in world metres
+  exportArea(f) {
+    const area = f.get('area');
+    if (area === 'world') return { x0: -WORLD_RADIUS, z0: -WORLD_RADIUS, x1: WORLD_RADIUS, z1: WORLD_RADIUS };
+    if (area === 'view') {
+      const b = this.map.getBounds(), sw = fromLatLng(b.getSouthWest()), ne = fromLatLng(b.getNorthEast());
+      return { x0: Math.max(sw.x, -WORLD_RADIUS), z0: Math.max(sw.z, -WORLD_RADIUS), x1: Math.min(ne.x, WORLD_RADIUS), z1: Math.min(ne.z, WORLD_RADIUS) };
+    }
+    const c = this.mode === '3d' && this.view3d ? this.view3d.center() : fromLatLng(this.map.getCenter()), half = +area / 2;
+    return { x0: c.x - half, z0: c.z - half, x1: c.x + half, z1: c.z + half };
+  }
+
+  async exportChanged() {
+    const form = $('#export-form'), f = new FormData(form), kind = f.get('kind');
+    for (const s of form.querySelectorAll('[data-kind]')) s.hidden = s.dataset.kind !== kind;
+    const area = form.area;
+    area.querySelector('option[value=view]').disabled = this.mode !== '2d';
+    area.querySelector('option[value=world]').disabled = kind === 'scene';
+    if (area.selectedOptions[0]?.disabled) area.value = '512';
+    form.imgLabels.disabled = form.imgPortals.disabled = !form.imgMarkers.checked;
+    const saved = {};
+    for (const [k, v] of f.entries()) if (k !== 'cat') saved[k] = v;
+    for (const x of form.querySelectorAll('input[type=checkbox]:not([name=cat])')) saved[x.name] = x.checked;
+    try { localStorage.setItem('munin-export', JSON.stringify(saved)); } catch (e) { /* this visit only */ }
+    const a = this.exportArea(new FormData(form));
+    // the area on the map
+    if (this.mode === '2d') {
+      const bounds = [toLatLng(a.x0, a.z0), toLatLng(a.x1, a.z1)];
+      if (this.exportBox) this.exportBox.setBounds(bounds);
+      else this.exportBox = L.rectangle(bounds, { color: '#f2c14e', weight: 2, dashArray: '6 6', fill: true, fillOpacity: 0.06, interactive: false }).addTo(this.map);
+    }
+    // what will come out
+    const status = $('#export-status'), km = (m) => (m >= 1000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m) + ' m');
+    const size = `${km(a.x1 - a.x0)} × ${km(a.z1 - a.z0)}`;
+    const { imageSize, markerRows } = await import('./mapexport.js');
+    const f2 = new FormData(form);
+    if (kind === 'image') {
+      const im = imageSize(a, +f2.get('mpp'));
+      status.textContent = `${size} · ${im.w} × ${im.h} px${im.mpp > +f2.get('mpp') ? ` (${im.mpp} m per pixel: the most a picture holds)` : ''}`;
+    } else if (kind === 'markers') {
+      const n = markerRows(this, a, form.mkShown.checked).length;
+      status.textContent = `${size} · ${n.toLocaleString()} marker${n === 1 ? '' : 's'}`;
+    } else status.textContent = size;
   }
 
   async runExport() {
     const form = $('#export-form'), status = $('#export-status'), go = $('#export-go');
-    const f = new FormData(form);
-    let x0, z0, x1, z1;
-    const c = this.mode === '3d' && this.view3d ? this.view3d.center() : fromLatLng(this.map.getCenter());
-    if (f.get('area') === 'view') {
-      const b = this.map.getBounds();
-      const sw = fromLatLng(b.getSouthWest()), ne = fromLatLng(b.getNorthEast());
-      x0 = sw.x; z0 = sw.z; x1 = ne.x; z1 = ne.z;
-    } else {
-      const half = +f.get('area') / 2;
-      x0 = c.x - half; z0 = c.z - half; x1 = c.x + half; z1 = c.z + half;
-    }
-    const opts = { x0, z0, x1, z1, step: +f.get('step'), cats: new Set(f.getAll('cat')), water: f.get('water') === 'on', markers: f.get('markers') === 'on', trees: true, mode: f.get('mode') };
+    const f = new FormData(form), kind = f.get('kind'), a = this.exportArea(f);
+    const stamp = new Date().toISOString().slice(0, 10), world = (this.config?.world_name || 'world').replace(/[^\w-]+/g, '_');
+    const save = (blob, name) => {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob); link.download = name;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+      this.toast('Export ready: ' + name);
+    };
     go.disabled = true;
-    try { await this.ensureView3D(); } catch (e) { status.textContent = '3D could not start: ' + e.message; go.disabled = false; return; }
-    const { Exporter } = await import('./export.js');   // loaded on use: it pulls in three.js
-    const ex = new Exporter(this);
-    ex.report = (msg) => { status.textContent = msg; };
     try {
-      const out = await ex.run(opts);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(out.blob); a.download = out.name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      status.textContent = `${out.name} · ${(out.blob.size / 1048576).toFixed(1)} MB · ${out.meta.objects} objects`;
-      this.toast('Export ready: ' + out.name);
+      if (kind === 'image') {
+        const { mapImage } = await import('./mapexport.js');
+        const out = await mapImage(this, a, { mpp: +f.get('mpp'), veg: form.imgVeg.checked, markers: form.imgMarkers.checked, labels: form.imgLabels.checked, portals: form.imgPortals.checked, players: form.imgPlayers.checked, grid: form.imgGrid.checked, format: f.get('imgFormat') }, (msg) => { status.textContent = msg; });
+        const name = `${world}-map-${stamp}.${out.ext}`;
+        save(out.blob, name);
+        status.textContent = `${name} · ${out.w} × ${out.h} px · ${(out.blob.size / 1048576).toFixed(1)} MB`;
+      } else if (kind === 'markers') {
+        const { markerRows, markerFile } = await import('./mapexport.js');
+        const bh = (this.biomeHover ??= new BiomeHover());
+        if (!bh.grid) await bh.load();   // (for each marker's biome)
+        const rows = markerRows(this, a, form.mkShown.checked), fmt = f.get('mkFormat');
+        const name = `${world}-markers-${stamp}.${fmt}`;
+        save(markerFile(rows, fmt), name);
+        status.textContent = `${name} · ${rows.length.toLocaleString()} markers`;
+      } else {
+        const opts = { ...a, step: +f.get('step'), cats: new Set(f.getAll('cat')), water: f.get('water') === 'on', markers: f.get('markers') === 'on', trees: true, mode: f.get('mode') };
+        try { await this.ensureView3D(); } catch (e) { status.textContent = '3D could not start: ' + e.message; return; }
+        const { Exporter } = await import('./export.js');   // loaded on use: it pulls in three.js
+        const ex = new Exporter(this);
+        ex.report = (msg) => { status.textContent = msg; };
+        const out = await ex.run(opts);
+        save(out.blob, out.name);
+        status.textContent = `${out.name} · ${(out.blob.size / 1048576).toFixed(1)} MB · ${out.meta.objects} objects`;
+      }
     } catch (e) {
       status.textContent = e.message || String(e);
       console.warn('export', e);

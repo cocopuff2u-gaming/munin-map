@@ -62,7 +62,7 @@ for (const u of ['config', 'data/markers.json', 'data/icons.json', 'data/pins.js
       <button class="icon-btn" id="btn-home" title="Go to spawn"><svg><use href="#i-home"/></svg></button>
       <button class="icon-btn" id="btn-measure" title="Measure distances and travel times" hidden><svg><use href="#i-ruler"/></svg></button>
       <button class="icon-btn" id="btn-link" title="Copy link to this view"><svg><use href="#i-link"/></svg></button>
-      <button class="icon-btn" id="btn-export" title="Export area as 3D scene"><svg><use href="#i-export"/></svg></button>
+      <button class="icon-btn" id="btn-export" title="Export"><svg><use href="#i-export"/></svg></button>
       <button class="icon-btn" id="btn-fullscreen" title="Fullscreen"><svg><use href="#i-fullscreen"/></svg></button>
       <button class="mode-btn" id="btn-mode" title="Switch to 3D"><svg><use href="#i-3d"/></svg><span>3D</span></button>
     </div>
@@ -92,37 +92,68 @@ for (const u of ['config', 'data/markers.json', 'data/icons.json', 'data/pins.js
   </div>
   <div id="measure-panel" class="measure-panel" hidden></div>
   <div id="toast" class="toast" hidden></div>
-  <div id="export-dialog" class="dialog" hidden>
+  <div id="export-dialog" class="dialog side" hidden>
     <div class="dialog-box">
-      <div class="dialog-head"><strong>Export 3D scene</strong><button class="icon-btn" id="export-close" title="Close"><svg><use href="#i-close"/></svg></button></div>
+      <div class="dialog-head"><strong>Export</strong><button class="icon-btn" id="export-close" title="Close"><svg><use href="#i-close"/></svg></button></div>
       <form id="export-form">
+        <div class="ex-kinds">
+          <label><input type="radio" name="kind" value="image" checked><b>Map image</b><small>A PNG picture</small></label>
+          <label><input type="radio" name="kind" value="markers"><b>Markers</b><small>A CSV or JSON list</small></label>
+          <label id="export-kind-scene"><input type="radio" name="kind" value="scene"><b>3D scene</b><small>Blender, Unreal, Godot</small></label>
+        </div>
         <label class="field"><span>Area</span>
           <select name="area">
-            <option value="view">Visible map (2D view)</option>
+            <option value="view">What the map shows now</option>
             <option value="256">256 m around the centre</option>
             <option value="512" selected>512 m around the centre</option>
             <option value="1024">1 km around the centre</option>
             <option value="1536">1.5 km around the centre</option>
+            <option value="world">The whole world</option>
           </select></label>
-        <label class="field"><span>Terrain detail</span>
-          <select name="step"><option value="1">1 m (heavy)</option><option value="2" selected>2 m</option><option value="4">4 m</option></select></label>
-        <div class="field"><span>Include</span>
-          <div class="checks">
-            <label><input type="checkbox" name="cat" value="piece" checked> Buildings</label>
-            <label><input type="checkbox" name="cat" value="other" checked> Ruins &amp; objects</label>
-            <label><input type="checkbox" name="cat" value="rock" checked> Rocks</label>
-            <label><input type="checkbox" name="cat" value="bush" checked> Bushes</label>
-            <label><input type="checkbox" name="cat" value="tree" checked> Trees</label>
-            <label><input type="checkbox" name="water" checked> Water</label>
-            <label><input type="checkbox" name="markers" checked> Markers</label>
-          </div></div>
-        <label class="field"><span>Format</span>
-          <select name="mode">
-            <option value="instanced">glTF scene (.glb), instanced — Blender, Godot, three.js</option>
-            <option value="flat">glTF scene (.glb), one node per object — Unreal, Unity</option>
-            <option value="unreal">Unreal pack (.zip): scene + 16-bit heightmap + CSV + script</option>
-          </select></label>
-        <p class="hint">Only explored ground and published objects are exported. Meshes and textures are the game's own assets from this server; keep the file for your own use.</p>
+        <div data-kind="image">
+          <label class="field"><span>Detail</span>
+            <select name="mpp"><option value="1" selected>1 m per pixel (sharpest)</option><option value="2">2 m per pixel</option><option value="4">4 m per pixel</option></select></label>
+          <div class="field"><span>Include</span>
+            <div class="checks">
+              <label><input type="checkbox" name="imgVeg" checked> Trees &amp; rocks</label>
+              <label><input type="checkbox" name="imgMarkers" checked> Markers</label>
+              <label><input type="checkbox" name="imgLabels" checked> Names</label>
+              <label><input type="checkbox" name="imgPortals"> Portal links</label>
+              <label><input type="checkbox" name="imgPlayers"> Players online</label>
+              <label><input type="checkbox" name="imgGrid"> Zone grid</label>
+            </div></div>
+          <label class="field"><span>File</span>
+            <select name="imgFormat"><option value="png" selected>PNG (exact)</option><option value="jpeg">JPEG (smaller)</option><option value="webp">WebP (smallest)</option></select></label>
+          <p class="hint">The area outlined on the map, with the markers it shows. Unexplored ground stays dark.</p>
+        </div>
+        <div data-kind="markers">
+          <label class="field"><span>Format</span>
+            <select name="mkFormat"><option value="csv" selected>CSV (spreadsheets)</option><option value="json">JSON</option><option value="geojson">GeoJSON (map tools)</option></select></label>
+          <div class="field"><span>Include</span>
+            <div class="checks"><label><input type="checkbox" name="mkShown" checked> Only the kinds the map shows</label></div></div>
+          <p class="hint">Each marker's set, name, kind, position (x, z in metres), biome and distance from the spawn, pins included.</p>
+        </div>
+        <div data-kind="scene">
+          <label class="field"><span>Terrain detail</span>
+            <select name="step"><option value="1">1 m (heavy)</option><option value="2" selected>2 m</option><option value="4">4 m</option></select></label>
+          <div class="field"><span>Include</span>
+            <div class="checks">
+              <label><input type="checkbox" name="cat" value="piece" checked> Buildings</label>
+              <label><input type="checkbox" name="cat" value="other" checked> Ruins &amp; objects</label>
+              <label><input type="checkbox" name="cat" value="rock" checked> Rocks</label>
+              <label><input type="checkbox" name="cat" value="bush" checked> Bushes</label>
+              <label><input type="checkbox" name="cat" value="tree" checked> Trees</label>
+              <label><input type="checkbox" name="water" checked> Water</label>
+              <label><input type="checkbox" name="markers" checked> Markers</label>
+            </div></div>
+          <label class="field"><span>Format</span>
+            <select name="mode">
+              <option value="instanced">glTF scene (.glb), instanced: Blender, Godot, three.js</option>
+              <option value="flat">glTF scene (.glb), one node per object: Unreal, Unity</option>
+              <option value="unreal">Unreal pack (.zip): scene, 16-bit heightmap, CSV, script</option>
+            </select></label>
+          <p class="hint">Only explored ground and published objects are exported. Meshes and textures are the game's own assets from this server; keep the file for your own use.</p>
+        </div>
         <div class="dialog-actions"><span id="export-status" class="meta"></span><button type="submit" class="mode-btn" id="export-go">Export</button></div>
       </form>
     </div>
