@@ -600,210 +600,149 @@ namespace MuninMap.World
         private static long Mix(long h, float x, float z) => Mix(Mix(h, Mathf.RoundToInt(x * 10)), Mathf.RoundToInt(z * 10));
         private static long Mix(long h, string s) => Mix(h, s == null ? 0 : s.GetHashCode());
 
+        // ---- one marker set. Its text is kept and reused while what it shows is the same. What it
+        // shows is worked out first, cheaply (which of its items stand on explored ground), so exploring
+        // that uncovers nothing new no longer rebuilds every set: the signature used to include all the
+        // explored ground, and with players about every set was rebuilt each sweep, a whole set in one
+        // frame (224 ms seen with 5 players). Both passes are spread over frames when sliced.
+        private static IEnumerable<object> Set<T>(JsonWriter j, bool slice, string id, string label, List<T> items, long sig,
+            Func<T, bool> shown, Func<long, T, long> mix, Action<JsonWriter, T> write)
+        {
+            var timer = new PartTimer(id);
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (slice && (i & 127) == 127 && WorldSweep.Due) { timer.Pause(); yield return null; timer.Resume(); }
+                T it = items[i];
+                bool s; try { s = shown(it); } catch { s = false; }
+                if (s) sig = mix(Mix(sig, i), it);
+            }
+            if (Reuse(j, id, sig)) { timer.Done(); yield break; }
+            int mark = j.Mark();
+            j.BeginObject().Prop("id", id).Prop("label", label).Key("markers").BeginArray();
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (slice && (i & 63) == 63 && WorldSweep.Due) { timer.Pause(); yield return null; timer.Resume(); }
+                T it = items[i];
+                try { if (shown(it)) write(j, it); }
+                catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning($"MuninMap: {id}: {e.Message}"); }
+            }
+            j.End().End();
+            Keep(j, id, sig, mark);
+            timer.Done();
+        }
+
+        // ---- how long each part of the markers took on the game's thread this sweep (its longest
+        // single frame), for the sweep's log line: parts over 10 ms are named there
+        private static readonly Dictionary<string, double> partLongest = new Dictionary<string, double>();
+        public static string SlowParts()
+        {
+            var slow = partLongest.Where(kv => kv.Value >= 10.0).OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value:0.0}ms").ToList();
+            return slow.Count == 0 ? "" : "markers slowest: " + string.Join(", ", slow);
+        }
+        private sealed class PartTimer
+        {
+            private readonly string id;
+            private readonly System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
+            private double longest;
+            public PartTimer(string id) { this.id = id; }
+            public void Pause() { double ms = sw.Elapsed.TotalMilliseconds; if (ms > longest) longest = ms; sw.Reset(); }
+            public void Resume() => sw.Start();
+            public void Done() { Pause(); partLongest[id] = longest; }
+        }
+
+        private static void Location(JsonWriter j, ZoneSystem.LocationInstance li, string cat, string icon, string label)
+        {
+            j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
+             .Prop("cat", cat).Prop("icon", icon).Prop("label", label).Prop("prefab", li.m_location?.m_prefabName);
+        }
+        private static bool Shown(ZoneSystem.LocationInstance li) => Built(li) && Visible(li.m_position.x, li.m_position.z);
+        private static long MixAt(long h, ZoneSystem.LocationInstance li) => Mix(h, li.m_position.x, li.m_position.z);
+
         private static IEnumerable<object> BuildParts(JsonWriter j, bool slice)
         {
-            var locs = LocationsByKind();   // altars, lairs, dungeons, traders, camps, landmarks: each loop below visits only its own
-            // what each set is made of, as a number: the explored ground, the locations (and whether
-            // the game has built them), the lists the sweep made
-            long fogSig = Mix(Fog.ExploredCells, MuninConfig.REVEAL_ALL ? 1 : 0), locSig = fogSig;
-            foreach (var l in locs) foreach (var li in l) locSig = Mix(Mix(locSig, li.m_position.x, li.m_position.z), li.m_placed ? 1 : 0);
-            long portalSig = Mix(fogSig, Live.Stats.Keys().Count), tombSig = fogSig, wardSig = fogSig, runeSig = fogSig, signSig = fogSig, bedSig = fogSig;
-            foreach (var p in portals) portalSig = Mix(Mix(Mix(portalSig, p.x, p.z), p.tag), p.creator);
-            foreach (var t in tombs) tombSig = Mix(Mix(Mix(tombSig, t.x, t.z), t.owner), t.when);
-            foreach (var w in wards) wardSig = Mix(Mix(Mix(Mix(Mix(wardSig, w.x, w.z), w.owner), w.on ? 1 : 0), Mathf.RoundToInt(w.r)), w.permitted == null ? 0 : string.Join(",", w.permitted).GetHashCode());
-            foreach (var r in runes) runeSig = Mix(Mix(Mix(runeSig, r.x, r.z), r.text), r.topic);
-            foreach (var sg in signs) signSig = Mix(Mix(Mix(signSig, sg.x, sg.z), sg.text), sg.author);
-            foreach (var b in beds) bedSig = Mix(Mix(bedSig, b.x, b.z), b.owner);
+            if (slice) partLongest.Clear();
+            var timer = new PartTimer("locations");
+            var locs = LocationsByKind();   // altars, lairs, dungeons, traders, camps, landmarks: each set below visits only its own
+            timer.Done();
             j.BeginObject();
             j.Prop("rev", rev + 1);
             j.Key("sets").BeginArray();
 
             // --- boss altars, once someone has explored the ground they stand on (the same rule as
             // everything here; the rest of the game's location registry stays private: spoilers)
-            long sig_bosses = locSig;
-            if (!Reuse(j, "bosses", sig_bosses))
-            {
-            int mark_bosses = j.Mark();
-            j.BeginObject().Prop("id", "bosses").Prop("label", "Boss altars").Key("markers").BeginArray();
-            try
-            {
-                    foreach (var li in locs[0])
-                    {
-                        string name = li.m_location?.m_prefabName;
-                        string boss = BossName(name);
-                        if (boss == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
-                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
-                         .Prop("cat", "boss").Prop("icon", "boss").Prop("label", boss).Prop("prefab", name).End();
-                    }
-            }
-            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: boss altars: " + e.Message); }
-            j.End().End();
-            Keep(j, "bosses", sig_bosses, mark_bosses);
-            }
-
+            foreach (var y in Set(j, slice, "bosses", "Boss altars", locs[0], 1,
+                li => BossName(li.m_location?.m_prefabName) != null && Shown(li), MixAt,
+                (w, li) => { Location(w, li, "boss", "boss", BossName(li.m_location.m_prefabName)); w.End(); })) yield return y;
             if (slice && WorldSweep.Due) yield return null;   // the rest next frame
 
             // --- mini-boss lairs (Hildir's sisters), on explored ground like the altars
-            long sig_minibosses = locSig;
-            if (!Reuse(j, "minibosses", sig_minibosses))
-            {
-            int mark_minibosses = j.Mark();
-            j.BeginObject().Prop("id", "minibosses").Prop("label", "Mini-boss lairs").Key("markers").BeginArray();
-            try
-            {
-                    foreach (var li in locs[1])
+            foreach (var y in Set(j, slice, "minibosses", "Mini-boss lairs", locs[1], 2,
+                li => MiniBossName(li.m_location?.m_prefabName, out _) != null && Shown(li), MixAt,
+                (w, li) => { string mb = MiniBossName(li.m_location.m_prefabName, out string icon); Location(w, li, "miniboss", icon, mb); w.End(); })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
+
+            // --- dungeon entrances, on explored ground, with what is known of their insides
+            foreach (var y in Set(j, slice, "dungeons", "Dungeons", locs[2], Mix(3, Dungeons.Signature),
+                li => DungeonName(li.m_location?.m_prefabName, out _) != null && Shown(li), MixAt,
+                (w, li) =>
+                {
+                    string dg = DungeonName(li.m_location.m_prefabName, out string icon);
+                    Location(w, li, "dungeon", icon, dg);
+                    var d = Dungeons.Get(li.m_position);   // (none: never generated)
+                    if (d != null)
                     {
-                        string name = li.m_location?.m_prefabName;
-                        string mb = MiniBossName(name, out string icon);
-                        if (mb == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
-                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
-                         .Prop("cat", "miniboss").Prop("icon", icon).Prop("label", mb).Prop("prefab", name).End();
+                        w.Key("inside").BeginObject().Prop("rooms", d.rooms).Prop("chests", d.chests).Prop("emptied", d.emptied)
+                         .Prop("picked", d.picked).Prop("gates", d.gates).Prop("opened", d.opened)
+                         .Prop("monsters", d.monsters).Prop("graves", d.graves).Prop("visited", d.Visited);
+                        w.Key("left").BeginArray();   // [[name, count]], most first
+                        foreach (var kv in d.left.OrderByDescending(e => e.Value)) w.BeginArray().Value(kv.Key).Value(kv.Value).End();
+                        w.End().End();
                     }
-            }
-            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: mini bosses: " + e.Message); }
-            j.End().End();
-            Keep(j, "minibosses", sig_minibosses, mark_minibosses);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
-
-            // --- dungeon entrances, on explored ground
-            long sig_dungeons = Mix(locSig, Dungeons.Signature);
-            if (!Reuse(j, "dungeons", sig_dungeons))
-            {
-            int mark_dungeons = j.Mark();
-            j.BeginObject().Prop("id", "dungeons").Prop("label", "Dungeons").Key("markers").BeginArray();
-            try
-            {
-                    foreach (var li in locs[2])
-                    {
-                        string name = li.m_location?.m_prefabName;
-                        string dg = DungeonName(name, out string icon);
-                        if (dg == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
-                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
-                         .Prop("cat", "dungeon").Prop("icon", icon).Prop("label", dg).Prop("prefab", name);
-                        var d = Dungeons.Get(li.m_position);   // what is known of its inside (none: never generated)
-                        if (d != null)
-                        {
-                            j.Key("inside").BeginObject().Prop("rooms", d.rooms).Prop("chests", d.chests).Prop("emptied", d.emptied)
-                             .Prop("picked", d.picked).Prop("gates", d.gates).Prop("opened", d.opened)
-                             .Prop("monsters", d.monsters).Prop("graves", d.graves).Prop("visited", d.Visited);
-                            j.Key("left").BeginArray();   // [[name, count]], most first
-                            foreach (var kv in d.left.OrderByDescending(e => e.Value)) j.BeginArray().Value(kv.Key).Value(kv.Value).End();
-                            j.End().End();
-                        }
-                        j.End();
-                    }
-            }
-            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: dungeons: " + e.Message); }
-            j.End().End();
-            Keep(j, "dungeons", sig_dungeons, mark_dungeons);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+                    w.End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- landmarks (the Forge of Potential, memorials, Fimbulvinter orbs, hot springs), on explored ground
-            long sig_landmarks = locSig;
-            if (!Reuse(j, "landmarks", sig_landmarks))
-            {
-            int mark_landmarks = j.Mark();
-            j.BeginObject().Prop("id", "landmarks").Prop("label", "Landmarks").Key("markers").BeginArray();
-            try
-            {
-                    foreach (var li in locs[5])
-                    {
-                        string name = li.m_location?.m_prefabName;
-                        string ln = LandmarkName(name, out string icon);
-                        if (ln == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
-                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
-                         .Prop("cat", "landmark").Prop("icon", icon).Prop("label", ln).Prop("prefab", name).End();
-                    }
-            }
-            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: landmarks: " + e.Message); }
-            j.End().End();
-            Keep(j, "landmarks", sig_landmarks, mark_landmarks);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            foreach (var y in Set(j, slice, "landmarks", "Landmarks", locs[5], 4,
+                li => LandmarkName(li.m_location?.m_prefabName, out _) != null && Shown(li), MixAt,
+                (w, li) => { string ln = LandmarkName(li.m_location.m_prefabName, out string icon); Location(w, li, "landmark", icon, ln); w.End(); })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- Fuling camps, tar pits, drake nests and guck trees, on explored ground
-            long sig_camps = locSig;
-            if (!Reuse(j, "camps", sig_camps))
-            {
-            int mark_camps = j.Mark();
-            j.BeginObject().Prop("id", "camps").Prop("label", "Camps & resources").Key("markers").BeginArray();
-            try
-            {
-                    foreach (var li in locs[4])
-                    {
-                        string name = li.m_location?.m_prefabName;
-                        string cn = CampName(name, out string icon);
-                        if (cn == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
-                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
-                         .Prop("cat", "camp").Prop("icon", icon).Prop("label", cn).Prop("prefab", name).End();
-                    }
-            }
-            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: camps: " + e.Message); }
-            j.End().End();
-            Keep(j, "camps", sig_camps, mark_camps);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            foreach (var y in Set(j, slice, "camps", "Camps & resources", locs[4], 5,
+                li => CampName(li.m_location?.m_prefabName, out _) != null && Shown(li), MixAt,
+                (w, li) => { string cn = CampName(li.m_location.m_prefabName, out string icon); Location(w, li, "camp", icon, cn); w.End(); })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- traders (Haldor, Hildir, the Bog Witch), on explored ground like the altars
-            long sig_traders = locSig;
-            if (!Reuse(j, "traders", sig_traders))
-            {
-            int mark_traders = j.Mark();
-            j.BeginObject().Prop("id", "traders").Prop("label", "Traders").Key("markers").BeginArray();
-            try
-            {
-                    foreach (var li in locs[3])
-                    {
-                        string name = li.m_location?.m_prefabName;
-                        string trader = TraderName(name, out string icon);
-                        if (trader == null || !Built(li) || !Visible(li.m_position.x, li.m_position.z)) continue;
-                        j.BeginObject().Prop("x", li.m_position.x, 1).Prop("z", li.m_position.z, 1).Prop("y", li.m_position.y, 1)
-                         .Prop("cat", "trader").Prop("icon", icon).Prop("label", trader).Prop("prefab", name).End();
-                    }
-            }
-            catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: traders: " + e.Message); }
-            j.End().End();
-            Keep(j, "traders", sig_traders, mark_traders);
-            }
+            foreach (var y in Set(j, slice, "traders", "Traders", locs[3], 6,
+                li => TraderName(li.m_location?.m_prefabName, out _) != null && Shown(li), MixAt,
+                (w, li) => { string tr = TraderName(li.m_location.m_prefabName, out string icon); Location(w, li, "trader", icon, tr); w.End(); })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
-
-            // --- portals
-            long sig_portals = portalSig;
-            if (!Reuse(j, "portals", sig_portals))
-            {
-            int mark_portals = j.Mark();
-            j.BeginObject().Prop("id", "portals").Prop("label", "Portals").Key("markers").BeginArray();
-            foreach (var p in portals)
-            {
-                if (!Visible(p.x, p.z)) continue;
-                j.BeginObject().Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("y", p.y, 1).Prop("cat", "portal").Prop("icon", "portal");
-                j.Prop("label", string.IsNullOrEmpty(p.tag) ? "(untagged)" : p.tag).Prop("tag", p.tag);
-                string by = Live.Stats.NameOfPlayerId(p.creator);   // who built it (a player the map has seen)
-                if (by != null) j.Prop("by", by);
-                j.End();
-            }
-            j.End().End();
-            Keep(j, "portals", sig_portals, mark_portals);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            // --- portals (who built each: a player the map has seen)
+            foreach (var y in Set(j, slice, "portals", "Portals", portals, Mix(7, Live.Stats.Keys().Count),
+                p => Visible(p.x, p.z), (h, p) => Mix(Mix(Mix(h, p.x, p.z), p.tag), p.creator),
+                (w, p) =>
+                {
+                    w.BeginObject().Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("y", p.y, 1).Prop("cat", "portal").Prop("icon", "portal");
+                    w.Prop("label", string.IsNullOrEmpty(p.tag) ? "(untagged)" : p.tag).Prop("tag", p.tag);
+                    string by = Live.Stats.NameOfPlayerId(p.creator);
+                    if (by != null) w.Prop("by", by);
+                    w.End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- pins shared on cartography tables (every table holds what was shared at it, so the
             // same pin is on many: keep one per spot)
+            timer = new PartTimer("tablepins");
             j.BeginObject().Prop("id", "tablepins").Prop("label", "Cartography table pins").Key("markers").BeginArray();
             var pinSeen = new HashSet<long>();
             int n = 0;
             foreach (var t in new List<Table>(tables.Values))
                 foreach (var p in t.pins)
                 {
-                    if (slice && (++n & 255) == 0 && WorldSweep.Due) yield return null;
+                    if (slice && (++n & 255) == 0 && WorldSweep.Due) { timer.Pause(); yield return null; timer.Resume(); }
                     long key = ((long)Mathf.RoundToInt(p.x) << 32) ^ (uint)Mathf.RoundToInt(p.z) ^ ((long)p.type << 58);
                     if (!pinSeen.Add(key) || !Visible(p.x, p.z)) continue;
                     j.BeginObject().Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("y", p.y, 1).Prop("cat", "tablepin").Prop("icon", TablePinIcon(p.type))
@@ -812,144 +751,85 @@ namespace MuninMap.World
                     j.End();
                 }
             j.End().End();
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            timer.Done();
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- tombstones
-            long sig_tombstones = tombSig;
-            if (!Reuse(j, "tombstones", sig_tombstones))
-            {
-            int mark_tombstones = j.Mark();
-            j.BeginObject().Prop("id", "tombstones").Prop("label", "Tombstones").Key("markers").BeginArray();
-            foreach (var t in tombs)
-            {
-                if (!Visible(t.x, t.z)) continue;
-                j.BeginObject().Prop("x", t.x, 1).Prop("z", t.z, 1).Prop("y", t.y, 1).Prop("cat", "tombstone").Prop("icon", "tombstone");
-                j.Prop("label", string.IsNullOrEmpty(t.owner) ? "Tombstone" : t.owner + "'s tombstone").Prop("owner", t.owner).Prop("when", t.when).End();
-            }
-            j.End().End();
-            Keep(j, "tombstones", sig_tombstones, mark_tombstones);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            foreach (var y in Set(j, slice, "tombstones", "Tombstones", tombs, 8,
+                t => Visible(t.x, t.z), (h, t) => Mix(Mix(Mix(h, t.x, t.z), t.owner), t.when),
+                (w, t) =>
+                {
+                    w.BeginObject().Prop("x", t.x, 1).Prop("z", t.z, 1).Prop("y", t.y, 1).Prop("cat", "tombstone").Prop("icon", "tombstone");
+                    w.Prop("label", string.IsNullOrEmpty(t.owner) ? "Tombstone" : t.owner + "'s tombstone").Prop("owner", t.owner).Prop("when", t.when).End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- wards and the ground they protect
-            long sig_wards = wardSig;
-            if (!Reuse(j, "wards", sig_wards))
-            {
-            int mark_wards = j.Mark();
-            j.BeginObject().Prop("id", "wards").Prop("label", "Wards").Key("markers").BeginArray();
-            foreach (var w in wards)
-            {
-                if (!Visible(w.x, w.z)) continue;
-                j.BeginObject().Prop("x", w.x, 1).Prop("z", w.z, 1).Prop("y", w.y, 1).Prop("cat", "ward").Prop("icon", "ward");
-                j.Prop("label", string.IsNullOrEmpty(w.owner) ? "Ward" : w.owner + "'s ward").Prop("owner", w.owner);
-                j.Prop("r", w.r, 1).Prop("on", w.on);
-                if (w.permitted != null) { j.Key("permitted").BeginArray(); foreach (var who in w.permitted) j.Value(who); j.End(); }
-                j.End();
-            }
-            j.End().End();
-            Keep(j, "wards", sig_wards, mark_wards);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            foreach (var y in Set(j, slice, "wards", "Wards", wards, 9,
+                wd => Visible(wd.x, wd.z),
+                (h, wd) => Mix(Mix(Mix(Mix(Mix(h, wd.x, wd.z), wd.owner), wd.on ? 1 : 0), Mathf.RoundToInt(wd.r)), wd.permitted == null ? 0 : string.Join(",", wd.permitted).GetHashCode()),
+                (w, wd) =>
+                {
+                    w.BeginObject().Prop("x", wd.x, 1).Prop("z", wd.z, 1).Prop("y", wd.y, 1).Prop("cat", "ward").Prop("icon", "ward");
+                    w.Prop("label", string.IsNullOrEmpty(wd.owner) ? "Ward" : wd.owner + "'s ward").Prop("owner", wd.owner);
+                    w.Prop("r", wd.r, 1).Prop("on", wd.on);
+                    if (wd.permitted != null) { w.Key("permitted").BeginArray(); foreach (var who in wd.permitted) w.Value(who); w.End(); }
+                    w.End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- runestones, with what they say
-            long sig_runestones = runeSig;
-            if (!Reuse(j, "runestones", sig_runestones))
-            {
-            int mark_runestones = j.Mark();
-            j.BeginObject().Prop("id", "runestones").Prop("label", "Runestones").Key("markers").BeginArray();
-            foreach (var r in runes)
-            {
-                if (r.vegvisir || !Visible(r.x, r.z)) continue;
-                j.BeginObject().Prop("x", r.x, 1).Prop("z", r.z, 1).Prop("y", r.y, 1).Prop("cat", "runestone").Prop("icon", r.vegvisir ? "vegvisir" : "runestone");
-                // a Vegvisir: what the game's hover says ("Vegvisir: Eikthyr"), never where it points
-                j.Prop("label", r.vegvisir ? (string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic) : !string.IsNullOrEmpty(r.topic) ? r.topic : r.name).Prop("text", r.text);
-                if (r.vegvisir) j.Prop("vegvisir", true);
-                j.End();
-            }
-            j.End().End();
-            Keep(j, "runestones", sig_runestones, mark_runestones);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            foreach (var y in Set(j, slice, "runestones", "Runestones", runes, 10,
+                r => !r.vegvisir && Visible(r.x, r.z), (h, r) => Mix(Mix(Mix(h, r.x, r.z), r.text), r.topic),
+                (w, r) =>
+                {
+                    w.BeginObject().Prop("x", r.x, 1).Prop("z", r.z, 1).Prop("y", r.y, 1).Prop("cat", "runestone").Prop("icon", "runestone");
+                    w.Prop("label", !string.IsNullOrEmpty(r.topic) ? r.topic : r.name).Prop("text", r.text);
+                    w.End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- mountain tops on explored ground; the highest of those shown is named so
-            long sig_peaks = Mix(fogSig, Peaks.All.Count);
-            if (!Reuse(j, "peaks", sig_peaks))
-            {
-            int mark_peaks = j.Mark();
-            j.BeginObject().Prop("id", "peaks").Prop("label", "Peaks").Key("markers").BeginArray();
-            bool first = true;
-            foreach (var pk in Peaks.All)   // highest first
-            {
-                if (!Visible(pk.x, pk.z)) continue;
-                j.BeginObject().Prop("x", pk.x, 1).Prop("z", pk.z, 1).Prop("cat", "peak").Prop("icon", "peak")
-                 .Prop("label", (first ? "Highest peak · " : "Peak · ") + Mathf.RoundToInt(pk.height) + " m").Prop("height", pk.height, 0).End();
-                first = false;
-            }
-            j.End().End();
-            Keep(j, "peaks", sig_peaks, mark_peaks);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            bool firstPeak = true;
+            foreach (var y in Set(j, slice, "peaks", "Peaks", Peaks.All, 11,
+                pk => Visible(pk.x, pk.z), (h, pk) => Mix(Mix(h, pk.x, pk.z), Mathf.RoundToInt(pk.height)),
+                (w, pk) =>
+                {
+                    w.BeginObject().Prop("x", pk.x, 1).Prop("z", pk.z, 1).Prop("cat", "peak").Prop("icon", "peak")
+                     .Prop("label", (firstPeak ? "Highest peak · " : "Peak · ") + Mathf.RoundToInt(pk.height) + " m").Prop("height", pk.height, 0).End();
+                    firstPeak = false;   // (highest first)
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- signs with something written on them, on explored ground
-            long sig_signs = signSig;
-            if (!Reuse(j, "signs", sig_signs))
-            {
-            int mark_signs = j.Mark();
-            j.BeginObject().Prop("id", "signs").Prop("label", "Signs").Key("markers").BeginArray();
-            foreach (var s in signs)
-            {
-                if (!Visible(s.x, s.z)) continue;
-                j.BeginObject().Prop("x", s.x, 1).Prop("z", s.z, 1).Prop("y", s.y, 1).Prop("cat", "sign").Prop("icon", "sign")
-                 .Prop("label", s.text).Prop("author", s.author).End();
-            }
-            j.End().End();
-            Keep(j, "signs", sig_signs, mark_signs);
-            }
+            foreach (var y in Set(j, slice, "signs", "Signs", signs, 12,
+                s => Visible(s.x, s.z), (h, s) => Mix(Mix(Mix(h, s.x, s.z), s.text), s.author),
+                (w, s) => w.BeginObject().Prop("x", s.x, 1).Prop("z", s.z, 1).Prop("y", s.y, 1).Prop("cat", "sign").Prop("icon", "sign")
+                           .Prop("label", s.text).Prop("author", s.author).End())) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
-
-            // --- Vegvisirs: their own set, named as the game's hover names them
-            long sig_vegvisirs = runeSig;
-            if (!Reuse(j, "vegvisirs", sig_vegvisirs))
-            {
-            int mark_vegvisirs = j.Mark();
-            j.BeginObject().Prop("id", "vegvisirs").Prop("label", "Vegvisirs").Key("markers").BeginArray();
-            foreach (var r in runes)
-            {
-                if (!r.vegvisir || !Visible(r.x, r.z)) continue;
-                j.BeginObject().Prop("x", r.x, 1).Prop("z", r.z, 1).Prop("y", r.y, 1).Prop("cat", "vegvisir").Prop("icon", "vegvisir");
-                j.Prop("label", string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic).End();
-            }
-            j.End().End();
-            Keep(j, "vegvisirs", sig_vegvisirs, mark_vegvisirs);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            // --- Vegvisirs: their own set, named as the game's hover names them (never where they point)
+            foreach (var y in Set(j, slice, "vegvisirs", "Vegvisirs", runes, 13,
+                r => r.vegvisir && Visible(r.x, r.z), (h, r) => Mix(Mix(Mix(h, r.x, r.z), r.name), r.topic),
+                (w, r) =>
+                {
+                    w.BeginObject().Prop("x", r.x, 1).Prop("z", r.z, 1).Prop("y", r.y, 1).Prop("cat", "vegvisir").Prop("icon", "vegvisir");
+                    w.Prop("label", string.IsNullOrEmpty(r.topic) ? r.name : r.name + ": " + r.topic).End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- player beds (where each one respawns)
-            long sig_beds = bedSig;
-            if (!Reuse(j, "beds", sig_beds))
-            {
-            int mark_beds = j.Mark();
-            j.BeginObject().Prop("id", "beds").Prop("label", "Beds").Key("markers").BeginArray();
-            foreach (var b in beds)
-            {
-                if (!Visible(b.x, b.z)) continue;
-                j.BeginObject().Prop("x", b.x, 1).Prop("z", b.z, 1).Prop("y", b.y, 1).Prop("cat", "bed").Prop("icon", "bed");
-                j.Prop("label", b.owner + "'s bed").Prop("owner", b.owner).End();
-            }
-            j.End().End();
-            Keep(j, "beds", sig_beds, mark_beds);
-            }
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            foreach (var y in Set(j, slice, "beds", "Beds", beds, 14,
+                b => Visible(b.x, b.z), (h, b) => Mix(Mix(h, b.x, b.z), b.owner),
+                (w, b) =>
+                {
+                    w.BeginObject().Prop("x", b.x, 1).Prop("z", b.z, 1).Prop("y", b.y, 1).Prop("cat", "bed").Prop("icon", "bed");
+                    w.Prop("label", b.owner + "'s bed").Prop("owner", b.owner).End();
+                })) yield return y;
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- player bases (clusters of built pieces), named after a portal inside them when there is one
+            timer = new PartTimer("bases");
             j.BeginObject().Prop("id", "bases").Prop("label", "Player bases").Key("markers").BeginArray();
             try
             {
@@ -978,17 +858,20 @@ namespace MuninMap.World
             }
             catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: bases: " + e.Message); }
             j.End().End();
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            timer.Done();
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- vehicles (from the same sweep)
+            timer = new PartTimer("vehicles");
             j.BeginObject().Prop("id", "vehicles").Prop("label", "Boats & carts").PropRaw("markers", Vehicles.GetMarkersJson()).End();
-
-            if (slice && WorldSweep.Due) yield return null;   // the rest next frame
+            timer.Done();
+            if (slice && WorldSweep.Due) yield return null;
 
             // --- custom markers.json
+            timer = new PartTimer("custom");
             string custom = LoadCustom();
             if (custom != null) j.Raw(custom);   // one or more set objects, comma-joined
+            timer.Done();
 
             j.End();   // sets
             j.End();

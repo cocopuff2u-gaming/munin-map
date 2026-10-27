@@ -307,7 +307,8 @@ namespace MuninMap.World
             ZLog.Log($"MuninMap: world sweep #{Sweeps}: {seen} objects in {LastSweepSeconds:0.0}s -> {Structures.Total} pieces ({changedChunks} chunks changed), "
                    + $"{Vegetation.LastTrees} trees, {Vegetation.LastRocks} rocks, {TerrainPatches.Count} terraformed zones, {rerendered} zones re-rendered, "
                    + $"{WorldObjects.Total} 3D objects ({changedObjectChunks} chunks changed), {Models.ModelStore.QueueLength} models to export; "
-                   + $"longest frame {longestMs:0.0}ms in {longestPart}{(longestGc ? " (with a garbage collection)" : "")}, {GC.CollectionCount(0) - gcStart} garbage collections ({gcFrames} in sweep frames), server at {(Time.frameCount - frameStart) / Math.Max(0.1, LastSweepSeconds):0} fps" + (took.Count > 0 ? " (" + string.Join(", ", took) + ")" : ""));
+                   + $"longest frame {longestMs:0.0}ms in {longestPart}{(longestGc ? " (with a garbage collection)" : "")}, {GC.CollectionCount(0) - gcStart} garbage collections ({gcFrames} in sweep frames), server at {(Time.frameCount - frameStart) / Math.Max(0.1, LastSweepSeconds):0} fps" + (took.Count > 0 ? " (" + string.Join(", ", took) + ")" : "")
+                   + (Markers.SlowParts() is string slow && slow.Length > 0 ? "; " + slow : ""));
             if (between.Length > 0) ZLog.Log("MuninMap: sweep #" + Sweeps + between);
             gcAtEnd = GC.CollectionCount(0); endTime = Time.realtimeSinceStartup;
             Live.Stats.OnSweep();

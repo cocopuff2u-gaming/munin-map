@@ -107,13 +107,20 @@ namespace MuninMap.Tiles
                 zones[kv.Key] = list.ToArray();
                 zoneHash[kv.Key] = h;
             }
-            // zones that emptied out entirely
-            foreach (var key in new List<long>(zones.Keys))
+            // zones that emptied out entirely: only when there are any (every zone seen is in zones, so
+            // none emptied when the counts match); listing all the zones' keys and checking each took
+            // most of a frame on a big world, every sweep
+            if (zones.Count != seen.Count)
             {
-                if (seen.Contains(key)) continue;
-                zones.TryRemove(key, out _);
-                zoneHash.TryRemove(key, out _);
-                changed.Add(key);
+                int k = 0;
+                foreach (var key in new List<long>(zones.Keys))
+                {
+                    if ((++k & 1023) == 0 && WorldSweep.Due) yield return null;
+                    if (seen.Contains(key)) continue;
+                    zones.TryRemove(key, out _);
+                    zoneHash.TryRemove(key, out _);
+                    changed.Add(key);
+                }
             }
             LastTrees = trees; LastRocks = rocks;
             building = null;
@@ -172,13 +179,15 @@ namespace MuninMap.Tiles
         private static void SaveCache()
         {
             if (cachePath == null) return;
-            var snap = new List<KeyValuePair<long, Point[]>>(zones);
-            var hashes = new Dictionary<long, int>(zoneHash);
             string path = cachePath;
             new System.Threading.Thread(() =>
             {
                 try
                 {
+                    // copied here, off the game's thread (a big world's copy took a good part of a frame):
+                    // both are concurrent dictionaries, and a zone's points are replaced, never changed
+                    var snap = new List<KeyValuePair<long, Point[]>>(zones);
+                    var hashes = new Dictionary<long, int>(zoneHash);
                     using (var bw = new BinaryWriter(File.Create(path + ".tmp")))
                     {
                         bw.Write(snap.Count);
