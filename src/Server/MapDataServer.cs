@@ -187,7 +187,7 @@ namespace MuninMap
             if (worldChanged)
             {
                 worldChanged = false;
-                Send("{\"t\":\"world\",\"rev\":" + worldRev + ",\"stats\":" + Stats.Json + "}");
+                Send("{\"t\":\"world\",\"rev\":" + worldRev + ",\"stats\":" + Stats.FreshJson() + "}");
             }
         }
 
@@ -566,7 +566,7 @@ namespace MuninMap
             switch (rest)
             {
                 case "players.json": return Text(e, Players.Json, "application/json", nocache: true);
-                case "stats.json": return Text(e, Stats.Json, "application/json", nocache: true);
+                case "stats.json": return Text(e, Stats.FreshJson(), "application/json", nocache: true);
                 case "events.json": return Text(e, Events.RecentJson, "application/json", nocache: true);
                 case "events/older.json":
                 {

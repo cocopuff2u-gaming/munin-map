@@ -71,6 +71,34 @@ namespace MuninMap.Live
 
         public static string Json => json;
 
+        // The stats text is made only when someone wants it: it was remade from scratch every player
+        // tick (every half second, world keys, raids, forecast, every player ever seen), page open or
+        // not. Now a change only marks it stale; a web thread that wants it asks, and the game's thread
+        // remakes it on its next tick (Serve) while the web thread waits, at most 1.5 s.
+        private static volatile bool stale = true, asked;
+        private static readonly object gate = new object();
+
+        // any thread: the stats, remade first when they changed
+        public static string FreshJson()
+        {
+            if (!stale) return json;
+            lock (gate)
+            {
+                if (!stale) return json;
+                asked = true;
+                System.Threading.Monitor.Wait(gate, 1500);
+            }
+            return json;
+        }
+
+        // the game's thread, every player tick: remake the stats if someone is waiting for them
+        public static void Serve()
+        {
+            if (!asked) return;
+            Rebuild(-1);
+            lock (gate) { asked = false; System.Threading.Monitor.PulseAll(gate); }
+        }
+
         // old key -> new key for entries moved over on load (Live/WorldEvents keeps the same keys)
         private static readonly Dictionary<string, string> rekeyed = new Dictionary<string, string>();
         public static string Rekey(string key) => key != null && rekeyed.TryGetValue(key, out string k) ? k : key;
@@ -334,7 +362,8 @@ namespace MuninMap.Live
             }
             if (online.Count > peakOnline) { peakOnline = online.Count; peakOnlineUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture); dirty = true; }
             if (dt > 0) dirty = true;
-            Rebuild(online.Count);
+            lastOnlineCount = online.Count;
+            stale = true;
         }
 
         public static void OnRevealed(string key, string name, int cells)
@@ -353,11 +382,11 @@ namespace MuninMap.Live
                 int n = s.playerId != 0L && b.TryGetValue(s.playerId, out int c) ? c : 0;
                 if (n != s.built) { s.built = n; dirty = true; }
             }
-            Rebuild(-1);
+            stale = true;
         }
 
         // world events (Live/WorldEvents), each credited to the players who were there
-        public static void OnRaid(List<ZNetPeer> there) { raidsTotal++; foreach (var p in there) Get(Players.KeyOf(p), p.m_playerName).raids++; dirty = true; Rebuild(-1); }
+        public static void OnRaid(List<ZNetPeer> there) { raidsTotal++; foreach (var p in there) Get(Players.KeyOf(p), p.m_playerName).raids++; dirty = true; stale = true; }
         public static void OnBossKill(List<ZNetPeer> there, string boss = null)
         {
             bossKillsTotal++;
@@ -367,7 +396,7 @@ namespace MuninMap.Live
                 s.bossKills++;
                 if (!string.IsNullOrEmpty(boss) && !s.bossesSeen.Contains(boss)) s.bossesSeen.Add(boss);
             }
-            dirty = true; Rebuild(-1);
+            dirty = true; stale = true;
         }
         public static void OnFound(List<ZNetPeer> there, string what = null)
         {
@@ -377,9 +406,9 @@ namespace MuninMap.Live
                 s.finds++;
                 if (!string.IsNullOrEmpty(what)) { s.found.Add(what); if (s.found.Count > 30) s.found.RemoveAt(0); }
             }
-            dirty = true; Rebuild(-1);
+            dirty = true; stale = true;
         }
-        public static void OnNightSlept() { nightsSlept++; dirty = true; Rebuild(-1); }
+        public static void OnNightSlept() { nightsSlept++; dirty = true; stale = true; }
 
         // the bosses in the order the game has them, and whether the world has beaten each
         // (the game's own "defeated_" keys), with the discoveries Live/WorldEvents keeps
@@ -449,6 +478,7 @@ namespace MuninMap.Live
         private static void Rebuild(int onlineCount)
         {
             if (onlineCount >= 0) lastOnlineCount = onlineCount;
+            stale = false;
             try
             {
                 var j = new JsonWriter(4096);

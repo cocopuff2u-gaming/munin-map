@@ -276,6 +276,7 @@ namespace MuninMap
                     Players.Refresh(mapDataServer.players);
                     mapDataServer.BroadcastPlayers();
                     Stats.OnTick(Players.Current);
+                    Stats.Serve();   // the stats text, remade only when a browser is waiting for it
                     Activity.Sample(Players.Current);
                 }
                 catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning("MuninMap: player snapshot failed: " + e.Message); }
