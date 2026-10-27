@@ -295,6 +295,12 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
   #btn-export { display: none; }
   .pill { padding: 4px 8px; }
 }
+/* a phone held upright: the menus follow the phone's own light or dark setting, and the 2D | 3D
+   switch keeps its room (with the sun / moon button the bar ran off the screen) */
+@media (max-width: 440px) {
+  #btn-theme { display: none; }
+  .mode-switch button { padding: 0 6px; }
+}
 
 /* export dialog */
 .dialog[hidden] { display: none; }
