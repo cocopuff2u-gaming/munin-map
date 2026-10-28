@@ -23,7 +23,20 @@ namespace MuninMap.Live
             public float x, y, z, yaw, health, maxHealth, stamina, eitr, wisp;
             public bool hasPos, tracked, hidden, dead, pvp, inBed, hasWeather;
             public Weather.Now weather;
-            public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility (prefab names, "" when empty)
+            public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility, trinket (prefab names, "" when empty)
+            public int[] quality;   // the item level, for the slots the game sends one (right, left, shoulder); 0 unknown
+            public Look look;
+            public int baseValue;   // the game's count of base pieces around them (fires, beds, workbenches): 3 or more is a base
+            public int ping; public float quality01, inBps, outBps; public int sendQueue;
+            public string version, platform; public uint network; public bool crossplay;   // their connection, from the server's socket (ping 0: not known)
+        }
+
+        // how the character looks, as their game syncs it for others to draw them
+        public struct Look
+        {
+            public int model;                    // 0 male, 1 female
+            public Vector3 skin, hair;           // colours (0-1)
+            public string hairItem, beardItem;   // prefab names
         }
 
         private static readonly List<Snapshot> current = new List<Snapshot>();
@@ -37,8 +50,13 @@ namespace MuninMap.Live
         private static readonly int hashStamina = "stamina".GetStableHashCode();
         private static readonly int hashEitr = "eitr".GetStableHashCode();
         // what the player has equipped, as the visual-equipment sync stores it: item name hashes
-        private static readonly int[] hashGear = { "RightItem".GetStableHashCode(), "LeftItem".GetStableHashCode(), "ChestItem".GetStableHashCode(), "HelmetItem".GetStableHashCode(), "LegItem".GetStableHashCode(), "ShoulderItem".GetStableHashCode(), "UtilityItem".GetStableHashCode() };
-        public static readonly string[] GearSlots = { "right", "left", "chest", "helmet", "legs", "shoulder", "utility" };
+        private static readonly int[] hashGear = { "RightItem".GetStableHashCode(), "LeftItem".GetStableHashCode(), "ChestItem".GetStableHashCode(), "HelmetItem".GetStableHashCode(), "LegItem".GetStableHashCode(), "ShoulderItem".GetStableHashCode(), "UtilityItem".GetStableHashCode(), "TrinketItem".GetStableHashCode() };
+        public static readonly string[] GearSlots = { "right", "left", "chest", "helmet", "legs", "shoulder", "utility", "trinket" };
+        private const int Utility = 6;
+        // the item level, which the game sends only for what's in the hands and the cape (per slot above; 0 none)
+        private static readonly int[] hashQuality = { "RightItemQuality".GetStableHashCode(), "LeftItemQuality".GetStableHashCode(), 0, 0, 0, "ShoulderItemQuality".GetStableHashCode(), 0, 0 };
+        private static readonly int hashModel = "ModelIndex".GetStableHashCode(), hashSkin = "SkinColor".GetStableHashCode(), hashHairColor = "HairColor".GetStableHashCode();
+        private static readonly int hashHair = "HairItem".GetStableHashCode(), hashBeard = "BeardItem".GetStableHashCode(), hashBase = "baseValue".GetStableHashCode();
         private static Dictionary<int, string> itemNames;
 
         // item name hash -> prefab name, from the object database (built once, lazily)
@@ -120,8 +138,41 @@ namespace MuninMap.Live
                     s.stamina = zdo.GetFloat(hashStamina, -1f);
                     s.eitr = zdo.GetFloat(hashEitr, -1f);
                     s.gear = new string[hashGear.Length];
-                    for (int g = 0; g < hashGear.Length; g++) { try { s.gear[g] = ItemName(zdo.GetInt(hashGear[g], 0)); } catch { s.gear[g] = ""; } }
-                    try { s.wisp = WispRange(zdo.GetInt(hashGear[hashGear.Length - 1], 0)); } catch { }
+                    s.quality = new int[hashGear.Length];
+                    for (int g = 0; g < hashGear.Length; g++)
+                    {
+                        try { s.gear[g] = ItemName(zdo.GetInt(hashGear[g], 0)); } catch { s.gear[g] = ""; }
+                        if (hashQuality[g] != 0 && s.gear[g].Length > 0) try { s.quality[g] = zdo.GetInt(hashQuality[g], 0); } catch { }
+                    }
+                    try { s.wisp = WispRange(zdo.GetInt(hashGear[Utility], 0)); } catch { }
+                    try
+                    {
+                        s.look.model = zdo.GetInt(hashModel, 0);
+                        s.look.skin = zdo.GetVec3(hashSkin, Vector3.one); s.look.hair = zdo.GetVec3(hashHairColor, Vector3.one);
+                        s.look.hairItem = ItemName(zdo.GetInt(hashHair, 0)); s.look.beardItem = ItemName(zdo.GetInt(hashBeard, 0));
+                        s.baseValue = zdo.GetInt(hashBase, 0);
+                    }
+                    catch { }
+                    try
+                    {
+                        float localQ = 0f, remoteQ = 0f, outB = 0f, inB = 0f; int ping = 0;
+                        peer.m_socket?.GetConnectionQuality(out localQ, out remoteQ, out ping, out outB, out inB);
+                        if (ping > 0) { s.ping = ping; s.quality01 = Mathf.Clamp01(Mathf.Min(localQ, remoteQ)); }
+                        s.inBps = inB; s.outBps = outB;
+                        s.sendQueue = peer.m_socket?.GetSendQueueSize() ?? 0;
+                    }
+                    catch { }
+                    // their game: version and network version (from when they joined), and the platform
+                    // (Steam, or through crossplay: Steam, Xbox...). Never their address.
+                    if (Patches.PeerInfo_Patch.TryGet(peer.m_rpc, out var pi)) { s.version = pi.version; s.network = pi.network; }
+                    try
+                    {
+                        s.crossplay = peer.m_socket != null && peer.m_socket.GetType().Name.Contains("PlayFab");
+                        string host = peer.m_socket?.GetHostName() ?? "";
+                        int us = host.IndexOf('_');
+                        s.platform = us > 0 ? host.Substring(0, us) : s.crossplay ? "" : "Steam";
+                    }
+                    catch { }
                     s.dead = zdo.GetBool(hashDead, false);
                     try { s.playerId = zdo.GetLong(ZDOVars.s_playerID, 0L); } catch { }
                     s.pvp = zdo.GetBool(hashPvp, false);
@@ -146,6 +197,17 @@ namespace MuninMap.Live
             hasWorldWind = Weather.At(Vector3.zero, out worldWind);
             json = Build();
         }
+
+        // {"model":0,"skin":"#rrggbb","hairColor":"#rrggbb","hair":"Hair3","beard":"Beard5"}
+        public static void WriteLook(JsonWriter j, Look l)
+        {
+            j.Key("look").BeginObject().Prop("model", l.model).Prop("skin", Hex(l.skin)).Prop("hairColor", Hex(l.hair));
+            if (!string.IsNullOrEmpty(l.hairItem)) j.Prop("hair", l.hairItem);
+            if (!string.IsNullOrEmpty(l.beardItem)) j.Prop("beard", l.beardItem);
+            j.End();
+        }
+        public static string Hex(Vector3 c) => "#" + B(c.x) + B(c.y) + B(c.z);
+        private static string B(float v) => ((int)Mathf.Round(Mathf.Clamp01(v) * 255f)).ToString("x2");
 
         private static bool hasWorldWind;
         private static Weather.Now worldWind;
@@ -172,7 +234,18 @@ namespace MuninMap.Live
                     j.Key("gear").BeginObject();
                     for (int g = 0; g < s.gear.Length; g++) if (!string.IsNullOrEmpty(s.gear[g])) j.Prop(GearSlots[g], s.gear[g]);
                     j.End();
+                    j.Key("levels").BeginObject();
+                    for (int g = 0; g < s.gear.Length; g++) if (s.quality != null && s.quality[g] > 0) j.Prop(GearSlots[g], s.quality[g]);
+                    j.End();
                 }
+                WriteLook(j, s.look);
+                var gear = s.gear;
+                if (gear != null) j.Prop("portrait", Models.Portraits.Id(s.look, slot => { int g = Array.IndexOf(GearSlots, slot); return g >= 0 && g < gear.Length ? gear[g] : ""; }));
+                j.Prop("atBase", s.baseValue >= 3);
+                if (s.ping > 0) j.Prop("ping", s.ping).Prop("netQ", s.quality01, 2).Prop("sendQ", s.sendQueue).Prop("inBps", s.inBps, 0).Prop("outBps", s.outBps, 0);
+                if (!string.IsNullOrEmpty(s.version)) j.Prop("version", s.version).Prop("netVersion", (long)s.network);
+                if (!string.IsNullOrEmpty(s.platform)) j.Prop("platform", s.platform);
+                if (s.crossplay) j.Prop("crossplay", true);
                 j.Prop("dead", s.dead).Prop("pvp", s.pvp).Prop("inBed", s.inBed).Prop("hidden", s.hidden);
                 if (s.hasPos)
                 {

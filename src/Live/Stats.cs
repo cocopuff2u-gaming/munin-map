@@ -45,6 +45,19 @@ namespace MuninMap.Live
             public List<string> bossesSeen = new List<string>();   // bosses they were there for, first time each
             public List<string> found = new List<string>();        // places they were first to find (the last 30)
             public long deathAt; public float deathX, deathZ; public string deathBiome = "";   // their last death (unix, where)
+            public Dictionary<string, int> levels = new Dictionary<string, int>();   // the level of what they wore, where the game says (slot -> level)
+            public bool hasLook; public Players.Look look;                          // how they look, last seen
+            // more to their story (counted from when this was added; position-based ones only while the map
+            // can follow them)
+            public Dictionary<string, double> biomeTime = new Dictionary<string, double>();   // seconds in each biome
+            public Dictionary<string, int> biomeDeaths = new Dictionary<string, int>();
+            public double afk, atBase, sailing, sailed, dungeon;   // seconds (sailed: metres)
+            public int closeCalls; public float lowHealth = -1f;    // dips under 10% health and lived; the least health they've had
+            public float highest = float.NaN, farthest;             // height above the sea; metres from the middle of the world
+            public Dictionary<string, int> builtDays = new Dictionary<string, int>();   // pieces standing at the end of each day (UTC), the last 8
+            public double ping = -1;                               // their usual ping (ms, slowly averaged)
+            // (not saved) the AFK clock and the close-call latch
+            public double idleFor; public float idleX, idleZ, idleYaw; public bool closeArmed = true;
         }
 
         private static long Unix() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -144,6 +157,29 @@ namespace MuninMap.Live
                         if (fnd != null) foreach (var f in fnd) if (f is string fn) s.found.Add(fn);
                         s.deathAt = (long)JsonParser.Num(d, "deathAt"); s.deathBiome = JsonParser.Str(d, "deathBiome") ?? "";
                         s.deathX = (float)JsonParser.Num(d, "deathX"); s.deathZ = (float)JsonParser.Num(d, "deathZ");
+                        var lv = JsonParser.Obj(d, "levels");
+                        if (lv != null) foreach (var kv in lv) if (kv.Value is double q) s.levels[kv.Key] = (int)q;
+                        var lk = JsonParser.Obj(d, "look");
+                        if (lk != null)
+                        {
+                            s.hasLook = true;
+                            s.look.model = (int)JsonParser.Num(lk, "model");
+                            s.look.skin = FromHex(JsonParser.Str(lk, "skin")); s.look.hair = FromHex(JsonParser.Str(lk, "hairColor"));
+                            s.look.hairItem = JsonParser.Str(lk, "hair") ?? ""; s.look.beardItem = JsonParser.Str(lk, "beard") ?? "";
+                        }
+                        var bt = JsonParser.Obj(d, "biomeTime");
+                        if (bt != null) foreach (var kv in bt) if (kv.Value is double sec2) s.biomeTime[kv.Key] = sec2;
+                        var bd = JsonParser.Obj(d, "biomeDeaths");
+                        if (bd != null) foreach (var kv in bd) if (kv.Value is double n2) s.biomeDeaths[kv.Key] = (int)n2;
+                        var bdy = JsonParser.Obj(d, "builtDays");
+                        if (bdy != null) foreach (var kv in bdy) if (kv.Value is double n3) s.builtDays[kv.Key] = (int)n3;
+                        s.afk = JsonParser.Num(d, "afk"); s.atBase = JsonParser.Num(d, "atBase"); s.sailing = JsonParser.Num(d, "sailing");
+                        s.sailed = JsonParser.Num(d, "sailed"); s.dungeon = JsonParser.Num(d, "dungeon");
+                        s.closeCalls = (int)JsonParser.Num(d, "closeCalls");
+                        s.lowHealth = d.ContainsKey("lowHealth") ? (float)JsonParser.Num(d, "lowHealth") : -1f;
+                        s.highest = d.ContainsKey("highest") ? (float)JsonParser.Num(d, "highest") : float.NaN;
+                        s.farthest = (float)JsonParser.Num(d, "farthest");
+                        s.ping = d.ContainsKey("ping") ? JsonParser.Num(d, "ping") : -1;
                         var gs = JsonParser.Obj(d, "gear");
                         if (gs != null) foreach (var kv in gs) if (kv.Value is string item && item.Length > 0) s.gear[kv.Key] = item;
                         if (string.IsNullOrEmpty(s.key)) continue;
@@ -223,6 +259,24 @@ namespace MuninMap.Live
             j.Key("gear").BeginObject();
             foreach (var kv in s.gear) j.Prop(kv.Key, kv.Value);
             j.End();
+            j.Key("levels").BeginObject();
+            foreach (var kv in s.levels) j.Prop(kv.Key, kv.Value);
+            j.End();
+            if (s.hasLook)
+            {
+                Players.WriteLook(j, s.look);
+                var gear = s.gear;
+                j.Prop("portrait", Models.Portraits.Id(s.look, slot => gear.TryGetValue(slot, out string it) ? it : ""));
+            }
+            j.Key("biomeTime").BeginObject(); foreach (var kv in s.biomeTime) j.Prop(kv.Key, Math.Round(kv.Value), 0); j.End();
+            j.Key("biomeDeaths").BeginObject(); foreach (var kv in s.biomeDeaths) j.Prop(kv.Key, kv.Value); j.End();
+            j.Key("builtDays").BeginObject(); foreach (var kv in s.builtDays) j.Prop(kv.Key, kv.Value); j.End();
+            j.Prop("afk", Math.Round(s.afk), 0).Prop("atBase", Math.Round(s.atBase), 0).Prop("sailing", Math.Round(s.sailing), 0).Prop("sailed", Math.Round(s.sailed), 0).Prop("dungeon", Math.Round(s.dungeon), 0);
+            j.Prop("closeCalls", s.closeCalls);
+            if (s.lowHealth >= 0f) j.Prop("lowHealth", s.lowHealth, 0);
+            if (!float.IsNaN(s.highest)) j.Prop("highest", s.highest, 0);
+            j.Prop("farthest", s.farthest, 0);
+            if (s.ping >= 0) j.Prop("ping", s.ping, 0);
             j.Key("bossesSeen").BeginArray(); foreach (var b in s.bossesSeen) j.Value(b); j.End();
             j.Key("found").BeginArray(); foreach (var f in s.found) j.Value(f); j.End();
             if (s.deathAt > 0)
@@ -235,6 +289,14 @@ namespace MuninMap.Live
                 j.Key("stations").BeginArray(); foreach (var n in stations) j.Value(n); j.End();
             }
             j.End();
+        }
+
+        private static bool Same(Players.Look a, Players.Look b) => a.model == b.model && a.skin == b.skin && a.hair == b.hair && a.hairItem == b.hairItem && a.beardItem == b.beardItem;
+        private static Vector3 FromHex(string h)
+        {
+            if (h == null || h.Length != 7) return Vector3.one;
+            int v = int.Parse(h.Substring(1), NumberStyles.HexNumber);
+            return new Vector3(((v >> 16) & 255) / 255f, ((v >> 8) & 255) / 255f, (v & 255) / 255f);
         }
 
         // every player the map has ever seen (by key)
@@ -295,6 +357,7 @@ namespace MuninMap.Live
             {
                 who.deathX = x.Value; who.deathZ = z.Value;
                 try { who.deathBiome = Tiles.Palette.BiomeName((int)WorldGenerator.instance.GetBiome(x.Value, z.Value)); } catch { }
+                if (who.deathBiome.Length > 0) { who.biomeDeaths.TryGetValue(who.deathBiome, out int n); who.biomeDeaths[who.deathBiome] = n + 1; }
             }
             dirty = true;
         }
@@ -333,6 +396,57 @@ namespace MuninMap.Live
                         if (item.Length == 0) s.gear.Remove(slot); else s.gear[slot] = item;
                         dirty = true;
                     }
+                if (p.quality != null)
+                    for (int g = 0; g < p.quality.Length && g < Players.GearSlots.Length; g++)
+                    {
+                        string slot = Players.GearSlots[g];
+                        int q = string.IsNullOrEmpty(p.gear?[g]) ? 0 : p.quality[g];
+                        s.levels.TryGetValue(slot, out int had);
+                        if (had == q) continue;
+                        if (q == 0) s.levels.Remove(slot); else s.levels[slot] = q;
+                        dirty = true;
+                    }
+                if (!s.hasLook || !Same(s.look, p.look)) { s.look = p.look; s.hasLook = true; dirty = true; }
+                if (p.ping > 0) s.ping = s.ping < 0 ? p.ping : s.ping + (p.ping - s.ping) * Math.Min(1.0, dt / 600.0);   // (a ten-minute average)
+                // a close call: under 10% and lived (counted again only once back over 30%); the least health had
+                if (!p.dead && p.maxHealth > 0f && p.health > 0f)
+                {
+                    if (s.lowHealth < 0f || p.health < s.lowHealth) { s.lowHealth = p.health; dirty = true; }
+                    float f = p.health / p.maxHealth;
+                    if (f < 0.1f && s.closeArmed) { s.closeCalls++; s.closeArmed = false; dirty = true; }
+                    else if (f > 0.3f) s.closeArmed = true;
+                }
+                else if (p.dead && !s.closeArmed && s.closeCalls > 0) { s.closeCalls--; s.closeArmed = true; }   // (that one didn't end well: it was a death)
+                if (dt > 0 && p.baseValue >= 3) s.atBase += dt;
+                if (p.tracked && dt > 0)
+                {
+                    bool inDungeon = p.y > 1000f;   // dungeons and caves are built far above the world
+                    if (inDungeon) s.dungeon += dt;
+                    else
+                    {
+                        if (!string.IsNullOrEmpty(p.biome)) { s.biomeTime.TryGetValue(p.biome, out double bt); s.biomeTime[p.biome] = bt + dt; }
+                        float h = p.y - 30f;   // (the sea is at 30)
+                        if (float.IsNaN(s.highest) || h > s.highest) s.highest = h;
+                        float far = Mathf.Sqrt(p.x * p.x + p.z * p.z);
+                        if (far > s.farthest) s.farthest = far;
+                    }
+                    // AFK: not moved or turned for five minutes (counted from the start of it)
+                    float moved = Mathf.Sqrt((p.x - s.idleX) * (p.x - s.idleX) + (p.z - s.idleZ) * (p.z - s.idleZ));
+                    if (moved < 0.5f && Mathf.Abs(Mathf.DeltaAngle(p.yaw, s.idleYaw)) < 2f && !p.inBed)
+                    {
+                        s.idleFor += dt;
+                        if (s.idleFor >= 300) s.afk += s.idleFor >= 300 + dt ? dt : s.idleFor;
+                    }
+                    else { s.idleFor = 0; s.idleX = p.x; s.idleZ = p.z; s.idleYaw = p.yaw; }
+                    // sailing: standing over deep water, out of it (swimming sits lower), and moving
+                    if (!inDungeon && p.y > 29.6f && s.hasLast)
+                    {
+                        float ground = 30f;
+                        try { ground = WorldGenerator.instance.GetHeight(p.x, p.z); } catch { }
+                        double step = Math.Sqrt((p.x - s.lastX) * (p.x - s.lastX) + (p.z - s.lastZ) * (p.z - s.lastZ));
+                        if (ground < 27f && step / dt > 1.0 && step / dt < 60.0) { s.sailing += dt; s.sailed += step; }
+                    }
+                }
                 if (p.tracked)
                 {
                     if (s.hasLast)
@@ -377,10 +491,17 @@ namespace MuninMap.Live
         public static void OnSweep()
         {
             var b = Structures.Builders;
+            string today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             foreach (var s in players.Values)
             {
                 int n = s.playerId != 0L && b.TryGetValue(s.playerId, out int c) ? c : 0;
                 if (n != s.built) { s.built = n; dirty = true; }
+                // what stands at the end of each day, for "built this week"
+                if (s.playerId != 0L && (!s.builtDays.TryGetValue(today, out int was) || was != n))
+                {
+                    s.builtDays[today] = n; dirty = true;
+                    while (s.builtDays.Count > 8) s.builtDays.Remove(s.builtDays.Keys.Min());
+                }
             }
             stale = true;
         }
@@ -487,6 +608,7 @@ namespace MuninMap.Live
                 j.Key("server").BeginObject();
                 j.Prop("startedUtc", serverStartedUtc);
                 j.Prop("latestVersion", global::MuninMap.UpdateCheck.Latest).Prop("latestUrl", global::MuninMap.UpdateCheck.LatestUrl);   // (the release on GitHub, "" until known)
+                try { j.Prop("gameVersion", global::Version.CurrentVersion.ToString()); } catch { }
                 j.Prop("nowUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
                 j.Prop("online", lastOnlineCount);
                 WorldTime(j);

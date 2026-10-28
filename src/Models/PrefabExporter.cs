@@ -229,7 +229,7 @@ namespace MuninMap.Models
         private static bool IsLeafName(string n) => n.Contains("leaf") || n.Contains("leaves") || n.Contains("branch") || n.Contains("needle") || n.Contains("foliage") || n.Contains("canopy") || n.Contains("grass") || n.Contains("_bush") || n.StartsWith("bush", StringComparison.Ordinal) || n.Contains("shrub") || n.Contains("bloom") || n.Contains("flower");
         private static bool IsWoodName(string n) => n.Contains("bark") || n.Contains("trunk") || n.Contains("log") || n.Contains("stump") || n.Contains("root") || n.Contains("wood") || n.Contains("stem");
 
-        private static void ApplyMaterial(GlbWriter.Primitive prim, Material mat, string modelsDir, Palette.Rgb fallback, Result res)
+        internal static void ApplyMaterial(GlbWriter.Primitive prim, Material mat, string modelsDir, Palette.Rgb fallback, Result res)
         {
             prim.r = fallback.r / 255f; prim.g = fallback.g / 255f; prim.b = fallback.b / 255f;
             if (mat == null) return;

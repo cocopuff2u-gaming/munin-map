@@ -207,6 +207,7 @@ namespace MuninMap
             StaticCoroutine.Start(Perf.Wrap("web pings", WebPing.Pump()));
             StaticCoroutine.Start(Perf.Wrap("tile sampling", TileStore.MainThreadPump()));
             StaticCoroutine.Start(Perf.Wrap("model export", Models.ModelStore.Pump()));
+            StaticCoroutine.Start(Perf.Wrap("portraits", Models.Portraits.Pump()));
             TileStore.Start();
             World.MapIcons.Start(mapDataPath);
             World.ItemIcons.Start(mapDataPath);
@@ -266,6 +267,7 @@ namespace MuninMap
             Events.Add("leave", peer.m_playerName, "left the server");
             Stats.OnLeave(Players.KeyOf(peer), peer.m_playerName);
             Players.Forget(peer);
+            Patches.PeerInfo_Patch.Forget(peer.m_rpc);
         }
 
         // ---------------------------------------------------------------- loops (main thread)

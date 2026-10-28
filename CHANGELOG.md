@@ -15,6 +15,13 @@
 * **Raids and invasions** in the game map's red, with how long they have been going (or have left) under the name. Click anywhere on the area for when it began, who it came for and who is near. One switch in the Markers list (Raids & invasions) hides them.
 * **Boats**: raft, karve, longship, drakkar and trailer ship each have their own icon.
 * **Players**: a **Go to** button above Follow.
+* **A new player card**:
+  * **Their character in 3D** at the top: the game's own model in what they wear, hair, beard and skin and hair colour included. Drag it to turn it. The server builds each outfit once, the same way the character select screen does, as soon as it sees it, so the card opens with it at once. It keeps them with the other models (`portrait_<id>.glb`, with sharper textures in `models/hd`).
+  * **What their gear does**: armour, damage and block under each piece, and a total armour. The game shares the level of what's in their hands and of their cape (shown as stars); for the rest the card shows what the piece can be, level 1 to its highest. Click a piece for all of it: resistances, set bonus, effect, movement, durability, weight. The trinket slot is shown too.
+  * **Connection**: their ping and how good the game rates the link, as signal bars, live; and a Connection section with their platform (Steam, or crossplay), game version, network version, link quality and bandwidth. Their address is never shown.
+  * **Stats** (was All time) has more in it, recorded from this version on: a usual visit, deaths an hour, time since the last death, close calls (under 10% health and lived), the least health they've had, distance sailed, the farthest from the middle of the world, the highest point, pieces built this week, time at a base, time in dungeons, AFK time and their usual ping. Also time in each biome as one bar, and deaths by biome.
+  * **Their places** lists everything, scrolling, signs they wrote included. Click one to go there.
+  * First seen, first to find, crafting stations, the biome chips and the 2D / 3D button are no longer on the card.
 * **GitHub link and update check**: a GitHub button at the end of the top bar. The server asks GitHub for the latest release a minute after it starts and every 12 hours; when a newer one is out, the server log says so, the button gets a dot, a note in the bottom right corner says so until closed, and Stats > Server details links to it. New settings in `[Server]`: `show_github_link` and `check_updates` (both on; with `check_updates` off the server never contacts GitHub).
 
 **Fixed**

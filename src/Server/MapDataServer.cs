@@ -583,6 +583,13 @@ namespace MuninMap
                 case "markers.json": return Text(e, Markers.Json, "application/json", nocache: true);
                 case "hotspots.json": return Text(e, Hotspots.Json, "application/json", nocache: true);
                 case "items.json": return Text(e, ItemIcons.NamesJson, "application/json", nocache: false);
+                case "gear.json": return Text(e, ItemIcons.GearJson, "application/json", nocache: false);
+                case "portrait.json":
+                {
+                    string pj = Models.Portraits.Json(e.Request.QueryString["id"] ?? "");
+                    if (pj == null) { NotFound(res); return true; }
+                    return Text(e, pj, "application/json", nocache: true);
+                }
                 case "activity.json":
                 {
                     int.TryParse(e.Request.QueryString["hours"] ?? "3", out int hours);
@@ -686,7 +693,10 @@ namespace MuninMap
         {
             var res = e.Response;
             string name = path.Substring("/models/".Length);
+            string sub = "";
+            if (name.StartsWith("hd/", StringComparison.Ordinal) && name.EndsWith(".png", StringComparison.Ordinal)) { sub = "hd"; name = name.Substring(3); }   // (the portraits' textures)
             if (name.Length == 0 || name.Contains("/") || name.Contains("..") || name.Contains("\\")) { NotFound(res); return true; }
+            if (sub.Length > 0) name = Path.Combine(sub, name);
             string root = Models.ModelStore.Root;
             if (root == null) { NotFound(res); return true; }
             string full = Path.Combine(root, name);
