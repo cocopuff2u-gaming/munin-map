@@ -71,6 +71,8 @@ namespace MuninMap
         public static bool EVENT_LOG = true;
         public static float STATS_SAVE_INTERVAL = 60f;
         public static bool ENABLE_3D = true;
+        public static bool SHOW_GITHUB_LINK = true;
+        public static bool CHECK_UPDATES = true;
         // height tiles only feed the 3D view and the export: with 3D off nothing renders them
         public static int HeightMaxZoom => HEIGHT_MAX_ZOOM;   // the 3D view and the 2D contour lines both use them
         public static bool LEGACY_MAP = true;
@@ -289,6 +291,15 @@ namespace MuninMap
                 MuninConfig.ENABLE_3D,
                 "Offer the 3D view in the web map.").Value;
 
+            SHOW_GITHUB_LINK = config.Bind("Server", "show_github_link",
+                MuninConfig.SHOW_GITHUB_LINK,
+                "Show a link to Munin Map on GitHub in the web map's top bar (with a dot on it when a newer version is out).").Value;
+
+            CHECK_UPDATES = config.Bind("Server", "check_updates",
+                MuninConfig.CHECK_UPDATES,
+                "Ask GitHub for Munin Map's latest release when the server starts and every 12 hours, to tell when an update is out "
+                + "(the server log says so, and the web map's GitHub link). Off: the server never contacts GitHub.").Value;
+
             EXPORT_MODELS = config.Bind("Models", "export_models",
                 MuninConfig.EXPORT_MODELS,
                 "Export the game's prefab meshes (buildings, trees, rocks, ruins) as glTF for the 3D view. "
@@ -378,6 +389,9 @@ namespace MuninMap
             config["chunk_size"] = Tiles.TileMath.CHUNK_SIZE;
             config["water_level"] = Tiles.TileJob.WaterLevel;
             config["enable_3d"] = ENABLE_3D;
+            config["github_link"] = SHOW_GITHUB_LINK;
+            config["latest_version"] = UpdateCheck.Latest;
+            config["latest_url"] = UpdateCheck.LatestUrl;
             config["show_last_seen_position"] = SHOW_LAST_SEEN_POSITION;
             config["reveal_all"] = REVEAL_ALL;
             config["models"] = EXPORT_MODELS;

@@ -19,7 +19,7 @@ import { ActivityLayers } from './layers/activity.js';
 import { ContourGL } from './layers/contours.js';
 import { MeasureTool } from './measure.js';
 import { chunks, objects, prefabs, markers, stats } from './data.js';
-import { Sidebar } from './ui.js';
+import { Sidebar, newerVersion } from './ui.js';
 import { BiomeHover } from './biomehover.js';
 
 const $ = (s) => document.querySelector(s);
@@ -205,7 +205,7 @@ class App {
     markers.refresh();
     stats.refresh();
     connect();
-    on('hello', (f) => { if (f.config) { this.config = f.config; this.applyConfig(f.config); } });
+    on('hello', (f) => { if (f.config) { this.config = f.config; this.applyConfig(f.config); this.showGithub(); } });
     on('connection', (ok) => { $('#conn').hidden = ok; });
     on('players', (f) => this.showWind(f.data && f.data.windDeg));
     on('tiles', (f) => { $('#render-status').textContent = f.status ? `tiles ${f.status}` : ''; });
@@ -225,6 +225,19 @@ class App {
       const [x, y, z] = c.world_start_pos.split(',').map(Number);
       this.spawn = { x, z };
     }
+  }
+
+  // the GitHub link (unless the server turned it off), with a dot when the server found a newer
+  // release there: the version from the config, or from the stats once the check is done
+  showGithub(latest, url) {
+    const b = $('#btn-github'), c = this.config || {};
+    if (!b) return;
+    b.hidden = c.github_link === false;
+    latest = latest || c.latest_version || '';
+    const v = c.version || '', newer = latest && newerVersion(latest, v);
+    b.classList.toggle('update', !!newer);
+    b.href = newer ? (url || c.latest_url || 'https://github.com/cocopuff2u-gaming/munin-map/releases') : 'https://github.com/cocopuff2u-gaming/munin-map';
+    b.title = newer ? `Munin Map ${latest} is out (this server runs ${v}): see what's new` : `Munin Map${v ? ' ' + v : ''} on GitHub${latest ? ' (up to date)' : ''}`;
   }
 
   bindUi() {
@@ -255,6 +268,7 @@ class App {
     window.muninThemeShown = showTheme;   // (the browser's setting changed while no choice is kept)
     });
     showTheme();
+    this.showGithub();
     $('#btn-fullscreen').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); });
     $('#btn-link').addEventListener('click', async () => {
       this.updateHash();

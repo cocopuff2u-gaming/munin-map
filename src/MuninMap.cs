@@ -196,6 +196,7 @@ namespace MuninMap
         {
             StaticCoroutine.Start(Perf.Wrap("snapshot", PlayerSnapshotLoop()));
             StaticCoroutine.Start(Perf.Wrap("raids", Live.WorldEvents.RaidLoop()));
+            UpdateCheck.Start();
             StaticCoroutine.Start(Perf.Wrap("discoveries", Live.WorldEvents.DiscoveryLoop()));
             StaticCoroutine.Start(Perf.Wrap("fog", UpdateFogLoop()));
             StaticCoroutine.Start(Perf.Wrap("saves", SaveLoop()));

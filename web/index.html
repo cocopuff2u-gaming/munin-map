@@ -37,6 +37,7 @@ for (const u of ['config', 'data/markers.json', 'data/icons.json', 'data/pins.js
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 2 8.5 12 14l10-5.5L12 3Zm-8 9.2L2 13.3 12 19l10-5.7-2-1.1-8 4.5-8-4.5Z"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></symbol>
     <symbol id="i-players" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z"/></symbol>
     <symbol id="i-markers" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5Z"/></symbol>
     <symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20V10h3v10H4Zm6.5 0V4h3v16h-3ZM17 20v-7h3v7h-3Z"/></symbol>
@@ -77,6 +78,7 @@ for (const u of ['config', 'data/markers.json', 'data/icons.json', 'data/pins.js
       <button class="icon-btn" id="btn-measure" title="Measure distances and travel times" hidden><svg><use href="#i-ruler"/></svg></button>
       <button class="icon-btn" id="btn-link" title="Copy link to this view"><svg><use href="#i-link"/></svg></button>
       <button class="icon-btn" id="btn-export" title="Export"><svg><use href="#i-export"/></svg></button>
+      <a class="icon-btn" id="btn-github" href="https://github.com/cocopuff2u-gaming/munin-map" target="_blank" rel="noopener" title="Munin Map on GitHub" hidden><svg><use href="#i-github"/></svg></a>
       <button class="icon-btn" id="btn-theme" title="Light menus"><svg><use href="#i-sun"/></svg></button>
       <button class="icon-btn" id="btn-fullscreen" title="Fullscreen"><svg><use href="#i-fullscreen"/></svg></button>
       <div class="mode-switch" id="btn-mode" role="group" aria-label="Map view"><button type="button" data-mode="2d" class="on" aria-pressed="true" title="Flat map"><svg><use href="#i-2d"/></svg><span>2D</span></button><button type="button" data-mode="3d" aria-pressed="false" title="3D view"><svg><use href="#i-3d"/></svg><span>3D</span></button></div>

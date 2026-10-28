@@ -658,6 +658,7 @@ export class Sidebar {
     }
     this.renderDistances(q);   // how far the nearest of each is from the spawn
 
+    this.app.showGithub(s.latestVersion, s.latestUrl);
     // ---- the server's own details, folded away at first
     section('server', 'Server details', false).append(el(`<dl class="kv">
       <dt>Up since</dt><dd>${s.startedUtc ? new Date(s.startedUtc).toLocaleString() : '–'}</dd>
@@ -667,7 +668,7 @@ export class Sidebar {
       <dt>Render time / tile</dt><dd>${tiles.avgMs ? tiles.avgMs.toFixed(0) + ' ms' : '–'}${tiles.mainThreadSampling ? ' · main-thread' : ''}</dd>
       <dt>Max detail</dt><dd>${Math.pow(2, 7 - (tiles.maxRenderZoom ?? 7))} m / px</dd>
       <dt>3D models</dt><dd>${prefabs.stats.exported ?? 0} prefabs${prefabs.stats.unreadable ? ` (${prefabs.stats.unreadable} unreadable)` : ''}${prefabs.stats.queued ? ` +${prefabs.stats.queued} queued` : ''}</dd>
-      <dt>Munin Map</dt><dd>${escape(this.app.config?.version || '')}</dd>
+      <dt>Munin Map</dt><dd>${escape(this.app.config?.version || '')}${s.latestVersion ? (newerVersion(s.latestVersion, this.app.config?.version || '') ? ` · <a href="${escape(s.latestUrl || '')}" target="_blank" rel="noopener">${escape(s.latestVersion)} is out</a>` : ' · up to date') : ''}</dd>
     </dl>`));
   }
 
@@ -1045,4 +1046,12 @@ function sparkline(hist) {
   const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
   const area = line + ` L${pts[pts.length - 1][0].toFixed(1)} ${h - pad} L${pts[0][0].toFixed(1)} ${h - pad} Z`;
   return el(`<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line class="axis" x1="0" y1="${h - pad}" x2="${w}" y2="${h - pad}"/><path class="area" d="${area}"/><path d="${line}"/><title>peak ${max}</title></svg>`);
+}
+
+// "3.10.0" newer than "3.9.1", by number (anything after a '-' or '+' left out)
+export function newerVersion(a, b) {
+  const p = (v) => String(v).split(/[-+]/)[0].split('.').map((n) => parseInt(n, 10) || 0);
+  const A = p(a), B = p(b);
+  for (let i = 0; i < Math.max(A.length, B.length); i++) if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) > (B[i] || 0);
+  return false;
 }

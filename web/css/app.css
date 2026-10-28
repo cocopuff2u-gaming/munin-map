@@ -89,6 +89,10 @@ a { color: var(--accent); }
 .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .pill.on { color: var(--ok); border-color: rgba(88,194,125,.4); }
 #online-pill { display: inline-flex; align-items: center; }
+#btn-github { position: relative; display: grid; place-items: center; text-decoration: none; }
+#btn-github[hidden] { display: none; }
+#btn-github svg { fill: currentColor; }
+#btn-github.update::after { content: ""; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 2px var(--bg-2); }
 #online-pill b { font-weight: inherit; }
 #online-pill span { margin-left: .3em; }
 #online-pill svg { display: none; width: 14px; height: 14px; margin-right: 4px; }
@@ -305,7 +309,7 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 @media (max-width: 560px) {
   .topbar .title { display: none; }
   .search { margin-left: 0; }
-  #btn-export { display: none; }
+  #btn-export, #btn-github { display: none; }
   .pill { padding: 4px 8px; }
 }
 /* a phone held upright: the menus follow the phone's own light or dark setting, the online count

@@ -486,6 +486,7 @@ namespace MuninMap.Live
                 j.BeginObject();
                 j.Key("server").BeginObject();
                 j.Prop("startedUtc", serverStartedUtc);
+                j.Prop("latestVersion", global::MuninMap.UpdateCheck.Latest).Prop("latestUrl", global::MuninMap.UpdateCheck.LatestUrl);   // (the release on GitHub, "" until known)
                 j.Prop("nowUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
                 j.Prop("online", lastOnlineCount);
                 WorldTime(j);
