@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Threading;
 using UnityEngine;
 using MuninMap.Util;
 
@@ -8,7 +10,9 @@ namespace MuninMap.World
     // What makes a place heavy for the players' computers (their frame rate, not the server's): per
     // 64 m zone, the game's own grid, how many build pieces, lights and fires, creatures and items
     // lying on the ground. Counted by the sweep as it passes each object; a prefab's kind is looked
-    // up once. Only zones with a fair load are published.
+    // up once. Only zones with a fair load are published. The last sweep's list is kept in
+    // hotspots.json beside the world's map data, so after a restart the map has it at once (the
+    // first sweep takes a couple of minutes) instead of nothing.
     internal static class Hotspots
     {
         private const byte None = 0, Light = 1, Creature = 2, Item = 3;
@@ -19,6 +23,14 @@ namespace MuninMap.World
         private static volatile string json = "{\"cell\":64,\"zones\":[],\"pending\":true}";   // (until the first sweep is done)
 
         public static string Json => json;
+        private static string path;
+
+        public static void Load(string worldDir)
+        {
+            path = Path.Combine(worldDir, "hotspots.json");
+            try { if (File.Exists(path)) json = File.ReadAllText(path); }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: hotspots.json not readable: " + e.Message); }
+        }
 
         public static void Begin()
         {
@@ -88,7 +100,12 @@ namespace MuninMap.World
                 j.BeginArray().Value(zx).Value(zz).Value(c[0]).Value(c[1]).Value(c[2]).Value(c[3]).End();
             }
             j.End().End();
-            json = j.ToString();
+            string text = json = j.ToString();
+            if (path != null) ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { File.WriteAllText(path + ".tmp", text); if (File.Exists(path)) File.Delete(path); File.Move(path + ".tmp", path); }
+                catch (Exception e) { ZLog.LogWarning("MuninMap: could not write hotspots.json: " + e.Message); }
+            });
         }
 
         // a rough weight: a light (shadows, flicker, smoke) or a creature (its AI runs on a player's

@@ -44,6 +44,9 @@ namespace MuninMap.World
                     }
                 }
                 catch (Exception e) { ZLog.LogWarning("MuninMap: build-history.txt not readable: " + e.Message); }
+                // until the first sweep: the last picture kept stands for now (at most an hour older than
+                // the last sweep before the restart), so the map has changes to show at once
+                if (snaps.Count > 0) current = snaps[snaps.Count - 1];
             }
         }
 
