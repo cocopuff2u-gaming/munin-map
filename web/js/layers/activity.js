@@ -23,24 +23,61 @@ function pane(map) {
   return 'activityPane';
 }
 
-// cells [[zx, zz, value...]] -> an image overlay; color(cell) gives [r, g, b, a] or null
-function gridOverlay(map, cells, color, className) {
+// cells [[zx, zz, value...]] -> an image overlay; color(cell) gives [r, g, b, a] or null. Filled
+// squares, one pixel a zone; or (ring) each square outlined with a faint fill, ten pixels a zone,
+// so it reads apart from a filled layer under it (lag hotspots over time spent).
+function gridOverlay(map, cells, color, className, ring = false) {
   if (!cells.length) return null;
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (const c of cells) { x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[0]); z0 = Math.min(z0, c[1]); z1 = Math.max(z1, c[1]); }
-  const w = x1 - x0 + 1, h = z1 - z0 + 1;
+  const k = ring ? 10 : 1, w = (x1 - x0 + 1) * k, h = (z1 - z0 + 1) * k;
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const g = cv.getContext('2d'), img = g.createImageData(w, h);
   for (const c of cells) {
     const rgba = color(c);
     if (!rgba) continue;
-    const o = ((z1 - c[1]) * w + (c[0] - x0)) * 4;   // row 0 = north
-    img.data[o] = rgba[0]; img.data[o + 1] = rgba[1]; img.data[o + 2] = rgba[2]; img.data[o + 3] = rgba[3];
+    const cx = (c[0] - x0) * k, cy = (z1 - c[1]) * k;   // row 0 = north
+    for (let y = 0; y < k; y++) for (let x = 0; x < k; x++) {
+      const edge = ring && (x < 2 || y < 2 || x >= k - 2 || y >= k - 2);
+      const o = ((cy + y) * w + cx + x) * 4;
+      img.data[o] = rgba[0]; img.data[o + 1] = rgba[1]; img.data[o + 2] = rgba[2];
+      img.data[o + 3] = !ring || edge ? rgba[3] : Math.round(rgba[3] * 0.22);
+    }
   }
   g.putImageData(img, 0, 0);
-  const sw = toLatLng(x0 * CELL - 32, z0 * CELL - 32), ne = toLatLng((x1 + 1) * CELL - 32, (z1 + 1) * CELL - 32);
-  return L.imageOverlay(cv.toDataURL(), L.latLngBounds(sw, ne), { pane: pane(map), interactive: false, className: 'zone-overlay ' + className }).addTo(map);
+  const west = x0 * CELL - 32, south = z0 * CELL - 32, east = (x1 + 1) * CELL - 32, north = (z1 + 1) * CELL - 32;
+  if (map._activityGL) return new ZoneGL(cv, west, north, east - west, north - south).addTo(map);
+  return L.imageOverlay(cv.toDataURL(), L.latLngBounds(toLatLng(west, south), toLatLng(east, north)), { pane: pane(map), interactive: false, className: 'zone-overlay ' + className }).addTo(map);
+}
+
+// a zone layer in the WebGL canvas, under the trails (an image overlay over the canvas hid them)
+class ZoneGL extends L.Layer {
+  constructor(cv, x, z, w, h) { super(); this.cv = cv; this.rect = [x, z, w, h]; this.order = 9.7; }   // over the fog and the grid, under the trails
+  onAdd(map) { this.sc = ShapesCanvas.for(map); this.sc.add(this); }
+  onRemove() { if (this.tex) this.sc.gl.deleteTexture(this.tex); this.tex = null; this.sc.remove(this); }
+  need() {}
+  draw(gl, v, sc) {
+    if (!this.tex) {
+      this.tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.cv);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      for (const [k, val] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, val);
+    }
+    const p = sc.tex;
+    sc.setView(p);
+    gl.bindVertexArray(sc.quadVao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.uniform1i(p.u.u_tex, 0);
+    gl.uniform4f(p.u.u_rect, ...this.rect);
+    gl.uniform4f(p.u.u_uv, 0, 0, 1, 1);
+    gl.uniform1f(p.u.u_alpha, 1);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+  }
 }
 
 // t in 0..1 along a ramp of [r, g, b] stops
@@ -53,6 +90,19 @@ const HEAT = [[40, 60, 200], [40, 190, 220], [120, 220, 80], [250, 210, 50], [24
 const LOAD = [[250, 220, 80], [250, 140, 40], [235, 50, 40], [190, 30, 120]];
 
 const hue = (name) => { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
+// seconds ago as "just now", "25 min ago", "3 h ago", "2 days ago"
+export function fmtAgo(sec) {
+  if (sec < 90) return 'just now';
+  if (sec < 3600) return `${Math.round(sec / 60)} min ago`;
+  if (sec < 48 * 3600) return `${Math.round(sec / 3600)} h ago`;
+  return `${Math.round(sec / 86400)} days ago`;
+}
+// a unix time as "10:42", or "Tue 10:42" (withDay, or when not today)
+function fmtClock(t, withDay) {
+  const d = new Date(t * 1000), today = new Date().toDateString() === d.toDateString();
+  return d.toLocaleString(undefined, { ...(withDay || !today ? { weekday: 'short' } : {}), hour: '2-digit', minute: '2-digit' });
+}
+
 // seconds as "2 h 10 min", "25 min", "under a minute"
 export function fmtSpan(sec) {
   const m = Math.round(sec / 60);
@@ -62,15 +112,20 @@ export function fmtSpan(sec) {
   return h >= 48 ? `${Math.round(h / 24)} days` : `${h} h${m % 60 ? ` ${m % 60} min` : ''}`;
 }
 
-// a time, short: "Tue 21:40", or "12 Oct" when older than a week
-export function fmtWhen(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return '';
-  if (Date.now() - d < 6.5 * 864e5) return d.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+// a player's colour, the same as their arrow on the map (layers/players.js), as #rrggbb
+export function playerColor(name) {
+  const pl = window.app?.layers?.players;
+  return pl?.color ? pl.color(name) : `hsl(${hue(name)} 85% 60%)`;
+}
+function colorRgb(name) {
+  const c = playerColor(name);
+  if (c[0] !== '#') return hslRgb(hue(name));
+  const n = parseInt(c.slice(1), 16);
+  return [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-// hsl(h 85% 60%) as 0..1 rgb
+// hsl(h 85% 60%) as 0..1 rgb (no players layer: a colour from the name)
 function hslRgb(h) {
   const s = 0.85, l = 0.6, k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
   return [0, 8, 4].map((n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
@@ -82,7 +137,7 @@ function trailPieces(a, hidden) {
   const span = (a.hours || 3) * 3600, out = [];
   for (const tr of a.trails) {
     if (hidden.has(tr.name)) continue;
-    const t0 = { name: tr.name, rgb: hslRgb(hue(tr.name)), pieces: [], last: null };
+    const t0 = { name: tr.name, rgb: colorRgb(tr.name), pieces: [], last: null };
     let seg = [], segAge = -1;
     const flush = () => { if (seg.length > 1) t0.pieces.push({ alpha: 0.25 + 0.65 * (1 - segAge / 5), pts: seg }); };
     for (let i = 0; i < tr.pts.length; i++) {
@@ -150,7 +205,8 @@ class TrailsGL extends L.Layer {
 export class ActivityLayers {
   constructor(map, gl) {
     this.map = map;
-    this.gl = gl;   // trails in the WebGL canvas (TrailsGL), else Leaflet lines
+    this.gl = gl;   // trails and zone layers in the WebGL canvas (TrailsGL, ZoneGL), else Leaflet lines and images
+    if (gl) map._activityGL = true;
     this.on = { trails: false, heat: false, deaths: false, hotspots: false, building: false };
     this.drawn = { trails: [], heat: null, deaths: null, hotspots: null, building: null };
     this.hours = 3;                 // trails: the last 3 or 24 hours
@@ -166,7 +222,39 @@ export class ActivityLayers {
     this.on[kind] = v;
     this.refresh();
     clearInterval(this.timer);
-    if (Object.values(this.on).some(Boolean)) this.timer = setInterval(() => this.refresh(), 60000);
+    // trails every 15 s (the server samples each 10 s), the zone layers each minute
+    if (Object.values(this.on).some(Boolean)) this.timer = setInterval(() => this.refresh(), this.on.trails ? 15000 : 60000);
+    this.hookPlayers();
+  }
+
+  // Between fetches the trails grow from the live positions (the players feed, about once a second),
+  // so a trail follows its player as they walk. Kept until the server's own samples cover them.
+  hookPlayers() {
+    const pl = window.app?.layers?.players;
+    if (this.hooked || !pl?.onChange) return;
+    this.hooked = true;
+    this.live = new Map();   // name -> [[x, z, t]...] newer than the server's trail
+    pl.onChange((players) => {
+      const a = this.activity;
+      if (!this.on.trails || !a) return;
+      const t = Date.now() / 1000 + (this.skew || 0);
+      let moved = false;
+      for (const p of players) {
+        if (p.x === undefined || p.dead) continue;
+        let tr = a.trails.find((r) => r.name === p.name);
+        if (!tr) a.trails.push((tr = { name: p.name, pts: [] }));
+        const last = tr.pts[tr.pts.length - 1];
+        if (last && (Math.hypot(p.x - last[0], p.z - last[1]) < 3 || t - last[2] < 2)) continue;
+        const pt = [p.x, p.z, t];
+        tr.pts.push(pt);
+        if (!this.live.has(p.name)) this.live.set(p.name, []);
+        this.live.get(p.name).push(pt);
+        moved = true;
+      }
+      if (!moved) return;
+      a.now = Math.max(a.now, t);
+      if (!this.liveQueued) { this.liveQueued = true; setTimeout(() => { this.liveQueued = false; this.drawTrails(); }, 1000); }
+    });
   }
 
   onChange(f) { this.listeners.add(f); }
@@ -176,12 +264,25 @@ export class ActivityLayers {
   setDays(d) { this.days = d; this.refresh(); }
   toggleHidden(name) { if (!this.hidden.delete(name)) this.hidden.add(name); this.draw(); this.changed(); }
   names() { return (this.activity?.trails || []).map((t) => t.name).sort((x, y) => x.localeCompare(y)); }
-  colorOf(name) { return `hsl(${hue(name)} 85% 60%)`; }
+  colorOf(name) { return playerColor(name); }
 
   async refresh() {
     const wantActivity = this.on.trails || this.on.heat || this.on.deaths;
     try {
-      if (wantActivity) this.activity = await getJSON(`data/activity.json?hours=${this.on.trails ? this.hours : 3}`);
+      if (wantActivity) {
+        const a = await getJSON(`data/activity.json?hours=${this.on.trails ? this.hours : 3}`);
+        this.skew = a.now - Date.now() / 1000;
+        // the live points newer than what the server has kept go on the end
+        for (const [name, pts] of this.live || []) {
+          const tr = a.trails.find((r) => r.name === name), lastT = tr?.pts.length ? tr.pts[tr.pts.length - 1][2] : -Infinity;
+          const newer = pts.filter((p) => p[2] > lastT);
+          this.live.set(name, newer);
+          if (!newer.length) continue;
+          if (tr) tr.pts.push(...newer); else a.trails.push({ name, pts: newer });
+          a.now = Math.max(a.now, newer[newer.length - 1][2]);
+        }
+        this.activity = a;
+      }
       if (this.on.building) this.building = await getJSON(`data/building.json?days=${this.days}`);
       if (this.on.hotspots) {
         const h = await getJSON('data/hotspots.json');
@@ -214,7 +315,7 @@ export class ActivityLayers {
     if (this.on.hotspots && this.hot) {
       const score = (c) => c[2] + c[3] * 15 + c[4] * 12 + c[5] * 2;   // as World/Hotspots.Score
       const max = Math.max(1, ...this.hot.map(score));
-      this.drawn.hotspots = gridOverlay(this.map, this.hot, (c) => { const t = Math.sqrt(score(c) / max); return [...ramp(LOAD, t), Math.round(90 + 130 * t)]; }, 'hotspots');
+      this.drawn.hotspots = gridOverlay(this.map, this.hot, (c) => { const t = Math.sqrt(score(c) / max); return [...ramp(LOAD, t), Math.round(170 + 85 * t)]; }, 'hotspots', true);
     }
     if (this.on.building && this.building) {
       const z = this.building.zones || [];
@@ -247,47 +348,95 @@ export class ActivityLayers {
     }
   }
 
-  // a click on a zone (not on a marker): what changed there (building), what weighs there
-  // (hotspots), or who spent how long there (time spent)
-  onClick(e) {
+  // A click (not on a marker) tells about everything shown there, a section each: the trail under
+  // it (whose, when they passed), the square's time spent and deaths, its lag, its building.
+  async onClick(e) {
     if (window.app?.measuring) return;
     const mc = window.app?.layers?.markers?.canvas;
     if (mc?.hit?.(e.containerPoint)) return;
     const { x, z } = fromLatLng(e.latlng);
-    const [zx, zz] = zoneOf(x, z);
-    const b = this.on.building && this.buildByZone?.get(zx + ',' + zz);
-    if (b && !(this.on.hotspots && this.hotByZone?.get(zx + ',' + zz))) {
-      const d = b[2] - b[3], base = this.nearestBase(zx * CELL, zz * CELL);
-      L.popup({ offset: [0, -4] }).setLatLng(toLatLng(zx * CELL, zz * CELL)).setContent(
-        `<b>${d > 0 ? 'Built' : 'Taken down'}${base ? ' · ' + escape(base) : ''}</b><small>this 64 m square, since ${escape(fmtWhen(new Date(this.building.since * 1000).toISOString()))}</small>` +
-        `<table class="hot-table"><tr><td>Build pieces then</td><td>${b[3].toLocaleString()}</td></tr><tr><td>Now</td><td>${b[2].toLocaleString()}</td></tr></table>`).openOn(this.map);
-      return;
+    const [zx, zz] = zoneOf(x, z), key = zx + ',' + zz;
+    const parts = [];
+    const tr = this.on.trails && this.trailAt(e.containerPoint);
+    if (tr) parts.push(this.trailHtml(tr));
+    const wantHeat = (this.on.heat && this.activity?.heat.some((c) => c[0] === zx && c[1] === zz)) || (this.on.deaths && this.activity?.deaths.some((c) => c[0] === zx && c[1] === zz));
+    const hot = this.on.hotspots && this.hotByZone?.get(key), built = this.on.building && this.buildByZone?.get(key);
+    if (!tr && !wantHeat && !hot && !built) return;
+    if (wantHeat) {
+      try { parts.push(this.heatHtml(await getJSON(`data/activity/zone.json?zx=${zx}&zz=${zz}`))); } catch (err) { /* the rest still shows */ }
     }
-    if (this.on.heat && !(this.on.hotspots && this.hotByZone?.get(zx + ',' + zz))) { this.heatPopup(zx, zz); return; }
-    if (!this.on.hotspots || !this.hotByZone) return;
-    const c = this.hotByZone.get(zx + ',' + zz);
-    if (!c) return;
-    const base = this.nearestBase(zx * CELL, zz * CELL);
-    const rows = [['Build pieces', c[2]], ['Lights & fires', c[3]], ['Creatures', c[4]], ['Items on the ground', c[5]]]
-      .map(([k, v]) => `<tr><td>${k}</td><td>${v.toLocaleString()}</td></tr>`).join('');
-    L.popup({ offset: [0, -4] }).setLatLng(toLatLng(zx * CELL, zz * CELL)).setContent(
-      `<b>Busy area${base ? ' · ' + escape(base) : ''}</b><small>this 64 m square</small><table class="hot-table">${rows}</table>` +
-      '<small>Each light and creature costs players\' frame rate far more than a build piece.</small>').openOn(this.map);
+    if (hot) parts.push(this.hotHtml(hot));
+    if (built) parts.push(this.buildHtml(built));
+    if (!parts.length) return;
+    const zoneShown = wantHeat || hot || built, base = zoneShown && this.nearestBase(zx * CELL, zz * CELL);
+    const head = zoneShown ? `<div class="ap-head"><b>${base ? escape(base) : 'This square'}</b><small>64 m square around ${zx * CELL}, ${zz * CELL}</small></div>` : '';
+    L.popup({ offset: [0, -4], maxWidth: 320, className: 'act-popup' })
+      .setLatLng(tr && !zoneShown ? e.latlng : toLatLng(zx * CELL, zz * CELL))
+      .setContent(`<div class="act-pop">${head}${parts.join('')}</div>`).openOn(this.map);
   }
 
-  async heatPopup(zx, zz) {
-    if (!this.activity?.heat.some((c) => c[0] === zx && c[1] === zz)) return;
-    let d;
-    try { d = await getJSON(`data/activity/zone.json?zx=${zx}&zz=${zz}`); } catch (e) { return; }
-    const base = this.nearestBase(zx * CELL, zz * CELL), named = d.players.reduce((n, p) => n + p[1], 0);
-    const rows = d.players.slice(0, 10).map(([name, sec, last]) =>
-      `<tr><td><i class="hd" style="background:${this.colorOf(name)}"></i>${escape(name)}</td><td>${fmtSpan(sec)}</td><td>${escape(fmtWhen(new Date(last * 1000).toISOString()))}</td></tr>`).join('');
-    const rest = d.seconds - named;
-    L.popup({ offset: [0, -4] }).setLatLng(toLatLng(zx * CELL, zz * CELL)).setContent(
-      `<b>${fmtSpan(d.seconds)} spent here${base ? ' · ' + escape(base) : ''}</b><small>this 64 m square, all players together${d.deaths ? `, ${d.deaths} death${d.deaths === 1 ? '' : 's'}` : ''}</small>` +
-      (rows ? `<table class="hot-table heat-table"><tr><th>Who</th><th>Time</th><th>Last here</th></tr>${rows}</table>` : '') +
-      (d.players.length > 10 ? `<small>and ${d.players.length - 10} more</small>` : '') +
-      (rest > 600 ? `<small>${rows ? 'Another ' + fmtSpan(rest) : 'All of it'} from before who was here was recorded.</small>` : '')).openOn(this.map);
+  // the shown trail nearest the click, within 8 px: {tr, i (the point passed nearest), d}
+  trailAt(cp) {
+    const a = this.activity;
+    if (!a) return null;
+    const map = this.map, at = (p) => map.latLngToContainerPoint(toLatLng(p[0], p[1]));
+    let best = null;
+    for (const tr of a.trails) {
+      if (this.hidden.has(tr.name)) continue;
+      let prev = null;
+      for (let i = 0; i < tr.pts.length; i++) {
+        const q = at(tr.pts[i]);
+        if (prev && Math.hypot(tr.pts[i][0] - tr.pts[i - 1][0], tr.pts[i][1] - tr.pts[i - 1][1]) <= 250) {
+          const dx = q.x - prev.x, dy = q.y - prev.y, l2 = dx * dx + dy * dy || 1;
+          const f = Math.max(0, Math.min(1, ((cp.x - prev.x) * dx + (cp.y - prev.y) * dy) / l2));
+          const d = Math.hypot(cp.x - (prev.x + dx * f), cp.y - (prev.y + dy * f));
+          if (d <= 8 && (!best || d < best.d)) best = { tr, i: f < 0.5 ? i - 1 : i, d };
+        }
+        prev = q;
+      }
+    }
+    return best;
+  }
+
+  trailHtml({ tr, i }) {
+    const a = this.activity, now = a.now, p = tr.pts[i], last = tr.pts[tr.pts.length - 1];
+    let km = 0;
+    for (let k = 1; k < tr.pts.length; k++) { const d = Math.hypot(tr.pts[k][0] - tr.pts[k - 1][0], tr.pts[k][1] - tr.pts[k - 1][1]); if (d <= 250) km += d / 1000; }
+    const online = (window.app?.layers?.players?.players || []).some((q) => q.name === tr.name && q.x !== undefined);
+    return `<div class="ap-sec"><h5><i class="hd" style="background:${this.colorOf(tr.name)}"></i>${escape(tr.name)}'s trail</h5>
+      <dl class="ap-kv"><dt>Passed here</dt><dd>${fmtAgo(now - p[2])} <small>${escape(fmtClock(p[2]))}</small></dd>
+      <dt>Walked</dt><dd>${km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km'} <small>in the last ${a.hours || 3} hours</small></dd>
+      <dt>Now</dt><dd>${online ? 'online' : 'last seen ' + fmtAgo(now - last[2])}</dd></dl></div>`;
+  }
+
+  heatHtml(d) {
+    const named = d.players.reduce((n, p) => n + p[1], 0), rest = d.seconds - named, max = Math.max(1, ...d.players.map((p) => p[1]));
+    const rows = d.players.slice(0, 8).map(([name, sec, last]) => `<div class="ap-who">
+        <i class="hd" style="background:${this.colorOf(name)}"></i><span class="ap-name">${escape(name)}</span>
+        <span class="ap-time">${fmtSpan(sec)}</span><small>${fmtAgo(Date.now() / 1000 + (this.skew || 0) - last)}</small>
+        <span class="ap-bar"><i style="width:${Math.max(3, Math.round(100 * sec / max))}%;background:${this.colorOf(name)}"></i></span></div>`).join('');
+    let html = '';
+    if (this.on.heat && d.seconds) {
+      html += `<div class="ap-sec"><h5>Time spent here<span>${fmtSpan(d.seconds)}</span></h5>
+        ${rows ? `<div class="ap-cols"><span>Who</span><span>Time</span><span>Last here</span></div>${rows}` : ''}
+        ${d.players.length > 8 ? `<small class="ap-note">and ${d.players.length - 8} more</small>` : ''}
+        ${rest > 600 ? `<small class="ap-note">${rows ? fmtSpan(rest) + ' more' : 'All of it'} from before the map noted who.</small>` : ''}</div>`;
+    }
+    if (this.on.deaths && d.deaths) html += `<div class="ap-sec"><h5>Deaths here<span>${d.deaths}</span></h5></div>`;
+    return html;
+  }
+
+  hotHtml(c) {
+    const rows = [['Build pieces', c[2]], ['Lights & fires', c[3]], ['Creatures', c[4]], ['Items on the ground', c[5]]]
+      .map(([k, v]) => `<dt>${k}</dt><dd>${v.toLocaleString()}</dd>`).join('');
+    return `<div class="ap-sec"><h5>Lag hotspot</h5><dl class="ap-kv">${rows}</dl>
+      <small class="ap-note">Each light and creature costs players' frame rate far more than a build piece.</small></div>`;
+  }
+
+  buildHtml(b) {
+    const d = b[2] - b[3];
+    return `<div class="ap-sec"><h5>${d > 0 ? 'Built' : 'Taken down'}<span>${d > 0 ? '+' : '−'}${Math.abs(d).toLocaleString()} pieces</span></h5>
+      <dl class="ap-kv"><dt>${escape(fmtClock(this.building.since, true))}</dt><dd>${b[3].toLocaleString()}</dd><dt>Now</dt><dd>${b[2].toLocaleString()}</dd></dl></div>`;
   }
 
   nearestBase(x, z) {

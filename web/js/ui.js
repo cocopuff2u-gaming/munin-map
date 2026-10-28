@@ -214,7 +214,7 @@ export class Sidebar {
     act.append(row(HEAT_SVG, 'Time spent', 'Click a square for who and how long', false, (v) => A.set('heat', v)));
     act.append(row(ico('tombstone', '#e0485a'), 'Deaths', 'Where players have died', false, (v) => A.set('deaths', v)));
     act.append(row(BUILD_SVG, 'New building', 'Where bases grew or came down', false, (v) => { buildOpts.hidden = !v; A.set('building', v); }), buildOpts);
-    act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Busy areas: click one for why', false, (v) => { hotOpts.hidden = !v; A.set('hotspots', v); }), hotOpts);
+    act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Outlined squares: click one for why', false, (v) => { hotOpts.hidden = !v; A.set('hotspots', v); }), hotOpts);
     for (const b of trailOpts.querySelectorAll('[data-h]')) b.addEventListener('click', () => { if (A.hours !== +b.dataset.h) A.setHours(+b.dataset.h); });
     for (const b of buildOpts.querySelectorAll('[data-d]')) b.addEventListener('click', () => { if (A.days !== +b.dataset.d) A.setDays(+b.dataset.d); });
     let namesSig = '';
