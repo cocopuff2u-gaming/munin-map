@@ -34,43 +34,24 @@ function gearStats() {
   if (!gearAsked) { gearAsked = true; getJSON('data/gear.json').then((m) => { gearData = m; onNames?.(); }).catch(() => {}); }
   return gearData;
 }
-// a stat's [low, high]: at the level worn when known, else from level 1 to the most it can be upgraded to
-function statRange([base, per], g, lv) {
-  if (lv > 0) return [base + per * (lv - 1), base + per * (lv - 1)];
-  return [base, base + per * Math.max(0, (g.q || 1) - 1)];
-}
+// the level a piece is at, when it's certain: what the game shares (hands, cape), or 1 for what can't
+// be upgraded; 0 when not known (the card then shows only what doesn't change with the level)
+const levelOf = (g, lv) => lv > 0 ? lv : (g.q || 1) <= 1 ? 1 : 0;
+const at = ([base, per], lv) => base + per * (lv - 1);
 const num = (v) => Math.round(v * 10) / 10;
-const rng = ([a, b]) => a === b ? `${num(a)}` : `${num(a)}–${num(b)}`;
 const DMG = { damage: 'Damage', blunt: 'Blunt', slash: 'Slash', pierce: 'Pierce', fire: 'Fire', frost: 'Frost', lightning: 'Lightning', poison: 'Poison', spirit: 'Spirit', chop: 'Chop', pickaxe: 'Pickaxe' };
-// the short line under a piece of gear: its armour, or its damage, or its block
+// the short line under a piece of gear: its armour, or its damage, or its block (at a known level only)
 function gearLine(g, lv) {
+  lv = levelOf(g, lv);
+  if (!lv) return '';
   const out = [];
-  if (g.armor) out.push(`Armor ${rng(statRange(g.armor, g, lv))}`);
-  const dmg = Object.entries(g.dmg || {}).filter(([k]) => k !== 'chop' && k !== 'pickaxe' || g.type === 'Tool');
+  if (g.armor) out.push(`Armor ${num(at(g.armor, lv))}`);
+  const dmg = g.type === 'Shield' ? [] : Object.entries(g.dmg || {}).filter(([k]) => k !== 'chop' && k !== 'pickaxe' || g.type === 'Tool');
   dmg.sort((a, b) => b[1][0] - a[1][0]);
-  for (const [k, v] of dmg.slice(0, 2)) out.push(`${DMG[k]} ${rng(statRange(v, g, lv))}`);
-  if (g.block && (g.type === 'Shield' || !dmg.length)) out.push(`Block ${rng(statRange(g.block, g, lv))}`);
+  for (const [k, v] of dmg.slice(0, 2)) out.push(`${DMG[k]} ${num(at(v, lv))}`);
+  if (g.block && (g.type === 'Shield' || !dmg.length)) out.push(`Block ${num(at(g.block, lv))}`);
   return out.join(' · ');
 }
-const MOD = { Resistant: 'Resistant to', VeryResistant: 'Very resistant to', SlightlyResistant: 'Slightly resistant to', Weak: 'Weak to', VeryWeak: 'Very weak to', SlightlyWeak: 'Slightly weak to', Immune: 'Immune to', Ignore: 'Ignores' };
-// all of it, when a piece of gear is clicked
-function gearDetail({ nm, label, g, lv }) {
-  if (!g) return `<b>${escape(nm)}</b><span>${label}</span>`;
-  const rows = [];
-  rows.push(lv > 0 ? `Level ${lv}${g.q > 1 ? ` of ${g.q}` : ''}` : g.q > 1 ? `Level not shown by the game: up to ${g.q}, the range is level 1 to ${g.q}` : '');
-  if (g.armor) rows.push(`Armor ${rng(statRange(g.armor, g, lv))}`);
-  for (const [k, v] of Object.entries(g.dmg || {})) rows.push(`${DMG[k]} ${rng(statRange(v, g, lv))}`);
-  if (g.block) rows.push(`Block ${rng(statRange(g.block, g, lv))}`);
-  for (const [t, m] of g.mods || []) rows.push(`${MOD[m] || m} ${t.toLowerCase()}`);
-  if (g.effect) rows.push(escape(g.effect));
-  if (g.set) rows.push(`Set of ${g.set[2]}${g.set[1] ? `: ${escape(g.set[1])}` : ''}`);
-  if (g.move) rows.push(`Movement ${g.move > 0 ? '+' : ''}${Math.round(g.move * 100)}%`);
-  if (g.eitrRegen) rows.push(`Eitr regen ${g.eitrRegen > 0 ? '+' : ''}${Math.round(g.eitrRegen * 100)}%`);
-  if (g.dur) rows.push(`Durability ${rng(statRange(g.dur, g, lv))}`);
-  if (g.weight) rows.push(`Weight ${num(g.weight)}`);
-  return `<b>${escape(nm)}</b><span>${label}</span><ul>${rows.filter(Boolean).map((r) => `<li>${r}</li>`).join('')}</ul>`;
-}
-
 // ping and the game's rating of the link, as a few bars
 function netHtml(p) {
   const q = p.netQ ?? 1, ms = p.ping;
@@ -166,7 +147,6 @@ export class PlayerCard {
 
   // show for a player (online, from the players feed, or just a name) beside a screen point
   show(player, x, y) {
-    if (this.name !== player.name) this.openItem = null;
     this.name = player.name;
     this.refresh();
     this.el.hidden = false;
@@ -179,7 +159,7 @@ export class PlayerCard {
   }
   showByName(name) { this.show({ name }, innerWidth / 2 - 160, innerHeight / 2); }
 
-  hide() { this.el.hidden = true; this.name = null; this.sig = null; this.openItem = null; }
+  hide() { this.el.hidden = true; this.name = null; this.sig = null; }
 
   // live update from the players feed; the portraits of who's on are fetched ahead (a few at most)
   update() {
@@ -213,25 +193,23 @@ export class PlayerCard {
     // their connection: ping, and how the game rates the link (live only)
     const net = p && p.ping ? netHtml(p) : '';
     const conn = p ? connHtml(p, statsStore.data?.server?.gameVersion) : '';
-    // what they wear: the game's icon and name, what it does (at the level they have it, where the game
-    // says; else what it can be), the slot (offline: what they wore when last seen)
+    // what they wear: the game's icon and name, what it does when its level is certain (the game shares
+    // it for the hands and the cape; else only the slot), the slot (offline: what they wore when last seen)
     const worn = p ? p.gear : st && st.gear && Object.keys(st.gear).length ? st.gear : null;
     const levels = (p ? p.levels : st?.levels) || {};
     const G = gearStats();
-    let armorLo = 0, armorHi = 0;
+    let armor = 0, armorKnown = true;
     const items = worn ? SLOTS.filter(([k]) => worn[k]).map(([k, label]) => {
       const pf = worn[k], nm = gameName(pf), g = G?.[pf], lv = levels[k] || 0;
-      if (g?.armor && ARMOR_SLOTS.has(k)) { const [a, b] = statRange(g.armor, g, lv); armorLo += a; armorHi += b; }
+      if (g?.armor && ARMOR_SLOTS.has(k)) { const L = levelOf(g, lv); if (L) armor += at(g.armor, L); else armorKnown = false; }
       return { k, label, pf, nm, g, lv };
     }) : [];
     const gear = items.map(({ k, label, pf, nm, g, lv }) => {
       const stars = lv > 0 ? `<i class="pc-lv" title="Level ${lv}${g?.q ? ` of ${g.q}` : ''}">${'★'.repeat(Math.min(lv, 10))}</i>` : '';
       const line = g ? gearLine(g, lv) : '';
-      return `<div class="pc-item${this.openItem === k ? ' open' : ''}" data-k="${k}" title="${escape(nm)}"><img src="icons/item/${encodeURIComponent(pf.replace(/[^A-Za-z0-9_-]/g, ''))}.png" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><div><b>${escape(nm)}${stars}</b><span>${line || label}</span></div></div>`;
+      return `<div class="pc-item" title="${escape(nm)}"><img src="icons/item/${encodeURIComponent(pf.replace(/[^A-Za-z0-9_-]/g, ''))}.png" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><div><b>${escape(nm)}${stars}</b><span>${line || label}</span></div></div>`;
     }).join('');
-    const open = items.find((it) => it.k === this.openItem);
-    const detail = open ? `<div class="pc-detail">${gearDetail(open)}</div>` : '';
-    const armor = armorHi > 0 ? `Armor ${armorLo === armorHi ? Math.round(armorLo) : `${Math.round(armorLo)}–${Math.round(armorHi)}`}` : '';
+    const armorText = armorKnown && armor > 0 ? `Armor ${Math.round(armor)}` : '';   // (only when every piece's level is known)
     // when they play: the last 14 days (minutes a day) and the last sessions
     let activity = '';
     if (st) {
@@ -292,7 +270,7 @@ export class PlayerCard {
     // the same card as a second ago but for the bars, the place and the ping: just move those
     // (rebuilding it all every update remade its pictures and could hitch the map)
     const barsHtml = (p ? bar('Health', p.health, p.maxHealth, 'hp-health') : '') + (p && p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : '') + (p && p.eitr !== undefined && p.eitr > 0 ? bar('Eitr', p.eitr, Math.max(p.eitr, 100), 'hp-eitr') : '');
-    const sig = [name, status, !!where, !!net, !!conn, gear, detail, armor, activity, life, placeRows, badges, following, !!there, portrait].join('|');
+    const sig = [name, status, !!where, !!net, !!conn, gear, armorText, activity, life, placeRows, badges, following, !!there, portrait].join('|');
     if (sig === this.sig && !this.el.hidden) {
       const b = this.el.querySelector('.pc-bars'), w = this.el.querySelector('.pc-where'), n = this.el.querySelector('.pc-net');
       if (b) b.innerHTML = barsHtml;
@@ -303,6 +281,10 @@ export class PlayerCard {
       return;
     }
     this.sig = sig;
+    // the details in tabs: who they are and their connection, stats, when they play, their places
+    const TABS = [['player', 'Player'], ['stats', 'Stats'], ['activity', 'Activity'], ['places', `Places${groups.length ? ` <small>${groups.length}</small>` : ''}`]];
+    const tab = this.tab || 'player';
+    const tabsHtml = `<div class="pc-tabs" role="tablist" style="--pc-tab:${col}">${TABS.map(([k, t]) => `<button role="tab" data-tab="${k}" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab}">${t}</button>`).join('')}</div>`;
     const scroll = this.el.querySelector('.pc-places')?.scrollTop || 0;
     this.el.innerHTML = `
       <button class="icon-btn small pc-close" data-act="close" title="Close"><svg><use href="#i-close"/></svg></button>
@@ -313,31 +295,42 @@ export class PlayerCard {
           <div class="meta">${status}</div>${where ? `<div class="meta pc-where">${where}</div>` : ''}
           <div class="pc-bars">${barsHtml}</div>
           ${net}
-          ${badges ? `<div class="pc-badges">${badges}</div>` : ''}
         </div>
       </div>
-      ${gear ? `<div class="pc-section">${p ? 'Wearing' : 'Last seen wearing'}${armor ? ` <small>${armor}</small>` : ''}</div><div class="pc-items${p ? '' : ' was'}">${gear}</div>${detail}` : ''}
-      ${activity}
-      ${life ? `<div class="pc-section">Stats</div>${life}` : ''}
-      ${conn ? `<div class="pc-section">Connection</div><div class="pc-conn">${conn}</div>` : ''}
-      ${placeRows ? `<div class="pc-section">Their places <small>${groups.length}</small></div><div class="pc-places">${placeRows}</div>` : ''}
+      ${tabsHtml}
+      <div class="pc-tab" data-tab="player"${tab === 'player' ? '' : ' hidden'}>
+        ${badges ? `<div class="pc-badges">${badges}</div>` : ''}
+        ${gear ? `<div class="pc-section">${p ? 'Wearing' : 'Last seen wearing'}${armorText ? ` <small>${armorText}</small>` : ''}</div><div class="pc-items${p ? '' : ' was'}">${gear}</div>` : ''}
+        ${conn ? `<div class="pc-section">Connection</div><div class="pc-conn">${conn}</div>` : ''}
+        ${!gear && !conn && !badges ? '<div class="pc-first">Nothing to show while they\'re offline.</div>' : ''}
+      </div>
+      <div class="pc-tab" data-tab="stats"${tab === 'stats' ? '' : ' hidden'}>${life || '<div class="pc-first">No stats yet.</div>'}</div>
+      <div class="pc-tab" data-tab="activity"${tab === 'activity' ? '' : ' hidden'}>${activity || '<div class="pc-first">Not on in the last two weeks.</div>'}</div>
+      <div class="pc-tab" data-tab="places"${tab === 'places' ? '' : ' hidden'}>${placeRows ? `<div class="pc-places">${placeRows}</div>` : '<div class="pc-first">No bases, portals, beds or wards of theirs on the map.</div>'}</div>
       <div class="pc-actions">
         ${p ? `<button class="btn small ${following ? 'on' : ''}" data-act="follow" ${p.x === undefined ? 'disabled' : ''}>${following ? 'Unfollow' : 'Follow'}</button>` : ''}
         <button class="btn small" data-act="goto" ${there ? '' : 'disabled'} title="${p ? '' : 'Where they were last seen'}">${p ? 'Go to' : 'Last seen'}</button>
         <button class="btn small" data-act="link" title="Copy a link that opens this card">Link</button>
       </div>`;
     const pl = this.el.querySelector('.pc-places');
-    if (pl) pl.scrollTop = scroll;
+    // a fade at the bottom of the places while there's more below
+    const fadePlaces = () => pl && pl.classList.toggle('more', pl.scrollTop + pl.clientHeight < pl.scrollHeight - 4);
+    if (pl) { pl.scrollTop = scroll; fadePlaces(); pl.addEventListener('scroll', fadePlaces, { passive: true }); }
     const box = this.el.querySelector('.pc-portrait');
     if (portrait) showPortrait(box, portrait).then((ok) => { if (ok) box.classList.add('drawn'); });
     this.el.querySelector('[data-act=close]').addEventListener('click', () => this.hide());
+    this.el.querySelectorAll('.pc-tabs button').forEach((b) => b.addEventListener('click', () => {
+      this.tab = b.dataset.tab;   // (kept for the next card too)
+      this.el.querySelectorAll('.pc-tabs button').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
+      this.el.querySelectorAll('.pc-tab').forEach((t) => { t.hidden = t.dataset.tab !== this.tab; });
+      fadePlaces();
+    }));
     this.el.querySelector('[data-act=follow]')?.addEventListener('click', () => { PL.follow(following ? null : p.id); this.refresh(); });
     this.el.querySelector('[data-act=goto]').addEventListener('click', () => there && this.app.goTo(there[0], there[1], Math.max(this.app.mode === '2d' ? this.app.map.getZoom() : 7, 7)));
     this.el.querySelector('[data-act=link]').addEventListener('click', async () => {
       const url = `${location.origin}${location.pathname}?player=${encodeURIComponent(name)}`;
       try { await navigator.clipboard.writeText(url); this.app.toast('Link copied'); } catch { this.app.toast(url); }
     });
-    this.el.querySelectorAll('.pc-item').forEach((r) => r.addEventListener('click', () => { this.openItem = this.openItem === r.dataset.k ? null : r.dataset.k; this.refresh(); }));
     this.el.querySelectorAll('.pc-place').forEach((r) => r.addEventListener('click', () => { const { m } = groups[+r.dataset.i]; this.app.goTo(m.x, m.z, Math.max(this.app.mode === '2d' ? this.app.map.getZoom() : 7, 7)); }));
   }
 }

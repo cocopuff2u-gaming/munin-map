@@ -65,10 +65,13 @@ export class Sidebar {
     this.pending.set(tab, fn);
     if (this.active !== tab) return;
     const run = () => { const f = this.pending.get(tab); if (f && this.active === tab) { this.pending.delete(tab); f(); } };
-    if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 1000 }); else setTimeout(run, 50);
+    // just opened (its data on the way): drawn at once, not when the map next lets up
+    if (performance.now() - (this.shownAt || 0) < 3000) setTimeout(run, 0);
+    else if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 1000 }); else setTimeout(run, 50);
   }
 
   show(tab) {
+    if (this.active !== tab) this.shownAt = performance.now();
     this.active = tab;
     for (const b of this.tabs) b.classList.toggle('active', b.dataset.tab === tab);
     for (const p of this.root.querySelectorAll('.panel')) p.classList.toggle('active', p.dataset.panel === tab);

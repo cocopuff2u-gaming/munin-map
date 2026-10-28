@@ -95,6 +95,9 @@ namespace MuninMap.Live
         public static string FreshJson()
         {
             if (!stale) return json;
+            // made in the last few seconds: that, at once, and made again on the next tick for the next ask
+            // (waiting for the game's tick made opening the Stats or Players tab take up to a second)
+            if (built.IsRunning && built.Elapsed.TotalSeconds < 5) { asked = true; return json; }
             lock (gate)
             {
                 if (!stale) return json;
@@ -597,10 +600,12 @@ namespace MuninMap.Live
         }
 
         private static int lastOnlineCount;
+        private static readonly System.Diagnostics.Stopwatch built = new System.Diagnostics.Stopwatch();
         private static void Rebuild(int onlineCount)
         {
             if (onlineCount >= 0) lastOnlineCount = onlineCount;
             stale = false;
+            built.Restart();
             try
             {
                 var j = new JsonWriter(4096);

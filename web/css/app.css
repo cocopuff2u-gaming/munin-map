@@ -414,7 +414,8 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .player-card .pc-who .name { font: 700 20px/1.15 Georgia, 'Times New Roman', serif; overflow-wrap: anywhere; }
 .player-card .pc-who .meta { font-size: 11.5px; color: var(--muted); }
 .player-card .pc-who .pc-bars { margin-top: 6px; }
-.player-card .pc-who .pc-bar { grid-template-columns: 46px 1fr 52px; gap: 6px; }
+.player-card .pc-who .pc-bar { grid-template-columns: 44px 1fr auto; gap: 6px; }
+.player-card .pc-bar b { white-space: nowrap; min-width: 62px; }
 .player-card .pc-net { display: flex; align-items: flex-end; gap: 2px; margin-top: 4px; font-size: 11px; color: var(--muted); }
 .player-card .pc-net i { width: 3px; background: var(--line); border-radius: 1px; }
 .player-card .pc-net i:nth-child(1) { height: 4px; } .player-card .pc-net i:nth-child(2) { height: 6px; } .player-card .pc-net i:nth-child(3) { height: 8px; } .player-card .pc-net i:nth-child(4) { height: 10px; }
@@ -423,20 +424,28 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .player-card .pc-net.q3 i:nth-child(-n+3) { background: var(--t-green); }
 .player-card .pc-net.q2 i:nth-child(-n+2) { background: var(--t-gold); }
 .player-card .pc-net.q1 i:nth-child(1) { background: var(--t-red); }
-.player-card .pc-item { cursor: pointer; border: 1px solid transparent; }
-.player-card .pc-item:hover, .player-card .pc-item.open { border-color: var(--line); }
 .player-card .pc-item .pc-lv { font-style: normal; color: var(--t-gold-2); font-size: 9.5px; letter-spacing: -1px; margin-left: 4px; white-space: nowrap; }
-.player-card .pc-detail { margin-top: 6px; background: var(--bg-3); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; }
-.player-card .pc-detail span { color: var(--muted); margin-left: 6px; font-size: 10.5px; }
-.player-card .pc-detail ul { margin: 4px 0 0; padding-left: 16px; }
-.player-card .pc-detail li { margin: 1px 0; }
 .player-card .pc-conn { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 11.5px; }
 .player-card .pc-conn span { color: var(--muted); }
 .player-card .pc-conn b { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 .player-card .pc-conn em { font-style: normal; color: var(--t-gold); margin-left: 4px; font-weight: 400; }
 .player-card .pc-portrait::after { content: ''; position: absolute; left: 18%; right: 18%; bottom: 4%; height: 7%; border-radius: 50%; background: radial-gradient(ellipse, rgba(0,0,0,.55), transparent 70%); pointer-events: none; }
 .player-card .pc-portrait canvas { z-index: 1; }
-.player-card .pc-places { max-height: 190px; overflow: auto; margin: 0 -4px; padding: 0 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overscroll-behavior: contain; }
+.player-card .pc-tabs { display: flex; gap: 2px; margin: 8px 0 6px; border-bottom: 1px solid var(--line); }
+.player-card .pc-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 6px 2px 7px; color: var(--muted); font: inherit; font-weight: 600; font-size: 12px; cursor: pointer; }
+.player-card .pc-tabs button:hover { color: var(--text); }
+.player-card .pc-tabs button.on { color: var(--text); border-bottom-color: var(--pc-tab, var(--accent)); }
+.player-card .pc-tabs small { font-weight: 400; color: var(--muted); }
+.player-card .pc-tab[hidden] { display: none; }
+.player-card .pc-tab > .pc-section:first-child { margin-top: 2px; }
+.player-card .pc-places { max-height: 320px; overflow: auto; padding: 4px; background: var(--bg-3); border-radius: 8px; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; scrollbar-gutter: stable; }
+.player-card .pc-places.more { -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); }
+.player-card .pc-places .pc-place:hover { background: var(--bg-2); }
+.player-card { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+.player-card ::-webkit-scrollbar, .player-card::-webkit-scrollbar { width: 6px; }
+.player-card ::-webkit-scrollbar-thumb, .player-card::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 45%, transparent); border-radius: 3px; }
+.player-card ::-webkit-scrollbar-track, .player-card::-webkit-scrollbar-track { background: transparent; }
 .player-card .pc-biomebar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; margin-top: 3px; }
 .player-card .pc-biomebar i { min-width: 2px; }
 .player-card .pc-biomekey { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 5px; font-size: 10.5px; color: var(--muted); }

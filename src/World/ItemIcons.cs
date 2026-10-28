@@ -89,7 +89,13 @@ namespace MuninMap.World
         private static readonly HashSet<ItemDrop.ItemData.ItemType> Wearable = new HashSet<ItemDrop.ItemData.ItemType>
         {
             ItemDrop.ItemData.ItemType.Helmet, ItemDrop.ItemData.ItemType.Chest, ItemDrop.ItemData.ItemType.Legs, ItemDrop.ItemData.ItemType.Shoulder,
-            ItemDrop.ItemData.ItemType.Utility, ItemDrop.ItemData.ItemType.Trinket,
+            ItemDrop.ItemData.ItemType.Hands, ItemDrop.ItemData.ItemType.Utility, ItemDrop.ItemData.ItemType.Trinket,
+        };
+        // the kinds whose armour counts (the game's tooltip shows it for these only: a belt's or a trinket's
+        // armour is the default 10, never used)
+        private static readonly HashSet<ItemDrop.ItemData.ItemType> Armoured = new HashSet<ItemDrop.ItemData.ItemType>
+        {
+            ItemDrop.ItemData.ItemType.Helmet, ItemDrop.ItemData.ItemType.Chest, ItemDrop.ItemData.ItemType.Legs, ItemDrop.ItemData.ItemType.Shoulder,
         };
 
         private static string L(string token) { if (string.IsNullOrEmpty(token)) return ""; try { string t = Live.WorldEvents.LocalizeFn(token); return t != null && !t.StartsWith("$", StringComparison.Ordinal) ? t : ""; } catch { return ""; } }
@@ -105,7 +111,7 @@ namespace MuninMap.World
             j.Key(prefab).BeginObject().Prop("type", sh.m_itemType.ToString()).Prop("q", sh.m_maxQuality);
             // (every item has armour, block and damage numbers; only the ones that count for its kind)
             bool worn = Wearable.Contains(sh.m_itemType);
-            if (worn && (sh.m_armor > 0f || sh.m_armorPerLevel > 0f)) j.Key("armor").BeginArray().Value(sh.m_armor, 1).Value(sh.m_armorPerLevel, 1).End();
+            if (Armoured.Contains(sh.m_itemType) && (sh.m_armor > 0f || sh.m_armorPerLevel > 0f)) j.Key("armor").BeginArray().Value(sh.m_armor, 1).Value(sh.m_armorPerLevel, 1).End();
             if (!worn && sh.m_blockPower > 0f) j.Key("block").BeginArray().Value(sh.m_blockPower, 1).Value(sh.m_blockPowerPerLevel, 1).End();
             var d = worn ? default : sh.m_damages; var dl = sh.m_damagesPerLevel;
             var types = new[] { ("damage", d.m_damage, dl.m_damage), ("blunt", d.m_blunt, dl.m_blunt), ("slash", d.m_slash, dl.m_slash), ("pierce", d.m_pierce, dl.m_pierce),

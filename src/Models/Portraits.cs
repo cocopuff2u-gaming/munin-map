@@ -166,7 +166,15 @@ namespace MuninMap.Models
                 {
                     var animType = Type.GetType("UnityEngine.Animator, UnityEngine.AnimationModule");
                     var anim = animType != null ? go.GetComponentInChildren(animType) : null;
-                    if (anim != null) animType.GetMethod("Update", new[] { typeof(float) })?.Invoke(anim, new object[] { 0.5f });
+                    if (anim != null)
+                    {
+                        // animated though no camera sees it (the server has none), then run for a second
+                        // and a half so the idle has settled in, arms down
+                        animType.GetProperty("cullingMode")?.SetValue(anim, Enum.ToObject(animType.GetProperty("cullingMode").PropertyType, 0));
+                        var update = animType.GetMethod("Update", new[] { typeof(float) });
+                        update?.Invoke(anim, new object[] { 0f });
+                        for (int i = 0; i < 30; i++) update?.Invoke(anim, new object[] { 0.05f });
+                    }
                 }
                 catch { }
 
