@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+**New on the map**
+
+* **Activity** (Layers):
+  * **Trails** cover the last 3 or 24 hours, grow live as players walk, and each is drawn in the colour of that player's arrow. A chip per player hides or shows their trail. Click a trail for whose it is, when they passed, how far they walked and whether they're on.
+  * **Time spent**: click a square for who was there, for how long and when last (counted per player from this version on).
+  * **New building**: squares where building went up (green) or came down (red) over the last day or week. A picture of the world's building is kept each hour (`build-history.txt`).
+  * A click on the map tells about everything shown there in one popup, a section per layer: the trail, time spent, deaths, lag, building.
+  * **Lag hotspots** are outlined when another square layer is on under them, filled when shown alone.
+  * Lag hotspots and new building show at once after a restart (the last sweep's numbers are kept), no longer two minutes later.
+* **Stats: busiest hours**: the average players online for each hour of the week, in your own time, with the busiest two hours spelled out.
+* **Raids and invasions** in the game map's red, with how long they have been going (or have left) under the name. Click anywhere on the area for when it began, who it came for and who is near. One switch in the Markers list (Raids & invasions) hides them.
+* **Boats**: raft, karve, longship, drakkar and trailer ship each have their own icon.
+* **Players**: a **Go to** button above Follow.
+* **GitHub link and update check**: a GitHub button at the end of the top bar. The server asks GitHub for the latest release a minute after it starts and every 12 hours; when a newer one is out, the server log says so, the button gets a dot, a note in the bottom right corner says so until closed, and Stats > Server details links to it. New settings in `[Server]`: `show_github_link` and `check_updates` (both on; with `check_updates` off the server never contacts GitHub).
+
+**Fixed**
+
+* **Phones**: the top bar fits again down to 320 px wide. The sun / moon button is left out, the online count is an icon and a number, and the search box shrinks to its icon (tapped, it spreads over the bar).
+* **Trails** no longer swim about while zooming: they are drawn with the rest of the map, sharp at every zoom.
+* The options under an Activity row only show while it is on.
+
 ## 3.2.1
 
 **New on the map**
