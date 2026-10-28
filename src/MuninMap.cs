@@ -23,7 +23,7 @@ namespace MuninMap
     {
         public const string GUID = "com.cocopuff2u.muninmap";
         public const string NAME = "Munin Map";
-        public const string VERSION = "3.2.1";
+        public const string VERSION = "3.2.2";
         private const string OLD_GUID = "com.valheimwebmap.server";   // the mod this one was, Valheim WebMap
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
