@@ -88,6 +88,10 @@ a { color: var(--accent); }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .pill.on { color: var(--ok); border-color: rgba(88,194,125,.4); }
+#online-pill { display: inline-flex; align-items: center; }
+#online-pill b { font-weight: inherit; }
+#online-pill span { margin-left: .3em; }
+#online-pill svg { display: none; width: 14px; height: 14px; margin-right: 4px; }
 .icon-btn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-2); cursor: pointer; }
 .icon-btn:hover { background: var(--bg-3); }
 .icon-btn svg { width: 20px; height: 20px; }
@@ -295,12 +299,21 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
   #btn-export { display: none; }
   .pill { padding: 4px 8px; }
 }
-/* a phone held upright: the menus follow the phone's own light or dark setting, and the 2D | 3D
-   switch keeps its room (with the sun / moon button the bar ran off the screen) */
+/* a phone held upright: the menus follow the phone's own light or dark setting, the online count
+   is an icon and a number, and the search box gives way down to its icon; tapped, it spreads over
+   the bar for the typing. So the 2D | 3D switch stays on screen down to a 320 px phone. */
 @media (max-width: 440px) {
   #btn-theme { display: none; }
+  .topbar { gap: 5px; }
+  .topbar-right { gap: 5px; }
   .mode-switch button { padding: 0 6px; }
+  .search { min-width: 36px; padding: 0 8px; }
+  .search:focus-within { position: absolute; left: 48px; right: 8px; z-index: 2; }
+  #online-pill { padding: 4px 7px; }
+  #online-pill svg { display: block; }
+  #online-pill span { display: none; }
 }
+@media (max-width: 360px) { .search input:not(:focus)::placeholder { color: transparent; } }   /* only a letter or two fit */
 
 /* export dialog */
 .dialog[hidden] { display: none; }

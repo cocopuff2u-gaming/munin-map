@@ -7,6 +7,7 @@
 import { toLatLng, fromLatLng } from '../crs.js';
 import { getJSON } from '../net.js';
 import { escape } from './markers.js';
+import { ShapesCanvas } from './shapes.js';
 
 const CELL = 64;
 const zoneOf = (x, z) => [Math.floor((x + 32) / CELL), Math.floor((z + 32) / CELL)];
@@ -50,10 +51,86 @@ const HEAT = [[40, 60, 200], [40, 190, 220], [120, 220, 80], [250, 210, 50], [24
 const LOAD = [[250, 220, 80], [250, 140, 40], [235, 50, 40], [190, 30, 120]];
 
 const hue = (name) => { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
+// hsl(h 85% 60%) as 0..1 rgb
+function hslRgb(h) {
+  const s = 0.85, l = 0.6, k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  return [0, 8, 4].map((n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
+}
+
+// Each trail split into pieces by age (older fainter), broken where a portal or a gap jumps it:
+// [{name, rgb, pieces: [{alpha, pts: [[x, z]...]}], last: [x, z]}]
+function trailPieces(a) {
+  const span = 3 * 3600, out = [];
+  for (const tr of a.trails) {
+    const t0 = { name: tr.name, rgb: hslRgb(hue(tr.name)), pieces: [], last: null };
+    let seg = [], segAge = -1;
+    const flush = () => { if (seg.length > 1) t0.pieces.push({ alpha: 0.25 + 0.65 * (1 - segAge / 5), pts: seg }); };
+    for (let i = 0; i < tr.pts.length; i++) {
+      const [x, z, t] = tr.pts[i], age = Math.min(5, Math.floor((a.now - t) / (span / 6)));
+      const prev = tr.pts[i - 1];
+      const jump = prev && (Math.hypot(x - prev[0], z - prev[1]) > 250 || t - prev[2] > 180);
+      if (jump || age !== segAge) {
+        const keep = !jump && seg.length ? seg[seg.length - 1] : null;
+        flush();
+        seg = keep ? [keep] : [];
+        segAge = age;
+      }
+      seg.push([x, z]);
+    }
+    flush();
+    const last = tr.pts[tr.pts.length - 1];
+    if (last) t0.last = [last[0], last[1]];
+    out.push(t0);
+  }
+  return out;
+}
+
+// The trails in the WebGL canvas with the map, so they are redrawn at the exact zoom every frame
+// of a glide. As Leaflet lines they were drawn a frame late with each point rounded to a pixel
+// and the line simplified anew at every zoom, so they swam about while zooming.
+class TrailsGL extends L.Layer {
+  constructor() { super(); this.order = 9.8; this.n = 0; this.dots = []; }   // over the fog and the grid, under the world's edge
+  onAdd(map) { this.sc = ShapesCanvas.for(map); this.sc.add(this); }
+  onRemove() { this.sc.remove(this); }
+  need() {}
+  set(trails) {
+    let n = 0;
+    for (const t of trails) for (const p of t.pieces) n += p.pts.length - 1;
+    const d = this.data = new Float32Array(n * 9);
+    let i = 0, group = 0;
+    for (const t of trails) {
+      for (const p of t.pieces) {
+        for (let k = 1; k < p.pts.length; k++, i += 9) d.set([p.pts[k - 1][0], p.pts[k - 1][1], p.pts[k][0], p.pts[k][1], ...t.rgb, p.alpha, group], i);
+        group++;
+      }
+    }
+    this.n = n;
+    this.dots = trails.filter((t) => t.last).map((t) => ({ at: t.last, rgb: t.rgb }));
+    this.sc?.redraw();
+  }
+  draw(gl, v, sc) {
+    sc.drawLines(this.data, this.n, 3);
+    if (!this.dots.length) return;
+    const r = sc.ring;   // where each player is now (or was last): a dot
+    sc.setView(r);
+    gl.bindVertexArray(sc.quadVao);
+    gl.uniform1f(r.u.u_n, 1); gl.uniform1f(r.u.u_alpha, 1); gl.uniform1f(r.u.u_fill, 1);
+    for (const [px, dark] of [[4.5, true], [3, false]]) {
+      gl.uniform1f(r.u.u_r, px / v.ppm);
+      for (const d of this.dots) {
+        gl.uniform3f(r.u.u_color, ...(dark ? [0.05, 0.05, 0.05] : d.rgb));
+        gl.uniform2f(r.u.u_c, d.at[0], d.at[1]);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+    }
+    gl.bindVertexArray(null);
+  }
+}
 
 export class ActivityLayers {
-  constructor(map) {
+  constructor(map, gl) {
     this.map = map;
+    this.gl = gl;   // trails in the WebGL canvas (TrailsGL), else Leaflet lines
     this.on = { trails: false, heat: false, deaths: false, hotspots: false };
     this.drawn = { trails: [], heat: null, deaths: null, hotspots: null };
     this.timer = null;
@@ -104,32 +181,18 @@ export class ActivityLayers {
       this.drawn.hotspots = gridOverlay(this.map, this.hot, (c) => { const t = Math.sqrt(score(c) / max); return [...ramp(LOAD, t), Math.round(90 + 130 * t)]; }, 'hotspots');
     }
     if (this.on.trails && a) {
-      // each trail in pieces by age (older fainter), broken where a portal or a gap jumps it
-      for (const tr of a.trails) {
-        const color = `hsl(${hue(tr.name)} 85% 60%)`, span = 3 * 3600;
-        let seg = [], segAge = -1;
-        const flush = () => {
-          if (seg.length > 1) {
-            const l = L.polyline(seg, { renderer: this.renderer, color, weight: 3, opacity: 0.25 + 0.65 * (1 - segAge / 5), interactive: false });
-            this.drawn.trails.push(l.addTo(this.map));
-          }
-        };
-        for (let i = 0; i < tr.pts.length; i++) {
-          const [x, z, t] = tr.pts[i], age = Math.min(5, Math.floor((a.now - t) / (span / 6)));
-          const prev = tr.pts[i - 1];
-          const jump = prev && (Math.hypot(x - prev[0], z - prev[1]) > 250 || t - prev[2] > 180);
-          if (jump || age !== segAge) {
-            const keep = !jump && seg.length ? seg[seg.length - 1] : null;
-            flush();
-            seg = keep ? [keep] : [];
-            segAge = age;
-          }
-          seg.push(toLatLng(x, z));
+      const trails = trailPieces(a);
+      if (this.gl) {
+        if (!this.trailsGL) this.trailsGL = new TrailsGL();
+        this.trailsGL.set(trails);
+        this.drawn.trails.push(this.trailsGL.addTo(this.map));
+      } else {
+        for (const tr of trails) {
+          const color = `hsl(${hue(tr.name)} 85% 60%)`;
+          for (const p of tr.pieces) this.drawn.trails.push(L.polyline(p.pts.map(([x, z]) => toLatLng(x, z)), { renderer: this.renderer, color, weight: 3, opacity: p.alpha, interactive: false }).addTo(this.map));
+          if (tr.last) this.drawn.trails.push(L.circleMarker(toLatLng(...tr.last), { renderer: this.renderer, radius: 3, color, fillColor: color, fillOpacity: 1, weight: 1, interactive: false })
+            .bindTooltip(escape(tr.name), { permanent: false }).addTo(this.map));
         }
-        flush();
-        const last = tr.pts[tr.pts.length - 1];
-        if (last) this.drawn.trails.push(L.circleMarker(toLatLng(last[0], last[1]), { renderer: this.renderer, radius: 3, color, fillColor: color, fillOpacity: 1, weight: 1, interactive: false })
-          .bindTooltip(escape(tr.name), { permanent: false }).addTo(this.map));
       }
     }
   }

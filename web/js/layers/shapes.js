@@ -561,6 +561,37 @@ void main() {
   o = vec4(u_color * a, a);
 }`;
 
+// Many lines at once, one instance each (the activity trails, layers/activity.js): a segment
+// between two world points, a set width in pixels, with round ends so the joints of a path close.
+// a_group is a depth: with the depth test on, a later segment of the same group doesn't draw over
+// the pixels its neighbour already covered, so a faint path doesn't get darker dots at its joints.
+const TRAIL_VS = `#version 300 es
+in vec2 a_corner;
+in vec4 a_ab; in vec4 a_color; in float a_group;
+uniform float u_width;
+out vec2 v_p; out float v_len; out vec4 v_color;
+${VIEW_GLSL}
+void main() {
+  vec2 pa = toPx(a_ab.xy), pb = toPx(a_ab.zw), d = pb - pa;
+  float len = length(d), h = u_width * 0.5 + 1.0;
+  vec2 dir = len > 0.001 ? d / len : vec2(1.0, 0.0), n = vec2(-dir.y, dir.x);
+  float along = (a_corner.x + 0.5) * (len + 2.0 * h) - h, side = a_corner.y * 2.0 * h;
+  v_p = vec2(along, side); v_len = len; v_color = a_color;
+  gl_Position = toClip(pa + dir * along + n * side);
+  gl_Position.z = 0.999 - a_group * 0.0001;
+}`;
+const TRAIL_FS = `#version 300 es
+precision highp float;   // u_width is shared with the vertex shader: precisions must match
+in vec2 v_p; in float v_len; in vec4 v_color;
+uniform float u_width;
+out vec4 o;
+void main() {
+  float d = length(vec2(max(0.0, max(-v_p.x, v_p.x - v_len)), v_p.y));
+  float a = v_color.a * clamp(u_width * 0.5 + 0.5 - d, 0.0, 1.0);
+  if (a <= 0.01) discard;
+  o = vec4(v_color.rgb * a, a);
+}`;
+
 // the part of a padded view that is the screen itself
 export function screenArea(v) {
   const px = (v.x1 - v.x) * PAD / (1 + 2 * PAD), pz = (v.z - v.z0) * PAD / (1 + 2 * PAD);
@@ -887,6 +918,29 @@ export class ShapesCanvas {
     gl.bindVertexArray(this.spriteVao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     gl.bindVertexArray(null);
+  }
+
+  // draw `count` lines from `data` (9 floats each: ax, az, bx, bz, r, g, b, a, group), `width` pixels wide
+  drawLines(data, count, width) {
+    if (!count) return;
+    const gl = this.gl;
+    if (!this.trail) {
+      this.trail = compile(gl, TRAIL_VS, TRAIL_FS);
+      this.trailBuf = gl.createBuffer();
+      this.trailVao = this.makeVao(this.trail, this.trailBuf, [['a_ab', 4, gl.FLOAT, false], ['a_color', 4, gl.FLOAT, false], ['a_group', 1, gl.FLOAT, false]], 36);
+    }
+    const p = this.trail;
+    this.setView(p);
+    gl.uniform1f(p.u.u_width, width);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.trailBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count * 9), gl.DYNAMIC_DRAW);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LESS);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.bindVertexArray(this.trailVao);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+    gl.bindVertexArray(null);
+    gl.disable(gl.DEPTH_TEST);
   }
 
   makeVao(prog, buffer, layout, stride, base = 0) {   // base: where in the buffer the first instance starts (bytes)

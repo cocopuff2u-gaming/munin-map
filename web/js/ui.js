@@ -262,7 +262,7 @@ export class Sidebar {
   // the online pill now; the panel (cards remade from scratch) only while its tab is open
   renderPlayers(players) {
     this.lastPlayers = players;
-    $('#online-pill').textContent = `${players.length} online`;
+    $('#online-pill b').textContent = players.length;
     $('#online-pill').classList.toggle('on', players.length > 0);
     // the list itself at most every 2 s (it's remade whole; with fast updates that was twice a second)
     if (Date.now() - (this.playersBuilt || 0) < 2000) { clearTimeout(this.playersTimer); this.playersTimer = setTimeout(() => this.renderPlayers(this.lastPlayers), 2000); return; }
