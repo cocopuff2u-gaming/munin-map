@@ -249,6 +249,7 @@ namespace MuninMap
             string kind = type == (int)Talker.Type.Shout ? "shout" : type == (int)Talker.Type.Whisper ? "whisper" : name == "Server" ? "server" : "chat";
             // the game's own shout on every spawn: the join is already in the events
             if (kind == "shout" && (message == "I have arrived!" || message == "$text_player_arrived")) return;
+            if (kind != "server") Stats.OnChat(name);
             if (kind == "shout" && pos.HasValue && pos.Value != Vector3.zero && Shares(id))
             {
                 var j = new JsonWriter(160);

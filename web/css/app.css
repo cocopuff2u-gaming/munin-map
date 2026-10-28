@@ -438,6 +438,15 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .player-card .pc-tabs small { font-weight: 400; color: var(--muted); }
 .player-card .pc-tab[hidden] { display: none; }
 .player-card .pc-tab > .pc-section:first-child { margin-top: 2px; }
+.player-card .pc-days2 { display: flex; gap: 3px; height: 58px; margin-top: 3px; }
+.player-card .pc-days2 div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; min-width: 0; }
+.player-card .pc-days2 i { background: var(--accent); border-radius: 2px 2px 0 0; opacity: .8; min-height: 0; }
+.player-card .pc-days2 div.today i { background: var(--t-green); opacity: 1; }
+.player-card .pc-days2 span { flex: none; height: 14px; line-height: 14px; font-size: 9.5px; color: var(--muted); text-align: center; border-top: 1px solid var(--line); overflow: hidden; }
+.player-card .pc-days2 div.today span { color: var(--text); font-weight: 600; }
+.player-card .pc-week { margin-top: 4px; }
+.player-card .pc-sub small { margin-left: 4px; }
+.player-card .pc-sess.now span:first-child { color: var(--t-green); font-weight: 700; }
 .player-card .pc-places { max-height: 320px; overflow: auto; padding: 4px; background: var(--bg-3); border-radius: 8px; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; scrollbar-gutter: stable; }
 .player-card .pc-places.more { -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); }

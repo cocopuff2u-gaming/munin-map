@@ -102,6 +102,8 @@ function statsHtml(st) {
   if (bd.length >= 2) { const d = st.builtDays[bd[bd.length - 1]] - st.builtDays[bd[0]]; cells.push(cell(`${d >= 0 ? '+' : ''}${d.toLocaleString()}`, 'built this week', `Change in pieces standing since ${bd[0]}`)); }
   cells.push(cell(st.bossKills || 0, 'boss kills'));
   cells.push(cell(st.raids || 0, 'raids weathered'));
+  if (st.nights !== undefined) cells.push(cell(st.nights, 'nights slept', 'Nights the server slept through with them in bed'));
+  if (st.chats !== undefined) cells.push(cell(st.chats.toLocaleString(), 'chats sent', 'Messages said, shouted or whispered in game'));
   if (st.atBase && st.playtime) cells.push(cell(`${Math.round(100 * st.atBase / st.playtime)}%`, 'time at base', 'At a base (fires, beds, workbenches around them) rather than out exploring'));
   if (st.dungeon) cells.push(cell(fmtDuration(st.dungeon), 'in dungeons', 'Crypts, caves and other places below'));
   if (st.afk) cells.push(cell(fmtDuration(st.afk), 'AFK', 'Not moving or turning for five minutes or more'));
@@ -120,6 +122,64 @@ function statsHtml(st) {
 }
 
 const day = (d) => d.toISOString().slice(0, 10);
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// when they play: a summary, the last 14 days, the hours of the week they're usually on (their own
+// record, in this browser's time) and the latest sessions (the one going on first)
+function activityHtml(st, online) {
+  const days = st.days || {}, bars = [];
+  for (let i = 13; i >= 0; i--) { const d = new Date(Date.now() - i * 864e5); bars.push([day(d), days[day(d)] || 0, d]); }
+  const thisWeek = bars.slice(7).reduce((a, b) => a + b[1], 0), lastWeek = bars.slice(0, 7).reduce((a, b) => a + b[1], 0);
+  const active = bars.filter((b) => b[1] > 0).length;
+  const now = online && st.sessionStart ? Date.now() / 1000 - st.sessionStart : 0;
+  if (!thisWeek && !lastWeek && !(st.recent || []).length && !now) return '';
+  const cell = (v, label, title = '') => `<div${title ? ` title="${escape(title)}"` : ''}><b>${v}</b><span>${label}</span></div>`;
+  const trend = lastWeek ? Math.round(100 * (thisWeek - lastWeek) / lastWeek) : 0;
+  let html = `<div class="pc-stats">
+    ${cell(fmtDuration(thisWeek), 'last 7 days', lastWeek ? `${trend >= 0 ? '+' : ''}${trend}% on the week before (${fmtDuration(lastWeek)})` : '')}
+    ${cell(`${active} of 14`, 'days on')}
+    ${cell(st.longest ? fmtDuration(Math.max(st.longest, now)) : '–', 'longest visit')}
+  </div>`;
+  // the last 14 days, a bar each, today marked
+  const most = Math.max(1, ...bars.map((b) => b[1]));
+  html += `<div class="pc-sub">Each day, the last two weeks</div><div class="pc-days2">${bars.map(([d, sec, date], i) =>
+    `<div class="${i === 13 ? 'today' : ''}" title="${i === 13 ? 'Today' : date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}: ${sec ? fmtDuration(sec) : 'not on'}"><i style="height:${sec ? Math.max(6, Math.round(100 * sec / most)) : 0}%"></i><span>${date.toLocaleDateString([], { weekday: 'narrow' })}</span></div>`).join('')}</div>`;
+  // the hours of the week, from their own record (UTC, shifted to this browser's time)
+  const wk = st.week || [], total = wk.reduce((a, b) => a + b, 0);
+  if (total >= 1800) {
+    const shift = Math.round(-new Date().getTimezoneOffset() / 60), v = new Array(168).fill(0);
+    wk.forEach((sec, h) => { v[(h + shift + 168) % 168] = sec; });
+    const max = Math.max(...v), hh = (h) => String(h % 24).padStart(2, '0');
+    let best = 0, bestAt = 0;
+    for (let h = 0; h < 168; h++) { const t = v[h] + v[(h + 1) % 168]; if (t > best) { best = t; bestAt = h; } }
+    const cells = [];
+    for (let d = 0; d < 7; d++) {
+      cells.push(`<span class="bh-day">${WEEKDAYS[d]}</span>`);
+      for (let h = 0; h < 24; h++) { const sec = v[d * 24 + h]; cells.push(`<i style="--a:${sec ? (0.12 + 0.88 * sec / max).toFixed(2) : 0.04}" title="${WEEKDAYS[d]} ${hh(h)}:00: ${sec ? fmtDuration(sec) + ' in all' : 'never on'}"></i>`); }
+    }
+    const axis = '<span></span>' + Array.from({ length: 24 }, (_, h) => `<span class="bh-h">${h % 6 ? '' : hh(h)}</span>`).join('');
+    html += `<div class="pc-sub">When they play <small>most often ${WEEKDAYS[Math.floor(bestAt / 24)]} ${hh(bestAt)}:00–${hh(bestAt + 2)}:00, your time</small></div><div class="bh-grid pc-week">${cells.join('')}${axis}</div>`;
+  } else {
+    // (not enough of their own record yet: the hours of their recent sessions)
+    const hours = new Array(24).fill(0);
+    for (const [a, b] of st.recent || []) for (let t = a; t < b; t += 600) hours[new Date(t * 1000).getHours()] += 10;
+    const busiest = Math.max(...hours);
+    if (busiest >= 30) {
+      const on = hours.map((m) => m >= busiest * 0.35);
+      let best = [0, 0];   // the longest run of busy hours (wrapping past midnight)
+      for (let h = 0; h < 24; h++) { let n = 0; while (n < 24 && on[(h + n) % 24]) n++; if (n > best[1]) best = [h, n]; }
+      const hh = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString([], { hour: 'numeric' });
+      html += `<div class="pc-sub">When they play <small>usually ${best[1] >= 24 ? 'around the clock' : `${hh(best[0])} – ${hh(best[0] + best[1])}`}</small></div>
+        <div class="pc-hours" title="When their recent sessions were">${hours.map((m) => `<i style="opacity:${m ? 0.25 + 0.75 * m / busiest : 0.08}"></i>`).join('')}</div>`;
+    }
+  }
+  // the latest sessions, the one going on first
+  const rows = [];
+  if (now) rows.push(`<div class="pc-sess now"><span>Now</span><span>since ${clock(st.sessionStart)}</span><b>${fmtDuration(now)}</b></div>`);
+  for (const [a, b] of (st.recent || []).slice(now ? -5 : -6).reverse()) rows.push(`<div class="pc-sess"><span>${dayLabel(a)}</span><span>${clock(a)}–${clock(b)}</span><b>${fmtDuration(b - a)}</b></div>`);
+  if (rows.length) html += `<div class="pc-sub">Latest visits</div><div class="pc-sessions">${rows.join('')}</div>`;
+  return html;
+}
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 function dayLabel(t) {
   const d = new Date(t * 1000), today = new Date(), y = new Date(Date.now() - 864e5);
@@ -210,30 +270,7 @@ export class PlayerCard {
       return `<div class="pc-item" title="${escape(nm)}"><img src="icons/item/${encodeURIComponent(pf.replace(/[^A-Za-z0-9_-]/g, ''))}.png" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><div><b>${escape(nm)}${stars}</b><span>${line || label}</span></div></div>`;
     }).join('');
     const armorText = armorKnown && armor > 0 ? `Armor ${Math.round(armor)}` : '';   // (only when every piece's level is known)
-    // when they play: the last 14 days (minutes a day) and the last sessions
-    let activity = '';
-    if (st) {
-      const days = st.days || {}, bars = [];
-      let most = 1;
-      for (let i = 13; i >= 0; i--) { const d = day(new Date(Date.now() - i * 864e5)), s = days[d] || 0; bars.push([d, s]); most = Math.max(most, s); }
-      const total = bars.reduce((a, [, s]) => a + s, 0);
-      const chart = `<div class="pc-days" title="Time played each day, the last two weeks">${bars.map(([d, s]) => `<i style="height:${s ? Math.max(8, Math.round(100 * s / most)) : 0}%" title="${d}: ${s ? fmtDuration(s) : 'not on'}"></i>`).join('')}</div>`;
-      const sessions = (st.recent || []).slice(-4).reverse();
-      const list = sessions.map(([a, b]) => `<div class="pc-sess"><span>${dayLabel(a)}</span><span>${clock(a)}–${clock(b)}</span><b>${fmtDuration(b - a)}</b></div>`).join('');
-      if (total || sessions.length) activity = `<div class="pc-section">Last two weeks <small>${total ? fmtDuration(total) + ' played' : ''}</small></div>${chart}${list}`;
-      // when in the day they're usually on (their recent sessions, this browser's clock)
-      const hours = new Array(24).fill(0);
-      for (const [a, b] of st.recent || []) for (let t = a; t < b; t += 600) hours[new Date(t * 1000).getHours()] += 10;
-      const busiest = Math.max(...hours);
-      if (busiest >= 30) {
-        const on = hours.map((m) => m >= busiest * 0.35);
-        let best = [0, 0];   // the longest run of busy hours (wrapping past midnight)
-        for (let h = 0; h < 24; h++) { let n = 0; while (n < 24 && on[(h + n) % 24]) n++; if (n > best[1]) best = [h, n]; }
-        const hh = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString([], { hour: 'numeric' });
-        activity += `<div class="pc-hours" title="When their recent sessions were">${hours.map((m) => `<i style="opacity:${m ? 0.25 + 0.75 * m / busiest : 0.08}"></i>`).join('')}</div>
-          <div class="pc-first">Usually on ${best[1] >= 24 ? 'around the clock' : `${hh(best[0])} – ${hh(best[0] + best[1])}`}</div>`;
-      }
-    }
+    const activity = st ? activityHtml(st, !!p) : '';
     // badges: top of a leaderboard
     let badges = '';
     const all = (statsStore.data?.players || []);

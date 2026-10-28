@@ -56,6 +56,10 @@ namespace MuninMap.Live
             public float highest = float.NaN, farthest;             // height above the sea; metres from the middle of the world
             public Dictionary<string, int> builtDays = new Dictionary<string, int>();   // pieces standing at the end of each day (UTC), the last 8
             public double ping = -1;                               // their usual ping (ms, slowly averaged)
+            public int nights, chats;                              // nights slept through, chat messages sent
+            public double longest;                                 // their longest session (seconds)
+            public double[] week = new double[168];                // seconds played in each hour of the week (UTC, Monday 00:00 first)
+            public long lastInBed;                                 // (not saved) when last seen in bed
             // (not saved) the AFK clock and the close-call latch
             public double idleFor; public float idleX, idleZ, idleYaw; public bool closeArmed = true;
         }
@@ -67,6 +71,7 @@ namespace MuninMap.Live
             if (s.sessionStart == 0) return;
             long end = Unix();
             if (end - s.sessionStart >= 30) { s.recent.Add(new[] { s.sessionStart, end }); if (s.recent.Count > 20) s.recent.RemoveAt(0); }
+            if (end - s.sessionStart > s.longest) s.longest = end - s.sessionStart;
             s.sessionStart = 0;
         }
 
@@ -183,6 +188,9 @@ namespace MuninMap.Live
                         s.highest = d.ContainsKey("highest") ? (float)JsonParser.Num(d, "highest") : float.NaN;
                         s.farthest = (float)JsonParser.Num(d, "farthest");
                         s.ping = d.ContainsKey("ping") ? JsonParser.Num(d, "ping") : -1;
+                        s.nights = (int)JsonParser.Num(d, "nights"); s.chats = (int)JsonParser.Num(d, "chats"); s.longest = JsonParser.Num(d, "longest");
+                        var wk = JsonParser.Arr(d, "week");
+                        if (wk != null && wk.Count == 168) for (int h = 0; h < 168; h++) s.week[h] = wk[h] is double wv ? wv : 0;
                         var gs = JsonParser.Obj(d, "gear");
                         if (gs != null) foreach (var kv in gs) if (kv.Value is string item && item.Length > 0) s.gear[kv.Key] = item;
                         if (string.IsNullOrEmpty(s.key)) continue;
@@ -280,6 +288,9 @@ namespace MuninMap.Live
             if (!float.IsNaN(s.highest)) j.Prop("highest", s.highest, 0);
             j.Prop("farthest", s.farthest, 0);
             if (s.ping >= 0) j.Prop("ping", s.ping, 0);
+            j.Prop("nights", s.nights).Prop("chats", s.chats).Prop("longest", Math.Max(s.longest, s.online && s.sessionStart > 0 ? Unix() - s.sessionStart : 0), 0);
+            bool anyWeek = false; foreach (var w in s.week) if (w > 0) { anyWeek = true; break; }
+            if (anyWeek) { j.Key("week").BeginArray(); foreach (var w in s.week) j.Value(Math.Round(w), 0); j.End(); }
             j.Key("bossesSeen").BeginArray(); foreach (var b in s.bossesSeen) j.Value(b); j.End();
             j.Key("found").BeginArray(); foreach (var f in s.found) j.Value(f); j.End();
             if (s.deathAt > 0)
@@ -421,6 +432,8 @@ namespace MuninMap.Live
                 }
                 else if (p.dead && !s.closeArmed && s.closeCalls > 0) { s.closeCalls--; s.closeArmed = true; }   // (that one didn't end well: it was a death)
                 if (dt > 0 && p.baseValue >= 3) s.atBase += dt;
+                if (dt > 0) s.week[(int)((Unix() / 3600 + 72) % 168)] += dt;   // (1 Jan 1970 was a Thursday)
+                if (p.inBed) s.lastInBed = Unix();
                 if (p.tracked && dt > 0)
                 {
                     bool inDungeon = p.y > 1000f;   // dungeons and caves are built far above the world
@@ -532,7 +545,20 @@ namespace MuninMap.Live
             }
             dirty = true; stale = true;
         }
-        public static void OnNightSlept() { nightsSlept++; dirty = true; stale = true; }
+        // the night was slept through: counted for everyone in bed for it (the game wakes them as it skips)
+        public static void OnNightSlept()
+        {
+            nightsSlept++;
+            long now = Unix();
+            foreach (var s in players.Values) if (s.online && now - s.lastInBed < 120) s.nights++;
+            dirty = true; stale = true;
+        }
+
+        // a chat message (said, shouted or whispered), counted for whoever online has that name
+        public static void OnChat(string name)
+        {
+            foreach (var s in players.Values) if (s.online && s.name == name) { s.chats++; dirty = true; stale = true; return; }
+        }
 
         // the bosses in the order the game has them, and whether the world has beaten each
         // (the game's own "defeated_" keys), with the discoveries Live/WorldEvents keeps
