@@ -238,6 +238,16 @@ class App {
     b.classList.toggle('update', !!newer);
     b.href = newer ? (url || c.latest_url || 'https://github.com/cocopuff2u-gaming/munin-map/releases') : 'https://github.com/cocopuff2u-gaming/munin-map';
     b.title = newer ? `Munin Map ${latest} is out (this server runs ${v}): see what's new` : `Munin Map${v ? ' ' + v : ''} on GitHub${latest ? ' (up to date)' : ''}`;
+    // and a note in the bottom right corner, until closed (this browser remembers, for that version)
+    const n = $('#update-note');
+    let seen = '';
+    try { seen = localStorage.getItem('munin-update-seen') || ''; } catch (e) { /* none */ }
+    n.hidden = !newer || seen === latest;
+    if (n.hidden) return;
+    n.querySelector('span').textContent = `Munin Map ${latest} is out`;
+    n.title = `This server runs ${v}`;
+    n.querySelector('a').href = b.href;
+    n.querySelector('button').onclick = () => { n.hidden = true; try { localStorage.setItem('munin-update-seen', latest); } catch (e) { /* this visit only */ } };
   }
 
   bindUi() {
