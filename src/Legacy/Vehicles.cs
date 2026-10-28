@@ -133,7 +133,7 @@ namespace MuninMap
                     $"{{\"kind\":\"{kind}\",\"name\":\"{name}\",\"x\":{e.x:0.#},\"z\":{e.z:0.#}}}"));
                 if (mk.Length > 1) mk.Append(",");
                 mk.Append(System.FormattableString.Invariant(
-                    $"{{\"x\":{e.x:0.#},\"z\":{e.z:0.#},\"cat\":\"{kind}\",\"icon\":\"{kind}\",\"label\":\"{PrettyName(name)}\"}}"));
+                    $"{{\"x\":{e.x:0.#},\"z\":{e.z:0.#},\"cat\":\"{kind}\",\"icon\":\"{IconOf(kind, name)}\",\"label\":\"{PrettyName(name)}\"}}"));
             }
             mk.Append("]");
             markersJson = mk.ToString();
@@ -143,6 +143,21 @@ namespace MuninMap
 
         public static string GetJson() => json;
         public static string GetMarkersJson() => markersJson;
+
+        // each kind of boat its own icon on the map (web/js/icons.js); other boats the plain one
+        private static string IconOf(string kind, string prefab)
+        {
+            if (kind != "boat") return kind;
+            switch (prefab.ToLowerInvariant())
+            {
+                case "raft": return "raft";
+                case "karve": return "karve";
+                case "vikingship": return "longship";
+                case "vikingship_ashlands": return "drakkar";
+                case "trailership": return "trailership";
+                default: return "boat";
+            }
+        }
 
         private static string PrettyName(string prefab)
         {

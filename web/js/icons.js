@@ -40,6 +40,13 @@ const glyphs = {
   portal: '<ellipse cx="12" cy="12" rx="7" ry="9" fill="#111" stroke="COLOR" stroke-width="2.5"/><ellipse cx="12" cy="12" rx="3" ry="5" fill="COLOR"/>',
   tombstone: '<path d="M6 21V9a6 6 0 0 1 12 0v12z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 8v8M9 11h6" stroke="#111" stroke-width="2"/>',
   boat: '<path d="M2 14h20l-4 6H6z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M12 3v11M12 4c5 1 7 5 7 8H12" fill="COLOR" stroke="#111" stroke-width="1.2"/>',
+  // each kind of boat: a raft of lashed logs, the karve's small hull, the longship's curled stems and
+  // striped sail, the Ashlands drakkar's dragon prow and dark sail, the trailer ship with its cargo
+  raft: '<path d="M3 15.5h18v4H3z" fill="COLOR" stroke="#111" stroke-width="1.2"/><path d="M7.5 15.5v4M12 15.5v4M16.5 15.5v4" stroke="#111" stroke-width="1"/><path d="M11 15.5V4" stroke="#111" stroke-width="1.6"/><path d="M11.8 5h6v6.5h-6z" fill="#efe6d2" stroke="#111" stroke-width="1"/>',
+  karve: '<path d="M3.5 14h17l-3 5.5h-11z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M12 14V3.5" stroke="#111" stroke-width="1.6"/><path d="M7.5 5h9v7h-9z" fill="#efe6d2" stroke="#111" stroke-width="1"/>',
+  longship: '<path d="M1.5 9.5c1.6.6 2.2 2.4 2.3 4.5h16.4c.1-2.1.7-3.9 2.3-4.5-.3 1.8-.2 3.3-.5 4.5l-3.6 5.5H5.6L2 14c-.3-1.2-.2-2.7-.5-4.5z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M12 14V2.5" stroke="#111" stroke-width="1.6"/><path d="M5.5 4h13v7.5h-13z" fill="#efe6d2" stroke="#111" stroke-width="1"/><path d="M8.7 4v7.5M12 4v7.5M15.3 4v7.5" stroke="#c0392b" stroke-width="1.6"/>',
+  drakkar: '<path d="M4.5 14h17.5l-3.6 5.5H6.6z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M3.6 14.6C2.3 11.6 2.4 7.6 4.4 5.2l4.4-.7-1.3 1.9 1.7.9-3.4 1.1c-.8 1.9-.7 4.1.4 6.2z" fill="COLOR" stroke="#111" stroke-width="1.1" stroke-linejoin="round"/><circle cx="5.3" cy="6.5" r=".75" fill="#ffd27a"/><path d="M14.5 14V2.5" stroke="#111" stroke-width="1.6"/><path d="M9.5 4h10v7.5h-10z" fill="#3b2626" stroke="#111" stroke-width="1"/><path d="M12.8 4v7.5M16.2 4v7.5" stroke="#ff8a3c" stroke-width="1.4"/>',
+  trailership: '<path d="M2 14h20l-3.2 5.5H5.2z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.5 8.5h5v5.5h-5zM10.5 10h4v4h-4zM15.5 7h4.5v7h-4.5z" fill="#d1b48c" stroke="#111" stroke-width="1"/><path d="M4.5 11.2h5M15.5 10.5h4.5" stroke="#111" stroke-width=".8"/>',
   cart: '<path d="M3 8h10l3 6H4z" fill="COLOR" stroke="#111" stroke-width="1.2"/><circle cx="7" cy="17" r="2.5" fill="#111" stroke="COLOR" stroke-width="1.5"/><circle cx="14" cy="17" r="2.5" fill="#111" stroke="COLOR" stroke-width="1.5"/><path d="M16 12l5-2" stroke="#111" stroke-width="2"/>',
   // a folded map: the cartography table's pins
   maptable: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" fill="COLOR" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><path d="M9 4v14M15 6v14" stroke="#111" stroke-width="1.1" opacity=".55"/><path d="M5.5 13.5l2.5-3 3 2 3-4 3.5 2.5" fill="none" stroke="#8a3b1f" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -62,7 +69,7 @@ export const colors = {
   forge: '#ff8a4c', memorial: '#c7d4e6', orb: '#7fd3ff', hotspring: '#6fd6c4', drakenest: '#a9c7e8', gucktree: '#9fd35a', sign: '#c9a46a', peak: '#a7a39a', landmark: '#7fd3ff',
   trader: '#f2c14e', hildir: '#f2c14e', bogwitch: '#9be37a', miniboss: '#ff9d4d', hildir1: '#ff9d4d', hildir2: '#ff9d4d', hildir3: '#ff9d4d', dungeon: '#c9a5ff', cave: '#9fd8ff', camp: '#ff9d4d',
   village: '#e0c39a', ruin: '#bfc7d2', runestone: '#8fd3ff', wreck: '#bfc7d2', poi: '#9aa5b5', portal: '#5ce0e6',
-  tombstone: '#d6d6d6', boat: '#8fc7ff', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',
+  tombstone: '#d6d6d6', boat: '#8fc7ff', raft: '#c9a46a', karve: '#8fc7ff', longship: '#4f9bff', drakkar: '#e0563f', trailership: '#a7b4c4', cart: '#d1b48c', pin: '#6fb7ff', dot: '#6fb7ff', fire: '#ff9d4d',
   ward: '#ffcf5c', wardoff: '#8c8f96', vegvisir: '#6fe0c8', bed: '#e8b4ff',
   invasion: '#ff3b2f', mine: '#c7c7c7', maptable: '#e8d3a3', house: '#9aa5b5', base: '#9aa5b5', custom: '#6fb7ff',   // homes in gray
 };
