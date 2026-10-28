@@ -81,7 +81,8 @@ namespace MuninMap.Live
                             Events.Add("raid", "Raid", start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
                             global::MuninMap.MuninMap.PostWorldEvent("⚔️ Raid: " + start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
                             endText = Localize(ev.m_endMessage, "is over");
-                            RaidJson = new JsonWriter(160).BeginObject().Prop("name", start).Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("r", ev.m_eventRange, 0).End().ToString();
+                            RaidJson = new JsonWriter(200).BeginObject().Prop("name", start).Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("r", ev.m_eventRange, 0)
+                                .Prop("since", DateTimeOffset.UtcNow.ToUnixTimeSeconds()).Prop("near", who).End().ToString();
                         }
                         current = name;
                     }
@@ -131,6 +132,7 @@ namespace MuninMap.Live
                     }
                     j.BeginObject().Prop("id", ev.eventId).Prop("name", name).Prop("x", ev.position.x, 1).Prop("z", ev.position.z, 1).Prop("r", ev.radius, 0);
                     if (ev.duration >= 0) j.Prop("left", Math.Max(0, ev.startTime + ev.duration - now), 0);
+                    if (now > 1 && now >= ev.startTime) j.Prop("age", now - ev.startTime, 0);   // seconds since it began
                     j.End();
                 }
             foreach (int id in new List<int>(invasionNames.Keys))

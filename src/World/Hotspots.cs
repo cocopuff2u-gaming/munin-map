@@ -16,7 +16,7 @@ namespace MuninMap.World
         private static Dictionary<long, int[]> building;   // zone -> pieces, lights, creatures, items
         private static long lastKey = long.MinValue;
         private static int[] last;
-        private static volatile string json = "{\"cell\":64,\"zones\":[]}";
+        private static volatile string json = "{\"cell\":64,\"zones\":[],\"pending\":true}";   // (until the first sweep is done)
 
         public static string Json => json;
 
@@ -69,6 +69,7 @@ namespace MuninMap.World
             var b = building;
             building = null; last = null; lastKey = long.MinValue;
             if (b == null) return;
+            BuildHistory.Record(b);
             var list = new List<KeyValuePair<long, int[]>>();
             foreach (var kv in b)
             {

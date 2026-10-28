@@ -88,9 +88,9 @@ export class MarkerLayers {
 
   render(sets) {
     this.storeSets = sets;
-    // invasions (layers/raid.js draws them on the map, pulsing like in game) close the list, for finding them
+    // a raid and invasions going on now (layers/raid.js draws them on the map) close the list, for finding them
     const inv = window.app && window.app.layers.raid && window.app.layers.raid.invasionMarkers();
-    if (inv && inv.length) sets = [...sets, { id: 'invasions', label: 'Invasions', mapless: true, markers: inv }];
+    if (inv && inv.length) sets = [...sets, { id: 'invasions', label: 'Raids & invasions', mapless: true, markers: inv }];
     // the spawn point (the server's world_start_pos) heads the list as its own set, like the seed maps do
     const sp = window.app && window.app.spawn;
     if (sp && !sets.some((s) => s.id === 'spawn'))

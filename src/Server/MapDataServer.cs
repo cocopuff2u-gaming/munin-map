@@ -159,7 +159,7 @@ namespace MuninMap
         }
 
         private string lastRaidJson = "null", lastInvasionKey = "";
-        private static string InvasionKey(string json) => System.Text.RegularExpressions.Regex.Replace(json, ",\"left\":[0-9.]+", "");
+        private static string InvasionKey(string json) => System.Text.RegularExpressions.Regex.Replace(json, ",\"(left|age)\":[0-9.]+", "");
         private void Broadcast()
         {
             if (forceReload)
@@ -583,7 +583,22 @@ namespace MuninMap
                 case "markers.json": return Text(e, Markers.Json, "application/json", nocache: true);
                 case "hotspots.json": return Text(e, Hotspots.Json, "application/json", nocache: true);
                 case "items.json": return Text(e, ItemIcons.NamesJson, "application/json", nocache: false);
-                case "activity.json": return Text(e, Activity.Json(), "application/json", nocache: true);
+                case "activity.json":
+                {
+                    int.TryParse(e.Request.QueryString["hours"] ?? "3", out int hours);
+                    return Text(e, Activity.Json(hours), "application/json", nocache: true);
+                }
+                case "building.json":
+                {
+                    int.TryParse(e.Request.QueryString["days"] ?? "1", out int days);
+                    return Text(e, BuildHistory.Json(days), "application/json", nocache: true);
+                }
+                case "activity/zone.json":
+                {
+                    int.TryParse(e.Request.QueryString["zx"] ?? "", out int zx);
+                    int.TryParse(e.Request.QueryString["zz"] ?? "", out int zz);
+                    return Text(e, Activity.ZoneJson(zx, zz), "application/json", nocache: true);
+                }
                 case "fog.png": return Bytes(e, Fog.Png(), "image/png", "no-cache");
                 case "structures/index.json": return Text(e, Structures.IndexJson, "application/json", nocache: true);
                 case "ruins/index.json": return Text(e, Ruins.IndexJson, "application/json", nocache: true);

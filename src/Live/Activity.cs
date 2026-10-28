@@ -15,19 +15,22 @@ namespace MuninMap.Live
     internal static class Activity
     {
         private const float Every = 10f;            // seconds between samples
-        private const int TrailSeconds = 3 * 3600;  // how far back a trail goes
+        private const int TrailSeconds = 24 * 3600; // how far back a trail goes (the page asks for the last 3 or 24 hours)
         private const float Moved = 3f;             // metres: a player standing still adds no trail points
 
         private sealed class Trail { public string name; public readonly List<int> t = new List<int>(); public readonly List<float> x = new List<float>(), z = new List<float>(); }
         private static readonly Dictionary<string, Trail> trails = new Dictionary<string, Trail>();
         private static readonly Dictionary<long, int> heat = new Dictionary<long, int>();     // zone -> seconds spent there
         private static readonly Dictionary<long, int> deaths = new Dictionary<long, int>();   // zone -> deaths
+        // zone -> player name -> {seconds there, unix time last there} (counted from 3.2.2 on: the
+        // zone totals above go back further)
+        private static readonly Dictionary<long, Dictionary<string, int[]>> heatBy = new Dictionary<long, Dictionary<string, int[]>>();
         private static readonly object sync = new object();
         private static DateTime lastSample;
         private static bool dirty;
         private static string path;
-        private static string cache;
-        private static DateTime cacheAt;
+        private static readonly Dictionary<int, string> cache = new Dictionary<int, string>();     // hours -> json
+        private static readonly Dictionary<int, DateTime> cacheAt = new Dictionary<int, DateTime>();
 
         private static long Zone(float x, float z) => ((long)Mathf.FloorToInt((x + 32f) / 64f) << 32) ^ (uint)Mathf.FloorToInt((z + 32f) / 64f);
         private static int Now() => (int)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
@@ -48,6 +51,9 @@ namespace MuninMap.Live
                     long zone = Zone(s.x, s.z);
                     heat.TryGetValue(zone, out int sec);
                     heat[zone] = sec + Mathf.RoundToInt(dt);
+                    if (!heatBy.TryGetValue(zone, out var who)) heatBy[zone] = who = new Dictionary<string, int[]>();
+                    if (!who.TryGetValue(s.name, out var me)) who[s.name] = me = new int[2];
+                    me[0] += Mathf.RoundToInt(dt); me[1] = t;
                     dirty = true;
                     if (!trails.TryGetValue(s.key ?? s.name, out var tr)) trails[s.key ?? s.name] = tr = new Trail();
                     tr.name = s.name;
@@ -81,14 +87,17 @@ namespace MuninMap.Live
             }
         }
 
-        // HTTP thread: trails, time spent and deaths per zone. Remade at most every 15 s.
-        public static string Json()
+        // HTTP thread: trails over the last `hours` (3 or 24), time spent and deaths per zone. Remade at
+        // most every 15 s.
+        public static string Json(int hours = 3)
         {
+            hours = hours >= 24 ? 24 : 3;
             lock (sync)
             {
-                if (cache != null && (DateTime.UtcNow - cacheAt).TotalSeconds < 15) return cache;
-                var j = new JsonWriter(1024 + heat.Count * 20 + trails.Count * 4096);
-                j.BeginObject().Prop("cell", 64).Prop("now", Now());
+                if (cache.TryGetValue(hours, out string c) && (DateTime.UtcNow - cacheAt[hours]).TotalSeconds < 15) return c;
+                int from = Now() - hours * 3600;
+                var j = new JsonWriter(1024 + heat.Count * 20 + trails.Count * 4096 * hours / 3);
+                j.BeginObject().Prop("cell", 64).Prop("now", Now()).Prop("hours", hours);
                 j.Key("heat").BeginArray();      // [zx, zz, seconds]
                 foreach (var kv in heat) j.BeginArray().Value((int)(kv.Key >> 32)).Value((int)(uint)kv.Key).Value(kv.Value).End();
                 j.End();
@@ -98,14 +107,38 @@ namespace MuninMap.Live
                 j.Key("trails").BeginArray();    // {name, pts: [x, z, unix seconds]...}
                 foreach (var tr in trails.Values)
                 {
+                    int i0 = tr.t.BinarySearch(from);
+                    if (i0 < 0) i0 = ~i0;
+                    if (i0 >= tr.t.Count) continue;
                     j.BeginObject().Prop("name", tr.name).Key("pts").BeginArray();
-                    for (int i = 0; i < tr.t.Count; i++) j.BeginArray().Value(tr.x[i], 0).Value(tr.z[i], 0).Value(tr.t[i]).End();
+                    for (int i = i0; i < tr.t.Count; i++) j.BeginArray().Value(tr.x[i], 0).Value(tr.z[i], 0).Value(tr.t[i]).End();
                     j.End().End();
                 }
                 j.End().End();
-                cache = j.ToString();
-                cacheAt = DateTime.UtcNow;
-                return cache;
+                cache[hours] = c = j.ToString();
+                cacheAt[hours] = DateTime.UtcNow;
+                return c;
+            }
+        }
+
+        // HTTP thread: one zone's time spent, all told and per player (most first)
+        // {"zx","zz","seconds","deaths","players":[[name, seconds, unix last there]...]}
+        public static string ZoneJson(int zx, int zz)
+        {
+            long k = ((long)zx << 32) ^ (uint)zz;
+            lock (sync)
+            {
+                heat.TryGetValue(k, out int sec);
+                deaths.TryGetValue(k, out int dead);
+                var j = new JsonWriter(256);
+                j.BeginObject().Prop("zx", zx).Prop("zz", zz).Prop("seconds", sec).Prop("deaths", dead).Key("players").BeginArray();
+                if (heatBy.TryGetValue(k, out var who))
+                {
+                    var list = new List<KeyValuePair<string, int[]>>(who);
+                    list.Sort((a, b) => b.Value[0].CompareTo(a.Value[0]));
+                    foreach (var kv in list) j.BeginArray().Value(kv.Key).Value(kv.Value[0]).Value(kv.Value[1]).End();
+                }
+                return j.End().End().ToString();
             }
         }
 
@@ -114,13 +147,20 @@ namespace MuninMap.Live
             path = Path.Combine(worldDir, "activity.txt");
             lock (sync)
             {
-                heat.Clear(); deaths.Clear(); trails.Clear(); cache = null;
+                heat.Clear(); deaths.Clear(); heatBy.Clear(); trails.Clear(); cache.Clear();
                 try
                 {
                     if (!File.Exists(path)) return;
                     foreach (var line in File.ReadAllLines(path))
                     {
                         var p = line.Split(' ');
+                        if (p.Length >= 6 && p[0] == "p" && int.TryParse(p[1], out int px) && int.TryParse(p[2], out int pz) && int.TryParse(p[3], out int ps) && int.TryParse(p[4], out int pt))
+                        {
+                            long pk = ((long)px << 32) ^ (uint)pz;   // "p zx zz seconds last name" (the name may hold spaces)
+                            if (!heatBy.TryGetValue(pk, out var who)) heatBy[pk] = who = new Dictionary<string, int[]>();
+                            who[string.Join(" ", p, 5, p.Length - 5)] = new[] { ps, pt };
+                            continue;
+                        }
                         if (p.Length != 4 || !int.TryParse(p[1], out int zx) || !int.TryParse(p[2], out int zz) || !int.TryParse(p[3], out int v)) continue;
                         long k = ((long)zx << 32) ^ (uint)zz;
                         if (p[0] == "h") heat[k] = v; else if (p[0] == "d") deaths[k] = v;
@@ -137,6 +177,9 @@ namespace MuninMap.Live
             lock (sync)
             {
                 foreach (var kv in heat) sb.Append("h ").Append((int)(kv.Key >> 32)).Append(' ').Append((int)(uint)kv.Key).Append(' ').Append(kv.Value.ToString(CultureInfo.InvariantCulture)).Append('\n');
+                foreach (var kv in heatBy)
+                    foreach (var w in kv.Value)
+                        sb.Append("p ").Append((int)(kv.Key >> 32)).Append(' ').Append((int)(uint)kv.Key).Append(' ').Append(w.Value[0]).Append(' ').Append(w.Value[1]).Append(' ').Append(w.Key.Replace('\n', ' ')).Append('\n');
                 foreach (var kv in deaths) sb.Append("d ").Append((int)(kv.Key >> 32)).Append(' ').Append((int)(uint)kv.Key).Append(' ').Append(kv.Value.ToString(CultureInfo.InvariantCulture)).Append('\n');
                 dirty = false;
             }

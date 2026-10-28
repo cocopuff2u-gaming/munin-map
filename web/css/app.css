@@ -153,6 +153,14 @@ a { color: var(--accent); }
 .spark path { fill: none; stroke: var(--accent); stroke-width: 1.5; }
 .spark .area { fill: rgba(111,183,255,.18); stroke: none; }
 .spark .axis { stroke: var(--line); stroke-width: 1; }
+/* Stats: busiest hours, a row a day and a cell an hour, the accent deeper for busier */
+.busy .bh-head { font-size: 12px; margin: 2px 0 6px; }
+.bh-grid { display: grid; grid-template-columns: 26px repeat(24, minmax(0, 1fr)); gap: 2px; align-items: center; }
+.bh-grid i { aspect-ratio: 1; border-radius: 2px; background: rgb(111 183 255 / var(--a)); }
+.bh-grid i.none { background: none; box-shadow: inset 0 0 0 1px var(--rule); }
+.bh-grid i:hover { outline: 1px solid var(--text); }
+.bh-day, .bh-h { font-size: 10px; color: var(--muted); }
+.bh-h { text-align: left; white-space: nowrap; overflow: visible; width: 0; }
 table.stats { width: 100%; border-collapse: collapse; font-size: 11.5px; }
 table.stats td:first-child { max-width: 88px; overflow: hidden; text-overflow: ellipsis; }
 table.stats th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 3px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; }
@@ -219,13 +227,14 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .mk-pin svg { width: 18px; height: 18px; }
 .mk-pin { width: 18px; height: 18px; }
 .raid-icon { overflow: visible; }
-.raid-pin { width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; animation: raid-pulse 1.257s linear infinite; }
-.raid-pin img { height: 64px; width: auto; image-rendering: auto; filter: drop-shadow(0 0 2px rgba(0,0,0,.6)); }
-.raid-pin b { font: 900 56px/1 var(--font); color: #ff0f00; text-shadow: 0 0 3px #000; }
-.raid-name { position: absolute; left: 50%; top: 62px; transform: translateX(-50%); white-space: nowrap; font: 600 13px/1.2 var(--font); color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000; pointer-events: none; }
-.raid-area { pointer-events: none; }
-/* the game's pulse: size x (0.8 + 0.2 sin(5t)) */
-@keyframes raid-pulse { 0% { transform: scale(.8); } 25% { transform: scale(1); } 50% { transform: scale(.8); } 75% { transform: scale(.6); } 100% { transform: scale(.8); } }
+.raid-pin { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--c); box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 0 12px var(--c); animation: raid-pulse 1.6s ease-in-out infinite; }
+.raid-pin b { font: 900 19px/1 var(--font); color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.5); }
+.raid-name { position: absolute; left: 50%; top: 36px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; white-space: nowrap; font: 700 12px/1.25 var(--font); color: #fff; padding: 3px 8px 4px; border-radius: 6px; background: rgba(12,14,18,.82); border-top: 2px solid var(--c); pointer-events: none; }
+.raid-name small { font-weight: 500; font-size: 11px; color: #e6c9c4; }
+.raid-area { cursor: pointer; }
+.raid-pop small { display: block; color: var(--muted); font-size: 11px; margin: 2px 0 4px; }
+.raid-pop .raid-msg { font-style: italic; margin: 2px 0 4px; }
+@keyframes raid-pulse { 0%, 100% { transform: scale(.9); } 50% { transform: scale(1.08); } }
 .shout-icon { overflow: visible; }
 .shout-pin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; animation: shout-in .25s ease-out; }
 .shout-pin img, .shout-pin svg { width: 28px; height: 28px; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)); }
@@ -446,6 +455,28 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 
 /* stats: boss progress, leaderboard */
 .zone-overlay { image-rendering: pixelated; image-rendering: crisp-edges; }
+/* Activity card: a layer's own options under its row (trails, building) */
+.act-opts[hidden] { display: none; }
+.act-opts { padding: 2px 2px 8px 34px; display: flex; flex-direction: column; gap: 6px; }
+.act-line { display: flex; align-items: center; gap: 8px; }
+.act-names { margin: 0; }
+.act-names .chip { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text); }
+.act-names .chip i { width: 8px; height: 8px; border-radius: 50%; }
+.act-names .chip.off { opacity: .45; text-decoration: line-through; }
+.act-opts .mp-seg { display: flex; width: 100%; }
+.act-opts .mp-seg button { flex: 1; padding: 5px 6px; white-space: nowrap; border-radius: 6px; }
+.act-opts .mp-seg button.on { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.act-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; font-size: 12px; color: var(--text); }
+.act-key span { display: inline-flex; align-items: center; gap: 6px; }
+.act-key i { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.act-key i.built { background: #46dc6e; }
+.act-key i.gone { background: #eb5046; }
+.act-note { font-size: 11px; color: var(--muted); }
+.act-note:empty { display: none; }
+.heat-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 0 10px 2px 0; font-size: 11px; }
+.heat-table td { white-space: nowrap; }
+.heat-table td:last-child { color: var(--muted); font-weight: 400 !important; }
+.heat-table .hd { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .hot-table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
 .hot-table td { padding: 1px 10px 1px 0; }
 .hot-table td + td { text-align: right; font-weight: 600; }

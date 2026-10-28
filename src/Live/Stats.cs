@@ -507,6 +507,14 @@ namespace MuninMap.Live
                 int from = Math.Max(0, onlineHistory.Count - 288);
                 for (int i = from; i < onlineHistory.Count; i++) j.BeginArray().Value(onlineHistory[i].Key).Value(onlineHistory[i].Value).End();
                 j.End();
+                // when the server is busy: the players online on average in each hour of the week (UTC,
+                // Monday 00:00 first; -1: the server wasn't up then), from the week of 5-minute buckets
+                var sum = new double[168]; var cnt = new int[168];
+                foreach (var kv in onlineHistory) { int h = (int)((kv.Key / 3600 + 72) % 168); sum[h] += kv.Value; cnt[h]++; }   // (1 Jan 1970 was a Thursday)
+                j.Key("busyHours").BeginArray();
+                for (int h = 0; h < 168; h++) j.Value(cnt[h] > 0 ? sum[h] / cnt[h] : -1, 2);
+                j.End();
+                j.Prop("busySince", onlineHistory.Count > 0 ? onlineHistory[0].Key : 0L);
                 j.Key("players").BeginArray();
                 var list = new List<PlayerStat>(players.Values);
                 list.Sort((a, b) => b.playtime.CompareTo(a.playtime));

@@ -199,10 +199,47 @@ export class Sidebar {
 
     // ---- where players go, and what weighs on their frame rate (all off at first: data on demand)
     const act = card('Activity', '2D map');
-    act.append(row(TRAIL_SVG, 'Trails', 'Where players went, last 3 hours', false, (v) => L.activity.set('trails', v)));
-    act.append(row(HEAT_SVG, 'Time spent', 'Where players spend their time', false, (v) => L.activity.set('heat', v)));
-    act.append(row(ico('tombstone', '#e0485a'), 'Deaths', 'Where players have died', false, (v) => L.activity.set('deaths', v)));
-    act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Busy areas: click one for why', false, (v) => L.activity.set('hotspots', v)));
+    const A = L.activity;
+    // trails: the last 3 or 24 hours, and whose
+    const trailOpts = el(`<div class="act-opts" hidden>
+      <div class="act-line"><span class="mp-seg"><button data-h="3" class="on">Last 3 hours</button><button data-h="24">Last 24 hours</button></span></div>
+      <div class="act-names chips"></div></div>`);
+    const hotOpts = el('<div class="act-opts" hidden><small class="act-note"></small></div>');
+    const buildOpts = el(`<div class="act-opts" hidden>
+      <div class="act-line"><span class="mp-seg"><button data-d="1" class="on">Last day</button><button data-d="7">Last week</button></span></div>
+      <div class="act-key"><span><i class="built"></i>Built</span><span><i class="gone"></i>Taken down</span></div>
+      <small class="act-note"></small></div>`);
+    const trailRow = row(TRAIL_SVG, 'Trails', 'Where players went, last 3 hours', false, (v) => { trailOpts.hidden = !v; A.set('trails', v); });
+    act.append(trailRow, trailOpts);
+    act.append(row(HEAT_SVG, 'Time spent', 'Click a square for who and how long', false, (v) => A.set('heat', v)));
+    act.append(row(ico('tombstone', '#e0485a'), 'Deaths', 'Where players have died', false, (v) => A.set('deaths', v)));
+    act.append(row(BUILD_SVG, 'New building', 'Where bases grew or came down', false, (v) => { buildOpts.hidden = !v; A.set('building', v); }), buildOpts);
+    act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Busy areas: click one for why', false, (v) => { hotOpts.hidden = !v; A.set('hotspots', v); }), hotOpts);
+    for (const b of trailOpts.querySelectorAll('[data-h]')) b.addEventListener('click', () => { if (A.hours !== +b.dataset.h) A.setHours(+b.dataset.h); });
+    for (const b of buildOpts.querySelectorAll('[data-d]')) b.addEventListener('click', () => { if (A.days !== +b.dataset.d) A.setDays(+b.dataset.d); });
+    let namesSig = '';
+    A.onChange(() => {
+      for (const b of trailOpts.querySelectorAll('[data-h]')) b.classList.toggle('on', +b.dataset.h === A.hours);
+      for (const b of buildOpts.querySelectorAll('[data-d]')) b.classList.toggle('on', +b.dataset.d === A.days);
+      trailRow.querySelector('.ltext small').textContent = `Where players went, last ${A.hours} hours`;
+      hotOpts.querySelector('.act-note').textContent = A.hotPending ? 'Ready about two minutes after the server starts.' : A.hot && !A.hot.length ? 'No busy areas.' : '';
+      // a chip per player with a trail, in their trail's colour: click to leave them out
+      const names = A.names(), sig = names.join('\n') + '|' + [...A.hidden].join('\n');
+      if (sig !== namesSig) {
+        namesSig = sig;
+        const box = trailOpts.querySelector('.act-names');
+        box.replaceChildren(...names.map((n) => {
+          const c = el(`<button class="chip${A.hidden.has(n) ? ' off' : ''}" title="Show or hide ${escape(n)}"><i style="background:${A.colorOf(n)}"></i>${escape(n)}</button>`);
+          c.addEventListener('click', () => A.toggleHidden(n));
+          return c;
+        }));
+        if (!names.length) box.append(el(`<small class="act-note">No one has been on in the last ${A.hours} hours.</small>`));
+      }
+      const bd = A.building, note = buildOpts.querySelector('.act-note');
+      note.textContent = !bd ? '' : bd.pending ? 'Ready about two minutes after the server starts.'
+        : bd.now - bd.since < A.days * 86400 - 3600 ? `Recorded since ${new Date(bd.since * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}, so changes since then.`
+        : `${(bd.zones || []).length ? 'Click a square for the numbers.' : 'No changes.'}`;
+    });
 
     // ---- the 3D map (left out when the server has enable_3d = false)
     if (this.app.config?.enable_3d !== false) {
@@ -420,7 +457,7 @@ export class Sidebar {
           if (s.id === 'tombstones' && m.when) side = `<span class="mside">${new Date(m.when / 10000 - 62135596800000).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>`;
           if (s.id === 'bases' && m.pieces) side = `<span class="mside">${m.pieces.toLocaleString()} pieces</span>`;
           if (s.id === 'spawn') meta = `${m.x}, ${m.z}`;
-          if (m.invasion) { const left = RaidLayer.left(m.invasion); side = `<span class="mside">${left === null ? 'until cleared' : RaidLayer.duration(left) + ' left'}</span>`; }
+          if (m.invasion) side = `<span class="mside">${m.raid ? RaidLayer.raidStatus(m.invasion) : RaidLayer.invasionStatus(m.invasion)}</span>`;
           list.append(row(m, escape(m.label || (m.cat === 'tablepin' ? 'Map pin' : '')), meta, side));
         }
         if (ms.length > 300) list.append(el(`<div class="empty">...and ${ms.length - 300} more: use the search above</div>`));
@@ -460,6 +497,9 @@ export class Sidebar {
     </div>`));
     q.append(el('<div class="sub">Players online, last 24 h</div>'));
     q.append(sparkline(d.onlineHistory || []));
+
+    // ---- when people play: the average online for each hour of the week, in this browser's time
+    if (d.busyHours) section('busy', 'Busiest hours').append(busyChart(d.busyHours, d.busySince));
 
     // ---- the weather to come in each biome (the game draws it by time alone, so it holds for everyone)
     const fc = d.forecast;
@@ -846,6 +886,7 @@ const RINGS_SVG = SVG('<circle cx="12" cy="12" r="2" fill="#7cff4f" stroke="none
 const SUN_SVG = SVG('<circle cx="12" cy="12" r="4" fill="#ffd866" stroke="#ffd866"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="#ffd866"/>');
 const CONTOUR_SVG = SVG('<path d="M3 17c3-1 5-6 9-6s6 5 9 6" stroke="#c9a46a"/><path d="M6 17c2-1 3-3.5 6-3.5s4 2.5 6 3.5" stroke="#c9a46a" opacity=".7"/><path d="M9 7c1-2 2-3 3-3s2 1 3 3" stroke="#c9a46a" stroke-width="2.2"/>');
 const TRAIL_SVG = SVG('<path d="M4 19c3-1 3-5 6-6s5 1 7-2 1-5 3-6" stroke="#6fe0c8" stroke-width="2" stroke-dasharray="3 2.2" fill="none"/><circle cx="20" cy="5" r="2" fill="#6fe0c8" stroke="none"/>');
+const BUILD_SVG = SVG('<path d="M3 21V11l6-5 6 5v10z" fill="#46dc6e" stroke="none"/><path d="M15 21v-6h6v6z" fill="none" stroke="#46dc6e" stroke-width="1.6" stroke-dasharray="2 1.6"/><path d="M18 4v6M15 7h6" stroke="#46dc6e" stroke-width="2"/>');
 const HEAT_SVG = SVG('<rect x="3" y="3" width="6" height="6" fill="#2c4fd0" stroke="none"/><rect x="9" y="3" width="6" height="6" fill="#33c0dc" stroke="none"/><rect x="15" y="3" width="6" height="6" fill="#2c4fd0" stroke="none"/><rect x="3" y="9" width="6" height="6" fill="#7bdc50" stroke="none"/><rect x="9" y="9" width="6" height="6" fill="#f0482a" stroke="none"/><rect x="15" y="9" width="6" height="6" fill="#fad232" stroke="none"/><rect x="3" y="15" width="6" height="6" fill="#33c0dc" stroke="none"/><rect x="9" y="15" width="6" height="6" fill="#fad232" stroke="none"/><rect x="15" y="15" width="6" height="6" fill="#7bdc50" stroke="none"/>');
 const SHADOW_SVG = SVG('<circle cx="10" cy="10" r="5"/><path d="M8 19c3 1.5 9 1.5 12-2" opacity=".6"/>');
 
@@ -959,6 +1000,37 @@ function nameColor(name) {
   let h = 0;
   for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) | 0;
   return NAME_COLORS[Math.abs(h) % NAME_COLORS.length];
+}
+
+// Players online on average for each hour of the week: a row a day (Monday first) and a column an
+// hour, darker for busier, in this browser's time zone (the server counts in UTC); hours the server
+// wasn't up are left blank. With the busiest two hours spelled out above it.
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function busyChart(utc, since) {
+  const shift = Math.round(-new Date().getTimezoneOffset() / 60);
+  const v = new Array(168).fill(-1);
+  utc.forEach((n, h) => { v[(h + shift + 168) % 168] = n; });
+  const known = v.filter((n) => n >= 0);
+  if (!known.length) return el('<div class="empty">No history yet.</div>');
+  const max = Math.max(...known);
+  const hh = (h) => String(h % 24).padStart(2, '0') + ':00';
+  let best = -1, bestAt = 0;
+  for (let h = 0; h < 168; h++) { const s2 = Math.max(0, v[h]) + Math.max(0, v[(h + 1) % 168]); if (s2 > best) { best = s2; bestAt = h; } }
+  const head = max < 0.05 ? 'Quiet so far: hardly anyone on at any hour.'
+    : `Usually busiest <b>${DAYS[Math.floor(bestAt / 24)]} ${hh(bestAt)}–${hh(bestAt + 2)}</b>, about ${Math.max(1, Math.round(best / 2))} on`;
+  const cells = [];
+  for (let d = 0; d < 7; d++) {
+    cells.push(`<span class="bh-day">${DAYS[d]}</span>`);
+    for (let h = 0; h < 24; h++) {
+      const n = v[d * 24 + h];
+      const tip = `${DAYS[d]} ${hh(h)}–${hh(h + 1)}: ${n < 0 ? 'no record (server off)' : `${n < 0.05 ? 'nobody' : n.toFixed(1) + ' online'} on average`}`;
+      cells.push(n < 0 ? `<i class="none" title="${tip}"></i>` : `<i style="--a:${max > 0 ? (0.06 + 0.94 * n / max).toFixed(2) : 0.06}" title="${tip}"></i>`);
+    }
+  }
+  const axis = '<span></span>' + Array.from({ length: 24 }, (_, h) => `<span class="bh-h">${h % 6 ? '' : hh(h).slice(0, 2)}</span>`).join('');
+  const days = since ? Math.max(1, Math.round((Date.now() / 1000 - since) / 86400)) : 0;
+  return el(`<div class="busy"><div class="bh-head">${head}</div><div class="bh-grid">${cells.join('')}${axis}</div>
+    <div class="sub">Players online on average, your time${days ? `, over the last ${Math.min(7, days)} day${days === 1 ? '' : 's'}` : ''}. Hover an hour for the number.</div></div>`);
 }
 
 function sparkline(hist) {
