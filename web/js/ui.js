@@ -320,9 +320,17 @@ export class Sidebar {
       const r = el(`<div class="pcard${following ? ' on' : ''}">
         <div class="pc-top"><span class="avatar" style="background:${color}">${escape((pl.name || '?').slice(0, 1).toUpperCase())}</span>
           <div class="grow"><div class="pc-name">${escape(pl.name)}${tags}</div><div class="pc-where" title="${pl.x !== undefined ? `${pl.x}, ${pl.z}` : ''}">${where}</div></div>
-          <button class="btn small${following ? ' on' : ''}" ${pl.x === undefined ? 'disabled' : ''}>${following ? 'Following' : 'Follow'}</button></div>
+          <div class="pc-btns"><button class="btn small" data-act="goto" title="Go to them on the map" ${pl.x === undefined ? 'disabled' : ''}>Go to</button>
+          <button class="btn small${following ? ' on' : ''}" data-act="follow" ${pl.x === undefined ? 'disabled' : ''}>${following ? 'Following' : 'Follow'}</button></div></div>
         <div class="pc-hp"><div class="hp"><i class="${hp < 30 ? 'low' : ''}" style="width:${hp}%"></i></div><span>${Math.round(pl.health ?? 0)} / ${Math.round(pl.maxHealth ?? 0)}</span></div></div>`);
-      r.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); PL.follow(following ? null : pl.id); });
+      r.querySelector('[data-act=follow]').addEventListener('click', (e) => { e.stopPropagation(); PL.follow(following ? null : pl.id); });
+      r.querySelector('[data-act=goto]').addEventListener('click', (e) => {   // (their position now, not the one this card was drawn with)
+        e.stopPropagation();
+        const q = PL.players.find((x) => x.id === pl.id) || pl;
+        if (q.x === undefined) return;
+        if (window.innerWidth <= 720) this.app.toggleSidebar(false);   // a phone: the menu covers the map
+        this.app.goTo(q.x, q.z, Math.max(this.app.map.getZoom(), 7));
+      });
       r.addEventListener('click', () => { const rect = r.getBoundingClientRect(); this.app.playerCard.show(pl, rect.right, rect.top + rect.height / 2); });
       p.append(r);
     }

@@ -436,7 +436,7 @@ export class ActivityLayers {
   buildHtml(b) {
     const d = b[2] - b[3];
     return `<div class="ap-sec"><h5>${d > 0 ? 'Built' : 'Taken down'}<span>${d > 0 ? '+' : '−'}${Math.abs(d).toLocaleString()} pieces</span></h5>
-      <dl class="ap-kv"><dt>${escape(fmtClock(this.building.since, true))}</dt><dd>${b[3].toLocaleString()}</dd><dt>Now</dt><dd>${b[2].toLocaleString()}</dd></dl></div>`;
+      <dl class="ap-kv"><dt>Then <small>(${escape(fmtClock(this.building.since, true))})</small></dt><dd>${b[3].toLocaleString()}</dd><dt>Now</dt><dd>${b[2].toLocaleString()}</dd></dl></div>`;
   }
 
   nearestBase(x, z) {

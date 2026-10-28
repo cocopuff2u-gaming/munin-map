@@ -646,6 +646,8 @@ table.stats tr.on td:first-child::before { content: ""; display: inline-block; w
 .pcard { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 0 0 8px; cursor: pointer; }
 .pcard:hover { border-color: #3a4656; }
 .pcard.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.pc-btns { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.pc-btns .btn { width: 100%; justify-content: center; }
 .pc-top { display: flex; align-items: center; gap: 10px; }
 .pc-top .grow { flex: 1; min-width: 0; }
 .avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #0d1117; flex: none; font-size: 14px; }
