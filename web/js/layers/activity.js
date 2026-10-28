@@ -313,9 +313,10 @@ export class ActivityLayers {
       this.drawn.deaths = gridOverlay(this.map, a.deaths, (c) => [220, 30, 50, Math.round(110 + 145 * Math.sqrt(c[2] / max))], 'deaths');
     }
     if (this.on.hotspots && this.hot) {
+      const ring = this.on.heat || this.on.deaths || this.on.building;   // outlined over another zone layer, filled on its own
       const score = (c) => c[2] + c[3] * 15 + c[4] * 12 + c[5] * 2;   // as World/Hotspots.Score
       const max = Math.max(1, ...this.hot.map(score));
-      this.drawn.hotspots = gridOverlay(this.map, this.hot, (c) => { const t = Math.sqrt(score(c) / max); return [...ramp(LOAD, t), Math.round(170 + 85 * t)]; }, 'hotspots', true);
+      this.drawn.hotspots = gridOverlay(this.map, this.hot, (c) => { const t = Math.sqrt(score(c) / max); return [...ramp(LOAD, t), ring ? Math.round(170 + 85 * t) : Math.round(90 + 130 * t)]; }, 'hotspots', ring);
     }
     if (this.on.building && this.building) {
       const z = this.building.zones || [];

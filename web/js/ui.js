@@ -207,14 +207,13 @@ export class Sidebar {
     const hotOpts = el('<div class="act-opts" hidden><small class="act-note"></small></div>');
     const buildOpts = el(`<div class="act-opts" hidden>
       <div class="act-line"><span class="mp-seg"><button data-d="1" class="on">Last day</button><button data-d="7">Last week</button></span></div>
-      <div class="act-key"><span><i class="built"></i>Built</span><span><i class="gone"></i>Taken down</span></div>
-      <small class="act-note"></small></div>`);
+      <div class="act-key"><span><i class="built"></i>Built</span><span><i class="gone"></i>Taken down</span></div></div>`);
     const trailRow = row(TRAIL_SVG, 'Trails', 'Where players went, last 3 hours', false, (v) => { trailOpts.hidden = !v; A.set('trails', v); });
     act.append(trailRow, trailOpts);
     act.append(row(HEAT_SVG, 'Time spent', 'Click a square for who and how long', false, (v) => A.set('heat', v)));
     act.append(row(ico('tombstone', '#e0485a'), 'Deaths', 'Where players have died', false, (v) => A.set('deaths', v)));
     act.append(row(BUILD_SVG, 'New building', 'Where bases grew or came down', false, (v) => { buildOpts.hidden = !v; A.set('building', v); }), buildOpts);
-    act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Outlined squares: click one for why', false, (v) => { hotOpts.hidden = !v; A.set('hotspots', v); }), hotOpts);
+    act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Busy areas: click one for why', false, (v) => { hotOpts.hidden = !v; A.set('hotspots', v); }), hotOpts);
     for (const b of trailOpts.querySelectorAll('[data-h]')) b.addEventListener('click', () => { if (A.hours !== +b.dataset.h) A.setHours(+b.dataset.h); });
     for (const b of buildOpts.querySelectorAll('[data-d]')) b.addEventListener('click', () => { if (A.days !== +b.dataset.d) A.setDays(+b.dataset.d); });
     let namesSig = '';
@@ -235,10 +234,6 @@ export class Sidebar {
         }));
         if (!names.length) box.append(el(`<small class="act-note">No one has been on in the last ${A.hours} hours.</small>`));
       }
-      const bd = A.building, note = buildOpts.querySelector('.act-note');
-      note.textContent = !bd ? '' : bd.pending ? 'Ready about two minutes after the server starts.'
-        : bd.now - bd.since < A.days * 86400 - 3600 ? `Recorded since ${new Date(bd.since * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}, so changes since then.`
-        : `${(bd.zones || []).length ? 'Click a square for the numbers.' : 'No changes.'}`;
     });
 
     // ---- the 3D map (left out when the server has enable_3d = false)
