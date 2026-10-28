@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.2.3
+
+**Player card fixes**
+
+* **Connection now shows for players on a dedicated server.** The game's own way of asking for ping and link quality only works on a hosted game, so on a dedicated server the card never had them. The server now asks Steam directly. The card shows ping, packets lost, traffic in each direction, how much their line can take, and how far behind the server is in sending to them when it is. The amount waiting to send is Steam's own count: network mods report a smaller one to the game on purpose.
+* **Weapons and shields put away show.** While sailing (or with weapons sheathed) what they carry moves to their back; the card lists it as "On their back", with its level, and the 3D character carries it there.
+* **Item styles**: shields and capes show in the style they're using (a painted shield, a dyed linen cape), on the card and in 3D.
+
+**The 3D character**
+
+* **Every part with its texture and colour.** On a dedicated server the game's shaders aren't loaded, and the engine then reports most materials as having no texture and no colour, so many pieces came out grey (mage armour, male skin, shorts under some chest armour). The textures and colours are now read from the material itself, or from the game's files where the engine won't say. Every wearable item in the game was checked.
+* **What glows, glows**: runes, crystals, flametal, thunderblood weapons, staff gems, trinkets and lanterns, in the game's colours.
+* **Item effects play**: fire staff flames, torches, lightning, sparks, spores, drips and the light some items give off, from the game's own settings for each effect, as on the character select screen.
+* Dyed capes in their colour; beards and hats that hang on the head rather than the skeleton in place and at their size; parts the game keeps locked at their true size; axe heads and other parts no longer turn see-through.
+* Every character is shown at the same size, framed on the body, whatever they hold.
+
+**Server**
+
+* `cache_server_files` (in `[Server]`) describes its use for testing: off, changes to the web files show on the next page refresh without restarting the server.
+* No more empty Discord webhook line in the log on each join when no webhook is set.
+
 ## 3.2.2
 
 **New on the map**

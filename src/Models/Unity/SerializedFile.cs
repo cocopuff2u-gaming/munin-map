@@ -189,6 +189,14 @@ namespace MuninMap.Models.Unity
             return m;
         }
 
+        // Any object through its type tree, as nested dictionaries and lists; null without a type tree.
+        public Dictionary<string, object> ReadObject(ObjectInfo o)
+        {
+            var t = Types[o.TypeIndex];
+            if (t.Nodes == null) return null;
+            return ReadAny(new LeReader(data, (int)o.Start), t.Nodes, 0) as Dictionary<string, object>;
+        }
+
         public static int AsInt(Dictionary<string, object> d, string k) => d != null && d.TryGetValue(k, out object v) ? (int)ToLong(v) : 0;
         public static long AsLong(Dictionary<string, object> d, string k) => d != null && d.TryGetValue(k, out object v) ? ToLong(v) : 0;
         public static float AsFloat(Dictionary<string, object> d, string k) => d != null && d.TryGetValue(k, out object v) ? (v is float f ? f : v is double db ? (float)db : ToLong(v)) : 0f;

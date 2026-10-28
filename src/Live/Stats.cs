@@ -46,6 +46,7 @@ namespace MuninMap.Live
             public List<string> found = new List<string>();        // places they were first to find (the last 30)
             public long deathAt; public float deathX, deathZ; public string deathBiome = "";   // their last death (unix, where)
             public Dictionary<string, int> levels = new Dictionary<string, int>();   // the level of what they wore, where the game says (slot -> level)
+            public Dictionary<string, int> variants = new Dictionary<string, int>(); // the style of what they wore, where it has one (slot -> variant)
             public bool hasLook; public Players.Look look;                          // how they look, last seen
             // more to their story (counted from when this was added; position-based ones only while the map
             // can follow them)
@@ -167,6 +168,8 @@ namespace MuninMap.Live
                         s.deathX = (float)JsonParser.Num(d, "deathX"); s.deathZ = (float)JsonParser.Num(d, "deathZ");
                         var lv = JsonParser.Obj(d, "levels");
                         if (lv != null) foreach (var kv in lv) if (kv.Value is double q) s.levels[kv.Key] = (int)q;
+                        var vr = JsonParser.Obj(d, "variants");
+                        if (vr != null) foreach (var kv in vr) if (kv.Value is double v) s.variants[kv.Key] = (int)v;
                         var lk = JsonParser.Obj(d, "look");
                         if (lk != null)
                         {
@@ -273,11 +276,14 @@ namespace MuninMap.Live
             j.Key("levels").BeginObject();
             foreach (var kv in s.levels) j.Prop(kv.Key, kv.Value);
             j.End();
+            j.Key("variants").BeginObject();
+            foreach (var kv in s.variants) j.Prop(kv.Key, kv.Value);
+            j.End();
             if (s.hasLook)
             {
                 Players.WriteLook(j, s.look);
-                var gear = s.gear;
-                j.Prop("portrait", Models.Portraits.Id(s.look, slot => gear.TryGetValue(slot, out string it) ? it : ""));
+                var gear = s.gear; var variants = s.variants;
+                j.Prop("portrait", Models.Portraits.Id(s.look, slot => gear.TryGetValue(slot, out string it) ? it : "", slot => variants.TryGetValue(slot, out int v) ? v : 0));
             }
             j.Key("biomeTime").BeginObject(); foreach (var kv in s.biomeTime) j.Prop(kv.Key, Math.Round(kv.Value), 0); j.End();
             j.Key("biomeDeaths").BeginObject(); foreach (var kv in s.biomeDeaths) j.Prop(kv.Key, kv.Value); j.End();
@@ -418,6 +424,16 @@ namespace MuninMap.Live
                         s.levels.TryGetValue(slot, out int had);
                         if (had == q) continue;
                         if (q == 0) s.levels.Remove(slot); else s.levels[slot] = q;
+                        dirty = true;
+                    }
+                if (p.variant != null)
+                    for (int g = 0; g < p.variant.Length && g < Players.GearSlots.Length; g++)
+                    {
+                        string slot = Players.GearSlots[g];
+                        int v = string.IsNullOrEmpty(p.gear?[g]) ? 0 : p.variant[g];
+                        s.variants.TryGetValue(slot, out int had);
+                        if (had == v) continue;
+                        if (v == 0) s.variants.Remove(slot); else s.variants[slot] = v;
                         dirty = true;
                     }
                 if (!s.hasLook || !Same(s.look, p.look)) { s.look = p.look; s.hasLook = true; dirty = true; }

@@ -240,7 +240,7 @@ namespace MuninMap.Models
             string tn = "";
             try { if (mat.mainTexture != null) tn = mat.mainTexture.name.ToLowerInvariant(); } catch { }
             bool cutoff = false;
-            try { cutoff = mat.HasProperty("_Cutoff") && mat.GetFloat("_Cutoff") > 0.01f; } catch { }
+            try { cutoff = Has(mat, "_Cutoff") && mat.GetFloat("_Cutoff") > 0.01f; } catch { }
             prim.alphaMask = shader.Contains("vegetation") || shader.Contains("cutout") || shader.Contains("leaf") || mn.Contains("leaf") || mn.Contains("branch") || (cutoff && !shader.Contains("standard"));
             // Foliage = leaves, needles, branch cards: named so on the material or its texture. Bark, trunks,
             // logs and stumps are geometry even though the game draws the whole tree with its vegetation
@@ -256,7 +256,7 @@ namespace MuninMap.Models
                 prim.textureUri = texFile;
                 // with a texture the base colour is a tint only
                 Color c = Color.white;
-                try { if (mat.HasProperty("_Color")) c = mat.color; } catch { }
+                try { if (Has(mat, "_Color")) c = mat.color; } catch { }
                 prim.r = Mathf.Clamp01(c.r); prim.g = Mathf.Clamp01(c.g); prim.b = Mathf.Clamp01(c.b);
                 if (prim.r + prim.g + prim.b < 0.15f) { prim.r = prim.g = prim.b = 1f; }   // some materials tint black and rely on emission
             }
@@ -265,7 +265,7 @@ namespace MuninMap.Models
                 // no readable texture: the material colour, unless it is plain white (then the palette guess is better)
                 try
                 {
-                    if (mat.HasProperty("_Color"))
+                    if (Has(mat, "_Color"))
                     {
                         Color c = mat.color;
                         if (!(c.r > 0.9f && c.g > 0.9f && c.b > 0.9f)) { prim.r = c.r; prim.g = c.g; prim.b = c.b; }
@@ -279,17 +279,50 @@ namespace MuninMap.Models
         // or extracted from the game files by TextureExtractor), else exported now when the engine
         // lets us read it. Returns the file name, or null. The name is recorded either way so the
         // extraction tool knows what to look for.
-        private static string ExportTexture(Material mat, string modelsDir, Result res)
+        // Does the material carry this property? Asked of the material's own saved values: on a dedicated
+        // server the game's shaders are stripped, and Material.HasProperty (which asks the shader) says no
+        // even for a texture the material has.
+        internal static bool Has(Material m, string prop)
         {
+            if (m == null) return false;
+            try { if (m.HasProperty(prop)) return true; } catch { }
+            try { if (Array.IndexOf(m.GetTexturePropertyNames(), prop) >= 0) return true; } catch { }
+            try { foreach (var t in new[] { MaterialPropertyType.Vector, MaterialPropertyType.Float, MaterialPropertyType.Int })
+                      if (Array.IndexOf(m.GetPropertyNames(t), prop) >= 0) return true; } catch { }
+            return false;
+        }
+
+        // A material's colour map: the shader's main texture (whatever it calls it), else one under a
+        // usual colour-map name, else any texture slot named like one (not normal, mask or detail maps)
+        internal static Texture2D ColorTexture(Material mat)
+        {
+            if (mat == null) return null;
             Texture2D tex = null;
             try { tex = mat.mainTexture as Texture2D; } catch { }
             if (tex == null)
-            {
-                // shaders that keep their colour map under another name
                 foreach (var prop in altColorProps)
-                    try { if (mat.HasProperty(prop)) { tex = mat.GetTexture(prop) as Texture2D; if (tex != null) break; } } catch { }
-            }
-            if (tex == null || string.IsNullOrEmpty(tex.name)) return null;
+                    try { if (Has(mat, prop)) { tex = mat.GetTexture(prop) as Texture2D; if (tex != null) break; } } catch { }
+            if (tex == null)
+                try
+                {
+                    foreach (var prop in mat.GetTexturePropertyNames())
+                    {
+                        string l = prop.ToLowerInvariant();
+                        if (!(l.Contains("main") || l.Contains("albedo") || l.Contains("diffuse") || l.Contains("base") || l.Contains("color") || l.Contains("colour"))) continue;
+                        if (l.Contains("normal") || l.Contains("bump") || l.Contains("emis") || l.Contains("metal") || l.Contains("rough") || l.Contains("mask") || l.Contains("detail") || l.Contains("spec") || l.Contains("occl") || l.Contains("height") || l.Contains("noise")) continue;
+                        tex = mat.GetTexture(prop) as Texture2D;
+                        if (tex != null) break;
+                    }
+                }
+                catch { }
+            return tex != null && !string.IsNullOrEmpty(tex.name) ? tex : null;
+        }
+        internal static string ColorTextureName(Material mat) => ColorTexture(mat)?.name;
+
+        private static string ExportTexture(Material mat, string modelsDir, Result res)
+        {
+            Texture2D tex = ColorTexture(mat);
+            if (tex == null) return null;
             string name = tex.name;
             if (!res.wants.Contains(name)) res.wants.Add(name);
             if (!MuninConfig.USE_TEXTURES) return null;   // name recorded (so a later switch-on knows what to fetch), never used

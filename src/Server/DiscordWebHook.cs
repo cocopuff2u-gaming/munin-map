@@ -22,11 +22,7 @@ namespace MuninMap
             values.Remove("content");
             values.Add("content", msgSend);
 
-            if (webHookUrl.IsNullOrEmpty())
-            {
-                ZLog.Log($"MuninMap::DiscordWebHook::SendMessage: {values}");
-                return;
-            }
+            if (webHookUrl.IsNullOrEmpty()) return;   // (no webhook set: nothing to send)
             webClient.UploadValues(webHookUrl, values);
         }
 

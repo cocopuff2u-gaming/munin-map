@@ -13,7 +13,7 @@ import { fmtDuration, fmtDist, fmtAgo } from './ui.js';
 import { showPortrait, preloadPortrait } from './portrait.js';
 
 const ARMOR_SLOTS = new Set(['helmet', 'chest', 'legs', 'shoulder', 'utility', 'trinket']);
-const SLOTS = [['helmet', 'Head'], ['chest', 'Chest'], ['legs', 'Legs'], ['shoulder', 'Cape'], ['utility', 'Belt'], ['trinket', 'Trinket'], ['right', 'Right hand'], ['left', 'Left hand']];
+const SLOTS = [['helmet', 'Head'], ['chest', 'Chest'], ['legs', 'Legs'], ['shoulder', 'Cape'], ['utility', 'Belt'], ['trinket', 'Trinket'], ['right', 'Right hand'], ['left', 'Left hand'], ['rightBack', 'On their back'], ['leftBack', 'On their back']];
 
 // "ArmorBronzeChest" -> "Armor Bronze Chest"; drop the variant suffixes the game adds
 export function itemName(prefab) {
@@ -57,11 +57,14 @@ function netHtml(p) {
   const q = p.netQ ?? 1, ms = p.ping;
   const level = ms < 80 && q > 0.8 ? 4 : ms < 150 && q > 0.6 ? 3 : ms < 250 && q > 0.4 ? 2 : 1;
   const word = ['', 'Poor', 'Fair', 'Good', 'Great'][level];
-  const queue = p.sendQ > 20000 ? ` · ${Math.round(p.sendQ / 1024)} KB waiting to send` : '';
-  return `<div class="pc-net q${level}" title="Their connection to the server: ${ms} ms, link quality ${Math.round(q * 100)}%${queue}"><i></i><i></i><i></i><i></i><span>${ms} ms · ${word}${queue ? ' · lagging' : ''}</span></div>`;
+  // behind: what the server has for them is waiting (Steam's count, which network mods don't shrink)
+  const behind = (p.queueMs || 0) >= 250 || p.sendQ > 20000;
+  const queue = behind ? ` · ${p.queueMs ? `${p.queueMs} ms` : `${Math.round(p.sendQ / 1024)} KB`} behind` : '';
+  return `<div class="pc-net q${level}" title="Their connection to the server: ${ms} ms, ${loss(q)} of packets lost${queue}"><i></i><i></i><i></i><i></i><span>${ms} ms · ${word}${behind ? ' · lagging' : ''}</span></div>`;
 }
 
 // their game and connection, in detail (live only; never their address)
+const loss = (q) => { const l = (1 - q) * 100; return l < 0.5 ? '0%' : l < 10 ? `${l.toFixed(1)}%` : `${Math.round(l)}%`; };
 const kb = (b) => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB/s` : b >= 1024 ? `${Math.round(b / 1024)} KB/s` : `${Math.round(b || 0)} B/s`;
 function connHtml(p, server) {
   const rows = [];
@@ -70,9 +73,10 @@ function connHtml(p, server) {
   if (p.netVersion) rows.push(['Network version', p.netVersion]);
   if (p.ping) {
     rows.push(['Ping', `${p.ping} ms`]);
-    rows.push(['Link quality', `${Math.round((p.netQ ?? 1) * 100)}%`]);
-    rows.push(['Bandwidth', `↓ ${kb(p.outBps)} · ↑ ${kb(p.inBps)}`]);
-    if (p.sendQ) rows.push(['Waiting to send', kb(p.sendQ).replace('/s', '')]);
+    rows.push(['Packets lost', loss(p.netQ ?? 1)]);
+    rows.push(['Traffic', `↓ ${kb(p.outBps)} · ↑ ${kb(p.inBps)}`]);
+    if (p.rateBps) rows.push(['Their line can take', `about ${kb(p.rateBps)}`]);
+    if (p.sendQ) rows.push(['Waiting to send', `${kb(p.sendQ).replace('/s', '')}${p.queueMs ? ` · ${p.queueMs} ms behind` : ''}`]);
   }
   return rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
 }

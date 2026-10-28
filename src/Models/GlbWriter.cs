@@ -24,6 +24,8 @@ namespace MuninMap.Models
             public bool alphaMask, foliage;        // cutout (leaves, fences with holes)
             public bool doubleSided = true;
             public float metallic = 0f, roughness = 0.9f;
+            public float er, eg, eb;           // glow (emissive) colour, 0-1; 0 none
+            public string emissiveUri;         // optional glow map, relative to the .glb
         }
 
         private readonly List<Primitive> prims = new List<Primitive>();
@@ -85,6 +87,14 @@ namespace MuninMap.Models
                     images.Add(im.ToString());
                     texIndex = images.Count - 1;
                 }
+                int glowIndex = -1;
+                if (uvAcc >= 0 && p.emissiveUri != null && (p.er > 0f || p.eg > 0f || p.eb > 0f))
+                {
+                    var im = new JsonWriter(128);
+                    im.BeginObject().Prop("mimeType", "image/png").Prop("uri", p.emissiveUri).End();
+                    images.Add(im.ToString());
+                    glowIndex = images.Count - 1;
+                }
                 var m = new JsonWriter(256);
                 m.BeginObject().Prop("name", p.name ?? ("mat" + pi)).Prop("doubleSided", p.doubleSided);
                 m.Key("pbrMetallicRoughness").BeginObject();
@@ -92,6 +102,11 @@ namespace MuninMap.Models
                 m.Prop("metallicFactor", p.metallic, 3).Prop("roughnessFactor", p.roughness, 3);
                 if (texIndex >= 0) m.Key("baseColorTexture").BeginObject().Prop("index", texIndex).End();
                 m.End();
+                if (p.er > 0f || p.eg > 0f || p.eb > 0f)
+                {
+                    m.Key("emissiveFactor").BeginArray().Value(p.er, 4).Value(p.eg, 4).Value(p.eb, 4).End();
+                    if (glowIndex >= 0) m.Key("emissiveTexture").BeginObject().Prop("index", glowIndex).End();
+                }
                 if (p.alphaMask) m.Prop("alphaMode", "MASK").Prop("alphaCutoff", 0.5f, 2);
                 else if (p.a < 0.999f) m.Prop("alphaMode", "BLEND");
                 m.End();

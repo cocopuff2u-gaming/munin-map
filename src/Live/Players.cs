@@ -23,11 +23,12 @@ namespace MuninMap.Live
             public float x, y, z, yaw, health, maxHealth, stamina, eitr, wisp;
             public bool hasPos, tracked, hidden, dead, pvp, inBed, hasWeather;
             public Weather.Now weather;
-            public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility, trinket (prefab names, "" when empty)
-            public int[] quality;   // the item level, for the slots the game sends one (right, left, shoulder); 0 unknown
+            public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility, trinket, rightBack, leftBack (prefab names, "" when empty)
+            public int[] quality;   // the item level, for the slots the game sends one (hands, back, cape); 0 unknown
+            public int[] variant;   // the item's style (shields, capes: the game's variant number), 0 the first
             public Look look;
             public int baseValue;   // the game's count of base pieces around them (fires, beds, workbenches): 3 or more is a base
-            public int ping; public float quality01, inBps, outBps; public int sendQueue;
+            public int ping; public float quality01, inBps, outBps; public int sendQueue, queueMs, rateBps;
             public string version, platform; public uint network; public bool crossplay;   // their connection, from the server's socket (ping 0: not known)
         }
 
@@ -50,11 +51,15 @@ namespace MuninMap.Live
         private static readonly int hashStamina = "stamina".GetStableHashCode();
         private static readonly int hashEitr = "eitr".GetStableHashCode();
         // what the player has equipped, as the visual-equipment sync stores it: item name hashes
-        private static readonly int[] hashGear = { "RightItem".GetStableHashCode(), "LeftItem".GetStableHashCode(), "ChestItem".GetStableHashCode(), "HelmetItem".GetStableHashCode(), "LegItem".GetStableHashCode(), "ShoulderItem".GetStableHashCode(), "UtilityItem".GetStableHashCode(), "TrinketItem".GetStableHashCode() };
-        public static readonly string[] GearSlots = { "right", "left", "chest", "helmet", "legs", "shoulder", "utility", "trinket" };
+        private static readonly int[] hashGear = { "RightItem".GetStableHashCode(), "LeftItem".GetStableHashCode(), "ChestItem".GetStableHashCode(), "HelmetItem".GetStableHashCode(), "LegItem".GetStableHashCode(), "ShoulderItem".GetStableHashCode(), "UtilityItem".GetStableHashCode(), "TrinketItem".GetStableHashCode(),
+            "RightBackItem".GetStableHashCode(), "LeftBackItem".GetStableHashCode() };   // (back: weapon and shield put away, e.g. while sailing)
+        public static readonly string[] GearSlots = { "right", "left", "chest", "helmet", "legs", "shoulder", "utility", "trinket", "rightBack", "leftBack" };
         private const int Utility = 6;
-        // the item level, which the game sends only for what's in the hands and the cape (per slot above; 0 none)
-        private static readonly int[] hashQuality = { "RightItemQuality".GetStableHashCode(), "LeftItemQuality".GetStableHashCode(), 0, 0, 0, "ShoulderItemQuality".GetStableHashCode(), 0, 0 };
+        // the item level, which the game sends only for the hands, the back and the cape (per slot above; 0 none)
+        private static readonly int[] hashQuality = { "RightItemQuality".GetStableHashCode(), "LeftItemQuality".GetStableHashCode(), 0, 0, 0, "ShoulderItemQuality".GetStableHashCode(), 0, 0,
+            "RightBackItemQuality".GetStableHashCode(), "LeftBackItemQuality".GetStableHashCode() };
+        // the item's style, for the slots that have one (per slot above; 0 none)
+        private static readonly int[] hashVariant = { 0, "LeftItemVariant".GetStableHashCode(), 0, 0, 0, "ShoulderItemVariant".GetStableHashCode(), 0, 0, 0, "LeftBackItemVariant".GetStableHashCode() };
         private static readonly int hashModel = "ModelIndex".GetStableHashCode(), hashSkin = "SkinColor".GetStableHashCode(), hashHairColor = "HairColor".GetStableHashCode();
         private static readonly int hashHair = "HairItem".GetStableHashCode(), hashBeard = "BeardItem".GetStableHashCode(), hashBase = "baseValue".GetStableHashCode();
         private static Dictionary<int, string> itemNames;
@@ -139,10 +144,13 @@ namespace MuninMap.Live
                     s.eitr = zdo.GetFloat(hashEitr, -1f);
                     s.gear = new string[hashGear.Length];
                     s.quality = new int[hashGear.Length];
+                    s.variant = new int[hashGear.Length];
                     for (int g = 0; g < hashGear.Length; g++)
                     {
                         try { s.gear[g] = ItemName(zdo.GetInt(hashGear[g], 0)); } catch { s.gear[g] = ""; }
-                        if (hashQuality[g] != 0 && s.gear[g].Length > 0) try { s.quality[g] = zdo.GetInt(hashQuality[g], 0); } catch { }
+                        if (s.gear[g].Length == 0) continue;
+                        if (hashQuality[g] != 0) try { s.quality[g] = zdo.GetInt(hashQuality[g], 0); } catch { }
+                        if (hashVariant[g] != 0) try { s.variant[g] = zdo.GetInt(hashVariant[g], 0); } catch { }
                     }
                     try { s.wisp = WispRange(zdo.GetInt(hashGear[Utility], 0)); } catch { }
                     try
@@ -153,15 +161,7 @@ namespace MuninMap.Live
                         s.baseValue = zdo.GetInt(hashBase, 0);
                     }
                     catch { }
-                    try
-                    {
-                        float localQ = 0f, remoteQ = 0f, outB = 0f, inB = 0f; int ping = 0;
-                        peer.m_socket?.GetConnectionQuality(out localQ, out remoteQ, out ping, out outB, out inB);
-                        if (ping > 0) { s.ping = ping; s.quality01 = Mathf.Clamp01(Mathf.Min(localQ, remoteQ)); }
-                        s.inBps = inB; s.outBps = outB;
-                        s.sendQueue = peer.m_socket?.GetSendQueueSize() ?? 0;
-                    }
-                    catch { }
+                    try { ReadConnection(peer.m_socket, ref s); } catch { }
                     // their game: version and network version (from when they joined), and the platform
                     // (Steam, or through crossplay: Steam, Xbox...). Never their address.
                     if (Patches.PeerInfo_Patch.TryGet(peer.m_rpc, out var pi)) { s.version = pi.version; s.network = pi.network; }
@@ -196,6 +196,37 @@ namespace MuninMap.Live
             // wind arrow, with or without anyone on
             hasWorldWind = Weather.At(Vector3.zero, out worldWind);
             json = Build();
+        }
+
+        // Their connection as Steam measures it. The game's own GetConnectionQuality asks the Steam client
+        // interface, which a dedicated server doesn't run (it always fails there), so on a dedicated server
+        // the game-server interface is asked, as the game itself does for sending. Steam's own count of
+        // what's waiting is used too: network mods report a smaller send queue to the game on purpose.
+        private static void ReadConnection(ISocket socket, ref Snapshot s)
+        {
+            if (socket == null) return;
+            if (socket is ZSteamSocket steam && ZNet.instance != null && ZNet.instance.IsDedicated())
+            {
+                var st = default(Steamworks.SteamNetConnectionRealTimeStatus_t);
+                var lanes = default(Steamworks.SteamNetConnectionRealTimeLaneStatus_t);
+                if (Steamworks.SteamGameServerNetworkingSockets.GetConnectionRealTimeStatus(steam.m_con, ref st, 0, ref lanes) != Steamworks.EResult.k_EResultOK) return;
+                if (st.m_nPing > 0) { s.ping = st.m_nPing; s.quality01 = Quality(st.m_flConnectionQualityLocal, st.m_flConnectionQualityRemote); }
+                s.inBps = st.m_flInBytesPerSec; s.outBps = st.m_flOutBytesPerSec;
+                s.sendQueue = st.m_cbPendingReliable + st.m_cbPendingUnreliable;
+                s.queueMs = (int)Math.Min(60000L, (long)st.m_usecQueueTime / 1000L);
+                s.rateBps = st.m_nSendRateBytesPerSecond;
+                return;
+            }
+            socket.GetConnectionQuality(out float localQ, out float remoteQ, out int ping, out float outB, out float inB);
+            if (ping > 0) { s.ping = ping; s.quality01 = Quality(localQ, remoteQ); }
+            s.inBps = inB; s.outBps = outB;
+            s.sendQueue = socket.GetSendQueueSize();
+        }
+        // the share of packets that arrive, the worse direction (Steam: -1 while it doesn't know yet)
+        private static float Quality(float local, float remote)
+        {
+            float q = local >= 0f && remote >= 0f ? Mathf.Min(local, remote) : local >= 0f ? local : remote >= 0f ? remote : 1f;
+            return Mathf.Clamp01(q);
         }
 
         // {"model":0,"skin":"#rrggbb","hairColor":"#rrggbb","hair":"Hair3","beard":"Beard5"}
@@ -237,12 +268,22 @@ namespace MuninMap.Live
                     j.Key("levels").BeginObject();
                     for (int g = 0; g < s.gear.Length; g++) if (s.quality != null && s.quality[g] > 0) j.Prop(GearSlots[g], s.quality[g]);
                     j.End();
+                    j.Key("variants").BeginObject();
+                    for (int g = 0; g < s.gear.Length; g++) if (s.variant != null && s.variant[g] > 0) j.Prop(GearSlots[g], s.variant[g]);
+                    j.End();
                 }
                 WriteLook(j, s.look);
-                var gear = s.gear;
-                if (gear != null) j.Prop("portrait", Models.Portraits.Id(s.look, slot => { int g = Array.IndexOf(GearSlots, slot); return g >= 0 && g < gear.Length ? gear[g] : ""; }));
+                var gear = s.gear; var variant = s.variant;
+                if (gear != null) j.Prop("portrait", Models.Portraits.Id(s.look,
+                    slot => { int g = Array.IndexOf(GearSlots, slot); return g >= 0 && g < gear.Length ? gear[g] : ""; },
+                    slot => { int g = Array.IndexOf(GearSlots, slot); return g >= 0 && variant != null && g < variant.Length ? variant[g] : 0; }));
                 j.Prop("atBase", s.baseValue >= 3);
-                if (s.ping > 0) j.Prop("ping", s.ping).Prop("netQ", s.quality01, 2).Prop("sendQ", s.sendQueue).Prop("inBps", s.inBps, 0).Prop("outBps", s.outBps, 0);
+                if (s.ping > 0)
+                {
+                    j.Prop("ping", s.ping).Prop("netQ", s.quality01, 2).Prop("sendQ", s.sendQueue).Prop("inBps", s.inBps, 0).Prop("outBps", s.outBps, 0);
+                    if (s.queueMs > 0) j.Prop("queueMs", s.queueMs);
+                    if (s.rateBps > 0) j.Prop("rateBps", s.rateBps);
+                }
                 if (!string.IsNullOrEmpty(s.version)) j.Prop("version", s.version).Prop("netVersion", (long)s.network);
                 if (!string.IsNullOrEmpty(s.platform)) j.Prop("platform", s.platform);
                 if (s.crossplay) j.Prop("crossplay", true);

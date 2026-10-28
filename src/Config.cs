@@ -168,7 +168,7 @@ namespace MuninMap
 
             CACHE_SERVER_FILES = config.Bind("Server", "cache_server_files",
                 MuninConfig.CACHE_SERVER_FILES,
-                "Should the server cache web files to be more performant?").Value;
+                "Keep the web files (page, scripts, styles) in memory once read. Set false while testing changes to them: each is then read from disk when asked for, so a new file shows on the next page refresh without restarting the server.").Value;
 
             DEFAULT_ZOOM = config.Bind("Texture", "default_zoom",
                 MuninConfig.DEFAULT_ZOOM,
