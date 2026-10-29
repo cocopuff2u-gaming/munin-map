@@ -12,16 +12,18 @@ namespace MuninMap.Models
     // A material's saved colours, read from the game's own files. On a dedicated server the game's
     // shaders are stripped, and the engine then answers a material's colours (its glow colour among them)
     // with black: the values are still in the files, so they're read from there, on a background thread,
-    // like the textures (TextureExtractor). Kept in the model library (models/materials.txt: one material
-    // a line, "name<TAB>_Prop=r,g,b,a;_Prop2=..."), so each is looked up once.
+    // like the textures (TextureExtractor). Kept in the model library (models/materials2.txt: one material
+    // a line, "name<TAB>_Prop=r,g,b,a;_Prop2=..."), so each is looked up once. A few numbers are kept too
+    // (the cut-out level, a glow's scrolling), as "#_Prop=v,0,0,0" (materials.txt, before 3.2.6, had none).
     internal static class MaterialExtractor
     {
         public static bool Running { get; private set; }
+        private static readonly string[] Numbers = { "_Cutoff", "_ScrollSpeed", "_TexScale", "_VertPush", "_PixelSize" };
         private static Thread thread;
         private static readonly object sync = new object();
         private static Dictionary<string, Dictionary<string, Color>> known;   // material name -> its colours
         private static readonly HashSet<string> gaveUp = new HashSet<string>();
-        private static string FilePath(string modelsDir) => Path.Combine(modelsDir, "materials.txt");
+        private static string FilePath(string modelsDir) => Path.Combine(modelsDir, "materials2.txt");
 
         // The saved colour, when this material has been read (false: not read yet, or no such colour)
         public static bool TryColor(string modelsDir, string material, string prop, out Color c, out bool read)
@@ -157,6 +159,14 @@ namespace MuninMap.Models
                         string key = pair.TryGetValue("first", out object f) ? (f as string ?? ((f as Dictionary<string, object>)?.TryGetValue("name", out object fn) == true ? fn as string : null)) : null;
                         if (key == null || !(pair.TryGetValue("second", out object v) && v is Dictionary<string, object> c)) continue;
                         props[key] = new Color(SerializedFile.AsFloat(c, "r"), SerializedFile.AsFloat(c, "g"), SerializedFile.AsFloat(c, "b"), SerializedFile.AsFloat(c, "a"));
+                    }
+                if (d.TryGetValue("m_SavedProperties", out object spo2) && spo2 is Dictionary<string, object> sp2 && sp2.TryGetValue("m_Floats", out object fo) && fo is List<object> floats)
+                    foreach (var e in floats)
+                    {
+                        if (!(e is Dictionary<string, object> pair)) continue;
+                        string key = pair.TryGetValue("first", out object f) ? (f as string ?? ((f as Dictionary<string, object>)?.TryGetValue("name", out object fn) == true ? fn as string : null)) : null;
+                        if (key == null || Array.IndexOf(Numbers, key) < 0 || !pair.TryGetValue("second", out object v)) continue;
+                        try { props["#" + key] = new Color(Convert.ToSingle(v, CultureInfo.InvariantCulture), 0f, 0f, 0f); } catch { }
                     }
                 found[name] = props;
                 wanted.Remove(name);

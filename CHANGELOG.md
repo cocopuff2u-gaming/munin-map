@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.2.6
+
+**Player card: the 3D character**
+
+* **Glowing weapons glow.** Storm Fang, the Berserkir axes, Splitnir, Niedhogg, the Eldner maces, the Slayer swords, the Ashlands bows and some staffs carry a moving glow in their colour (blue storm, red blood, green nature). It was drawn as a solid dark copy of the weapon; it now shines and drifts as in the game.
+* **See-through parts are see-through.** Feathered bow tips, ragged edges and other cut-out parts were drawn solid (Storm Fang showed dark sheets). The cut-out setting is now read from the game files, as the server can't ask the game for it.
+* **Lightning crackles.** The arcs on storm and blood-lightning weapons, and the swirls on others, are trails in the game; they were drawn as a few dots and are now wavy trails.
+* **Softer item lights.** The light some items give (the void knife, staffs) no longer washes the whole outfit in its colour.
+
+**Map**
+
+* **Trails follow the path.** A player's trail took a point every 10 seconds, so a running player's turns were cut into long straight lines. It now takes one about every second, and a straight stretch stays one line.
+
 ## 3.2.5
 
 **Player stats**

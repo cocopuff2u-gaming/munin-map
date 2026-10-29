@@ -46,7 +46,7 @@ namespace MuninMap.Models
         // Main thread: the portrait id for this look, gear and gear styles (remembered, so it can be made when asked)
         public static string Id(Players.Look look, Func<string, string> gearOf, Func<string, int> variantOf)
         {
-            var sb = new StringBuilder("p2|");
+            var sb = new StringBuilder("p4|");
             sb.Append(look.model).Append('|').Append(Players.Hex(look.skin)).Append('|').Append(Players.Hex(look.hair)).Append('|').Append(look.hairItem).Append('|').Append(look.beardItem);
             var spec = new Spec { model = look.model, skin = look.skin, hair = look.hair, hairItem = look.hairItem, beardItem = look.beardItem };
             foreach (var slot in Slots)
@@ -212,7 +212,12 @@ namespace MuninMap.Models
                 if (rate <= 0f) continue;
                 var pr = ps.GetComponent<ParticleSystemRenderer>();
                 if (pr == null || !pr.enabled || pr.renderMode == ParticleSystemRenderMode.Mesh) continue;
-                var mat = pr.sharedMaterial;
+                // render mode None: the particles aren't drawn, only their trails (lightning arcs, swirls)
+                var tr = ps.trails;
+                bool trailOnly = pr.renderMode == ParticleSystemRenderMode.None;
+                bool trailed = false; try { trailed = tr.enabled; } catch { }
+                if (trailOnly && !trailed) continue;
+                var mat = trailOnly && pr.trailMaterial != null ? pr.trailMaterial : pr.sharedMaterial;
                 string tex = null; string shader = ""; Color tint = Color.white;
                 if (mat != null)
                 {
@@ -262,6 +267,21 @@ namespace MuninMap.Models
                         var hi = cd.GetColor(ParticleSystemCustomData.Custom1); var lo = cd.GetColor(ParticleSystemCustomData.Custom2);
                         j.Key("ramp").BeginArray().Raw(C(GradAt(hi, 0f))).Raw(C(GradAt(hi, 1f))).Raw(C(GradAt(lo, 0f))).Raw(C(GradAt(lo, 1f))).End();
                     }
+                }
+                catch { }
+                // trails: how long they stay (a share of the particle's life) and how wide; trail-only ones
+                // draw nothing else
+                if (trailed)
+                {
+                    float width = 1f, ratio = 0.5f;
+                    try { width = Val(tr.widthOverTrail) * (tr.sizeAffectsWidth ? Val(main.startSize) * scale : 1f); ratio = Val(tr.lifetime); } catch { }
+                    j.Key("trail").BeginObject().Prop("life", Mathf.Clamp(ratio, 0.05f, 1f), 3).Prop("width", Mathf.Clamp(width, 0.003f, 0.3f), 4).Prop("only", trailOnly).End();
+                }
+                // noise: the wander the game adds to each particle's path (what makes lightning jagged)
+                try
+                {
+                    var nz = ps.noise;
+                    if (nz.enabled) j.Key("noise").BeginObject().Prop("strength", Val(nz.strength) * scale, 3).Prop("freq", nz.frequency, 3).End();
                 }
                 catch { }
                 string tf = tex != null ? Tex(tex) : null;
@@ -379,6 +399,7 @@ namespace MuninMap.Models
             var glows = new List<string>();        // materials with glow settings, as read (for the report)
             var mats2 = new List<string>();        // materials whose saved colours aren't read yet
             var effects = new List<string>();      // particle effects and lights, as JSON objects
+            var weaponGlow = new List<string>();   // parts drawn by the WeaponGlow shader, as JSON objects
             var partInfo = new List<string>();     // each part: how it was read, its size (for the report)
             var partFix = new List<string>();      // parts read from the files that were held to the engine's size
             try
@@ -554,6 +575,14 @@ namespace MuninMap.Models
                         string main = PrefabExporter.ColorTextureName(mat);
                         if (main != null) { if (!res.wants.Contains(main)) res.wants.Add(main); prim.textureUri = Tex(main) ?? prim.textureUri; }
                         bool cutout = prim.alphaMask;   // (a cut-out material, as the 3D view judges it: fur trims, leaves)
+                        // its cut-out level, read from the game files (the engine answers 0 on a dedicated server):
+                        // chainmail, feathers, the sheets on Storm Fang (the standard shader's alpha is shininess)
+                        if (mat != null && !cutout)
+                        {
+                            string sh = ""; try { sh = mat.shader != null ? mat.shader.name.ToLowerInvariant() : ""; } catch { }
+                            var cut = Saved(mat, "#_Cutoff", mats2);
+                            if (cut.HasValue && cut.Value.r > 0.01f && !sh.Contains("standard")) cutout = true;
+                        }
                         prim.foliage = false; prim.alphaMask = false;
                         if (r == body && s == 0 && mat != null)
                         {
@@ -621,6 +650,7 @@ namespace MuninMap.Models
                             else if (main == null) untextured.Add(what + "/no material");
                         }
                         Glow(prim, mat, res, glows, mats2);
+                        WeaponGlow(prim, mat, weaponGlow, mats2);
                         writer.Add(prim);
                     }
                     parts++;
@@ -654,9 +684,28 @@ namespace MuninMap.Models
             j.Key("partList").BeginArray(); foreach (var x in partInfo) j.Value(x); j.End();
             j.Key("resized").BeginArray(); foreach (var x in partFix) j.Value(x); j.End();
             j.Key("effects").BeginArray(); foreach (var x in effects) j.Raw(x); j.End();
+            j.Key("weaponGlow").BeginArray(); foreach (var x in weaponGlow) j.Raw(x); j.End();
             j.End();
             File.WriteAllText(InfoPath(id), j.ToString());
             if (MuninConfig.DEBUG) ZLog.Log($"MuninMap: portrait {id}: {parts} parts in {sw.ElapsedMilliseconds} ms, {missing.Count} textures and {meshes.Count} meshes to fetch, {skipped.Count} left out, {untextured.Count} untextured");
+        }
+
+        // The glow some weapons carry (the storm, blood and nature ones, some staffs): a copy of the
+        // weapon's shape a little bigger, drawn by the game's WeaponGlow shader as moving noise in a
+        // bright colour, adding light. Named here for the page to draw that way: its colour and the noise.
+        private static void WeaponGlow(GlbWriter.Primitive prim, Material mat, List<string> outList, List<string> wantMats)
+        {
+            if (mat == null) return;
+            string shader = ""; try { shader = mat.shader != null ? mat.shader.name : ""; } catch { }
+            if (shader != "Unlit/WeaponGlow" && !(PrefabExporter.Has(mat, "_ScrollSpeed") && PrefabExporter.Has(mat, "_CurlTex"))) return;
+            var c = Saved(mat, "_Color", wantMats) ?? new Color(0.5f, 0.8f, 1f, 1f);
+            prim.name = "munin_weaponglow" + outList.Count;
+            float Num(string prop, float dflt) { var v = Saved(mat, "#" + prop, wantMats); return v.HasValue ? v.Value.r : dflt; }
+            var j = new JsonWriter(200);
+            j.BeginObject().Prop("name", prim.name).Key("color").BeginArray().Value(c.r, 3).Value(c.g, 3).Value(c.b, 3).Value(c.a, 3).End()
+                .Prop("scroll", Num("_ScrollSpeed", 0.13f), 3).Prop("scale", Num("_TexScale", 1f), 3).Prop("push", Num("_VertPush", 0.004f), 4)
+                .Prop("pixel", Num("_PixelSize", 64f), 1).Prop("mat", mat.name).End();
+            outList.Add(j.ToString());
         }
 
         // any texture on it that isn't a normal, mask or style map (one the colour could come from)

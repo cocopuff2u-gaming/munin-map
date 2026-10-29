@@ -17,6 +17,7 @@ namespace MuninMap.Live
         private const float Every = 10f;            // seconds between samples
         private const int TrailSeconds = 24 * 3600; // how far back a trail goes (the page asks for the last 3 or 24 hours)
         private const float Moved = 3f;             // metres: a player standing still adds no trail points
+        private const int MaxPoints = 30000;        // a trail's points at most (a day of busy play)
 
         private sealed class Trail { public string name; public readonly List<int> t = new List<int>(); public readonly List<float> x = new List<float>(), z = new List<float>(); }
         private static readonly Dictionary<string, Trail> trails = new Dictionary<string, Trail>();
@@ -35,31 +36,51 @@ namespace MuninMap.Live
         private static long Zone(float x, float z) => ((long)Mathf.FloorToInt((x + 32f) / 64f) << 32) ^ (uint)Mathf.FloorToInt((z + 32f) / 64f);
         private static int Now() => (int)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
 
-        // Main thread, with every player snapshot (throttled here)
+        // Main thread, with every player snapshot. Trails take every one (about a second apart: at 10 s a
+        // running player's bends were cut into long straight lines); the zone totals every 10 s.
         public static void Sample(List<Players.Snapshot> players)
         {
             var now = DateTime.UtcNow;
-            if ((now - lastSample).TotalSeconds < Every) return;
+            bool heatNow = (now - lastSample).TotalSeconds >= Every;
             float dt = lastSample == default ? Every : Mathf.Min((float)(now - lastSample).TotalSeconds, 30f);
-            lastSample = now;
+            if (heatNow) lastSample = now;
             int t = Now();
             lock (sync)
             {
                 foreach (var s in players)
                 {
                     if (!s.hasPos || s.dead || MuninConfig.IsHidden(s.name)) continue;
-                    long zone = Zone(s.x, s.z);
-                    heat.TryGetValue(zone, out int sec);
-                    heat[zone] = sec + Mathf.RoundToInt(dt);
-                    if (!heatBy.TryGetValue(zone, out var who)) heatBy[zone] = who = new Dictionary<string, int[]>();
-                    if (!who.TryGetValue(s.name, out var me)) who[s.name] = me = new int[2];
-                    me[0] += Mathf.RoundToInt(dt); me[1] = t;
-                    dirty = true;
+                    if (heatNow)
+                    {
+                        long zone = Zone(s.x, s.z);
+                        heat.TryGetValue(zone, out int sec);
+                        heat[zone] = sec + Mathf.RoundToInt(dt);
+                        if (!heatBy.TryGetValue(zone, out var who)) heatBy[zone] = who = new Dictionary<string, int[]>();
+                        if (!who.TryGetValue(s.name, out var me)) who[s.name] = me = new int[2];
+                        me[0] += Mathf.RoundToInt(dt); me[1] = t;
+                        dirty = true;
+                    }
                     if (!trails.TryGetValue(s.key ?? s.name, out var tr)) trails[s.key ?? s.name] = tr = new Trail();
                     tr.name = s.name;
                     int n = tr.t.Count;
                     if (n > 0 && Mathf.Abs(tr.x[n - 1] - s.x) < Moved && Mathf.Abs(tr.z[n - 1] - s.z) < Moved) continue;
+                    // still going the same way (within a few degrees, and not long since the point before): the
+                    // last point moves up instead of a new one, so a straight run stays one line and bends keep theirs
+                    if (n >= 2 && t - tr.t[n - 2] < 60)
+                    {
+                        float ax = tr.x[n - 1] - tr.x[n - 2], az = tr.z[n - 1] - tr.z[n - 2], bx = s.x - tr.x[n - 1], bz = s.z - tr.z[n - 1];
+                        float la = Mathf.Sqrt(ax * ax + az * az), lb = Mathf.Sqrt(bx * bx + bz * bz);
+                        float rx = s.x - tr.x[n - 2], rz = s.z - tr.z[n - 2];
+                        // (under ~6 degrees; a portal jump is never part of a run, and a run stays under the page's
+                        // 250 m and 3 minutes, past which it takes a line for a jump)
+                        if (la > 0.01f && lb < 150f && rx * rx + rz * rz < 200f * 200f && (ax * bx + az * bz) / (la * lb) > 0.995f)
+                        {
+                            tr.t[n - 1] = t; tr.x[n - 1] = s.x; tr.z[n - 1] = s.z;
+                            continue;
+                        }
+                    }
                     tr.t.Add(t); tr.x.Add(s.x); tr.z.Add(s.z);
+                    if (tr.t.Count > MaxPoints) { tr.t.RemoveAt(0); tr.x.RemoveAt(0); tr.z.RemoveAt(0); }
                 }
                 // drop what has aged out, and players gone for longer than a trail lasts
                 var gone = new List<string>();

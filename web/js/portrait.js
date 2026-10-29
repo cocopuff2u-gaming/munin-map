@@ -73,7 +73,9 @@ async function makeEffects(THREE, list) {
       // the light it gives: lighting the model, and a soft glow where it is
       const c = new THREE.Color(e.color[0], e.color[1], e.color[2]);
       const g = new THREE.Group();
-      const pl = new THREE.PointLight(c, Math.min(4, e.intensity) * 0.6, Math.max(0.5, Math.min(4, e.range)), 2);
+      // (softer than the game's: in the portrait's soft studio light, a staff's or the void knife's light at full
+      // strength washed the whole outfit in its colour)
+      const pl = new THREE.PointLight(c, Math.min(4, e.intensity) * 0.3, Math.max(0.5, Math.min(1.5, e.range)), 2);
       pl.position.set(...e.pos); g.add(pl);
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: softDot(THREE), color: c, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
       sp.position.set(...e.pos); sp.scale.setScalar(0.18); g.add(sp);
@@ -110,13 +112,25 @@ async function makeEffects(THREE, list) {
     });
     const points = new THREE.Points(geo, mat);
     points.frustumCulled = false;
-    const P = Array.from({ length: n }, () => ({ age: 1e9, life: 1, p: new THREE.Vector3(), v: new THREE.Vector3() }));
+    // trails: where each particle has been, drawn as a line of soft dots behind it that fades (a lightning
+    // arc, a swirl); some effects draw only these
+    const PER = 3, TS = e.trail ? 16 * PER : 0, tN = n * TS;   // (16 points of its path, 3 dots between each)
+    let tgeo = null;
+    const tpos = new Float32Array(tN * 3), tcol = new Float32Array(tN * 4), tsize = new Float32Array(tN), tage = new Float32Array(tN);
+    if (TS) {
+      tgeo = new THREE.BufferGeometry();
+      tgeo.setAttribute('position', new THREE.BufferAttribute(tpos, 3)); tgeo.setAttribute('color', new THREE.BufferAttribute(tcol, 4));
+      tgeo.setAttribute('psize', new THREE.BufferAttribute(tsize, 1)); tgeo.setAttribute('age', new THREE.BufferAttribute(tage, 1));
+      const tp = new THREE.Points(tgeo, mat); tp.frustumCulled = false; points.add(tp);
+    }
+    const P = Array.from({ length: n }, () => ({ age: 1e9, life: 1, p: new THREE.Vector3(), v: new THREE.Vector3(), w: new THREE.Vector3(), h: [], ht: 0 }));
+    const rnd = new THREE.Vector3();
     const origin = new THREE.Vector3(...e.pos), dir = new THREE.Vector3(...e.dir).normalize();
     const side = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
     const up2 = new THREE.Vector3().crossVectors(dir, side);
     let owed = 0, next = 0;
     const spawn = (q) => {
-      q.age = 0; q.life = Math.max(0.05, e.life * (0.8 + Math.random() * 0.4));
+      q.age = 0; q.life = Math.max(0.05, e.life * (0.8 + Math.random() * 0.4)); q.h.length = 0; q.ht = 0; q.w.set(0, 0, 0);
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * e.radius;
       if (e.shape.startsWith('Cone') || e.shape === 'Circle' || e.shape === 'Donut') {
         q.p.copy(origin).addScaledVector(side, Math.cos(a) * r).addScaledVector(up2, Math.sin(a) * r);
@@ -134,19 +148,75 @@ async function makeEffects(THREE, list) {
       for (let i = 0; i < n; i++) {
         const q = P[i];
         q.age += dt;
-        if (q.age >= q.life) { size[i] = 0; col[i * 4 + 3] = 0; continue; }
+        if (q.age >= q.life) { size[i] = 0; col[i * 4 + 3] = 0; for (let k = i * TS; k < (i + 1) * TS; k++) { tsize[k] = 0; tcol[k * 4 + 3] = 0; } continue; }
         q.v.y -= 9.81 * e.gravity * dt;
         q.p.addScaledVector(q.v, dt);
+        if (e.noise) {   // (the game's noise: a wander that changes its mind about freq times a second)
+          // (a fast one swings harder: lightning at frequency 10 zigzags across its short trail)
+          rnd.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize().multiplyScalar(e.noise.strength * Math.max(1, e.noise.freq * 0.6));
+          q.w.lerp(rnd, Math.min(1, dt * Math.max(1, e.noise.freq) * 4));
+          q.p.addScaledVector(q.w, dt);
+        }
         const t = q.age / q.life;
         pos[i * 3] = q.p.x; pos[i * 3 + 1] = q.p.y; pos[i * 3 + 2] = q.p.z;
         for (let k = 0; k < 4; k++) col[i * 4 + k] = e.color[k] * lerp3([e.fade[0][k], e.fade[1][k], e.fade[2][k]], t);
-        size[i] = e.size * lerp3(e.grow, t); age[i] = t;
+        size[i] = e.trail?.only ? 0 : e.size * lerp3(e.grow, t); age[i] = t;
+        if (TS) {
+          // a point of the trail every so often; the line drawn through them, fading to its end
+          const keep = TS / PER, every = Math.max(0.005, e.trail.life * q.life / keep);
+          q.ht += dt;
+          if (q.ht >= every || !q.h.length) { q.ht = 0; q.h.unshift(q.p.clone()); if (q.h.length > keep) q.h.pop(); }
+          for (let k = 0; k < TS; k++) {
+            const o = i * TS + k, seg = Math.floor(k / PER), a = seg === 0 ? q.p : q.h[seg - 1], b = q.h[seg];
+            if (!a || !b) { tsize[o] = 0; tcol[o * 4 + 3] = 0; continue; }
+            const f = (k % PER) / PER, fade = 1 - k / TS;
+            tpos[o * 3] = a.x + (b.x - a.x) * f; tpos[o * 3 + 1] = a.y + (b.y - a.y) * f; tpos[o * 3 + 2] = a.z + (b.z - a.z) * f;
+            for (let c = 0; c < 3; c++) tcol[o * 4 + c] = col[i * 4 + c];
+            tcol[o * 4 + 3] = col[i * 4 + 3] * fade; tsize[o] = Math.max(0.012, e.trail.width) * (0.5 + 0.7 * fade); tage[o] = t;
+          }
+        }
       }
       geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.attributes.psize.needsUpdate = true; geo.attributes.age.needsUpdate = true;
+      if (tgeo) for (const k of ['position', 'color', 'psize', 'age']) tgeo.attributes[k].needsUpdate = true;
     };
     for (let i = 0; i < 40; i++) step(0.05);   // (already going when first seen)
     out.push({ object: points, step, mat });
   }
+  return out;
+}
+
+// The glow on some weapons (storm, blood and nature ones, some staffs): the game draws a copy of the weapon a
+// little bigger as noise drifting along it in a bright colour, adding light, faded where it turns edge-on.
+function weaponGlow(THREE, root, list) {
+  const out = [], byName = new Map(list.map((g) => [g.name, g]));
+  root.traverse((o) => {
+    const g = o.isMesh && byName.get(o.material?.name);
+    if (!g) return;
+    const map = o.material.map;
+    const top = Math.max(1, g.color[0], g.color[1], g.color[2]);   // (the game's colour goes past white: kept in its hue)
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { map: { value: map }, tint: { value: new THREE.Vector3(g.color[0] / top, g.color[1] / top, g.color[2] / top) }, strength: { value: Math.min(2, top) * (g.color[3] ?? 1) }, time: { value: Math.random() * 10 }, hasMap: { value: map ? 1 : 0 },
+        scroll: { value: g.scroll ?? 0.13 }, scale: { value: g.scale || 1 }, push: { value: Math.min(0.02, g.push ?? 0.004) }, pixel: { value: g.pixel || 64 } },
+      vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV; uniform float push;
+        void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position + normal * push, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+      // (the game pixelates the noise on purpose: its blocks are part of the look)
+      fragmentShader: `uniform sampler2D map; uniform vec3 tint; uniform float strength; uniform float time; uniform float hasMap; uniform float scroll; uniform float scale; uniform float pixel; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          vec2 uv = floor(vUv * pixel) / pixel;
+          float n1 = hasMap > 0.5 ? texture2D(map, uv * scale + vec2(0.0, time * scroll)).r : 0.6;
+          float n2 = hasMap > 0.5 ? texture2D(map, uv * scale * 0.7 - vec2(time * scroll * 0.4, time * scroll * 0.7)).r : 0.6;
+          float n = smoothstep(0.25, 0.9, n1 * n2 * 1.8);
+          float face = abs(dot(normalize(vN), vV));   // (edge-on: faded, so its sheets don't show as sheets)
+          float a = n * smoothstep(0.05, 0.6, face) * strength;
+          gl_FragColor = vec4(tint * a, 1.0); if (a < 0.01) discard; }`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      // adds light only: the see-through background stays see-through
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
+    o.material = mat; o.renderOrder = 2;
+    out.push({ object: null, anim: true, step: (dt) => { mat.uniforms.time.value += dt; } });
+  });
   return out;
 }
 
@@ -168,7 +238,8 @@ async function model(id, again = 0) {
         m.needsUpdate = true;
       });
       root.userData.effects = await makeEffects(THREE, d.effects || []);
-      for (const e of root.userData.effects) root.add(e.object);
+      for (const e of root.userData.effects) if (e.object) root.add(e.object);
+      root.userData.effects.push(...weaponGlow(THREE, root, d.weaponGlow || []));
       root.userData.partial = d.textures === false;   // made while some of its textures were still being read: made again soon
       return root;
     })();
@@ -244,7 +315,7 @@ export async function showPortrait(box, id, keepView = false, again = 0) {
   const fx = root.userData.effects || [];
   for (const f of fx) if (f.mat) f.mat.uniforms.scale.value = h * v.renderer.getPixelRatio() / (2 * Math.tan(THREE.MathUtils.degToRad(v.camera.fov / 2)));
   if (v.raf) cancelAnimationFrame(v.raf), v.raf = 0;
-  if (fx.some((f) => f.mat)) {
+  if (fx.some((f) => f.mat || f.anim)) {
     let last = performance.now();
     const tick = (now) => {
       if (!v.renderer.domElement.isConnected || v.current !== root) { v.raf = 0; return; }
