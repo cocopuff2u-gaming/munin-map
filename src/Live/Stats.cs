@@ -61,7 +61,8 @@ namespace MuninMap.Live
             public int nights, chats;                              // nights slept through, chat messages sent
             public double longest;                                 // their longest session (seconds)
             public double[] week = new double[168];                // seconds played in each hour of the week (UTC, Monday 00:00 first)
-            public long lastInBed;                                 // (not saved) when last seen in bed
+            public double counted;                                 // the play the stats above (from 3.2.2) cover, seconds
+            public bool body;                                      // (not saved) their character is in the world
             // (not saved) the AFK clock and the close-call latch
             public double idleFor; public float idleX, idleZ, idleYaw; public bool closeArmed = true;
         }
@@ -196,6 +197,7 @@ namespace MuninMap.Live
                         s.nights = (int)JsonParser.Num(d, "nights"); s.chats = (int)JsonParser.Num(d, "chats"); s.longest = JsonParser.Num(d, "longest");
                         var wk = JsonParser.Arr(d, "week");
                         if (wk != null && wk.Count == 168) for (int h = 0; h < 168; h++) s.week[h] = wk[h] is double wv ? wv : 0;
+                        if (d.ContainsKey("counted")) s.counted = JsonParser.Num(d, "counted"); else foreach (var w in s.week) s.counted += w;   // (until 3.2.5 the hours of the week were that record)
                         var gs = JsonParser.Obj(d, "gear");
                         if (gs != null) foreach (var kv in gs) if (kv.Value is string item && item.Length > 0) s.gear[kv.Key] = item;
                         if (string.IsNullOrEmpty(s.key)) continue;
@@ -219,65 +221,177 @@ namespace MuninMap.Live
                         if (ho is List<object> pair && pair.Count == 2 && pair[0] is double ts && pair[1] is double n)
                             onlineHistory.Add(new KeyValuePair<long, int>((long)ts, (int)n));
                 ZLog.Log($"MuninMap: stats loaded for {players.Count} players");
-                if (JsonParser.Num(doc, "repaired") < 1) RepairFromEvents();
+                int repaired = (int)JsonParser.Num(doc, "repaired");
+                if (repaired < Repaired) RepairFromEvents(repaired);
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: stats.json not readable: " + e.Message); }
         }
 
-        // Once (3.2.4): before, a visit was counted twice (at the join, and again when their character
-        // appeared) and once more for each death, which also cut it in two; chats were counted only from
-        // 3.2.2. The events log has every join, leave and chat since the map was installed, so visits,
-        // the longest visit and chats are counted again from it, for players it saw from their first visit.
-        private static void RepairFromEvents()
+        // The record from the events log, which has every join, leave, chat, night slept, raid, boss and
+        // find since the map was installed, set right once for each fix (the "repaired" mark in stats.json):
+        // 1 (3.2.4): a visit was counted twice (at the join, and again when their character appeared) and
+        //   once more for each death, which also cut it in two; chats were counted only from 3.2.2.
+        // 2 (3.2.5): a raid the world was saved with was counted again after each restart, and the Writhan
+        //   and the Eyeless One as boss kills; the latest visits were still cut at deaths; the days, the
+        //   hours of the week, nights slept, bosses seen and places found were only kept from 3.2.0-3.2.2;
+        //   and a "player left" notice ended everyone's visit, not just theirs.
+        // Players are set from it only when their name is theirs alone and the log saw them from their
+        // first visit.
+        private const int Repaired = 2;
+        private static void RepairFromEvents(int done)
         {
             dirty = true;
             try
             {
                 string path = Path.Combine(MuninMap.worldDataPath ?? "", "events.jsonl");
                 if (!File.Exists(path)) return;
-                var joins = new Dictionary<string, int>(); var chats = new Dictionary<string, int>(); var longest = new Dictionary<string, double>();
-                var onSince = new Dictionary<string, DateTime>();
+                var joins = new Dictionary<string, int>(); var chats = new Dictionary<string, int>();
+                var visits = new Dictionary<string, List<long[]>>(); var onSince = new Dictionary<string, long>();
+                var sleeps = new List<long>();
+                var bosses = new Dictionary<string, List<string>>(); var found = new Dictionary<string, List<string>>();
+                var notBoss = new Dictionary<string, int>(); var raidAgain = new Dictionary<string, int>();
+                int notBossAll = 0, raidAgainAll = 0;
+                string raidOn = null;   // the raid going on (begun, not ended)
                 string first = null;
+                void Add(Dictionary<string, int> m, string k) { m.TryGetValue(k, out int n); m[k] = n + 1; }
                 foreach (var line in File.ReadAllLines(path))
                 {
                     Dictionary<string, object> d = null;
                     try { d = JsonParser.Parse(line) as Dictionary<string, object>; } catch { }
                     if (d == null) continue;
-                    string type = JsonParser.Str(d, "type"), name = JsonParser.Str(d, "name") ?? "", ts = JsonParser.Str(d, "ts");
+                    string type = JsonParser.Str(d, "type"), name = JsonParser.Str(d, "name") ?? "", ts = JsonParser.Str(d, "ts"), text = JsonParser.Str(d, "text") ?? "";
                     if (first == null) first = ts;
-                    if (!DateTime.TryParse(ts, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime t)) continue;
+                    if (!DateTime.TryParse(ts, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime dt)) continue;
+                    long t = new DateTimeOffset(dt, TimeSpan.Zero).ToUnixTimeSeconds();
                     void Ended(string who)
                     {
-                        if (!onSince.TryGetValue(who, out DateTime from)) return;
-                        double len = (t - from).TotalSeconds;
-                        longest.TryGetValue(who, out double had); if (len > had) longest[who] = len;
+                        if (!onSince.TryGetValue(who, out long from)) return;
+                        if (!visits.TryGetValue(who, out var l)) visits[who] = l = new List<long[]>();
+                        l.Add(new[] { from, t });
                         onSince.Remove(who);
                     }
-                    if (type == "join") { joins.TryGetValue(name, out int n); joins[name] = n + 1; onSince[name] = t; }
+                    if (type == "join") { Add(joins, name); onSince[name] = t; }   // (joined again with no leave between: from the later one, the gap unknown)
                     else if (type == "leave") Ended(name);
-                    else if (type == "server") foreach (var who in new List<string>(onSince.Keys)) Ended(who);   // (a restart: everyone was off)
+                    else if (type == "server")
+                    {
+                        if (text == "online") foreach (var who in new List<string>(onSince.Keys)) Ended(who);   // (a restart: everyone was off)
+                        else if (text.StartsWith("player _", StringComparison.Ordinal) && text.EndsWith("_ left", StringComparison.Ordinal)) Ended(text.Substring(8, text.Length - 14));
+                    }
                     else if (type == "chat" || type == "shout" || type == "whisper")
                     {
-                        if (type == "shout" && (JsonParser.Str(d, "text") == "I have arrived!" || JsonParser.Str(d, "text") == "$text_player_arrived")) continue;
-                        chats.TryGetValue(name, out int n); chats[name] = n + 1;
+                        if (type == "shout" && (text == "I have arrived!" || text == "$text_player_arrived")) continue;
+                        Add(chats, name);
+                    }
+                    else if (type == "sleep") sleeps.Add(t);
+                    else if (type == "boss")
+                    {
+                        var by = NamesAfter(text, "by ");
+                        bool not = WorldEvents.NotBosses.Contains(name.ToLowerInvariant());
+                        if (not) notBossAll++;
+                        foreach (var who in by)
+                        {
+                            if (not) { Add(notBoss, who); continue; }
+                            if (!bosses.TryGetValue(who, out var l)) bosses[who] = l = new List<string>();
+                            if (!l.Contains(name)) l.Add(name);
+                        }
+                    }
+                    else if (type == "found")
+                        foreach (var who in NamesAfter(text, "found by "))
+                        {
+                            if (!found.TryGetValue(who, out var l)) found[who] = l = new List<string>();
+                            l.Add(name);
+                        }
+                    else if (type == "raid")
+                    {
+                        int near = text.IndexOf(" (near ", StringComparison.Ordinal);
+                        string what = near >= 0 ? text.Substring(0, near) : text;
+                        if (!d.ContainsKey("x")) raidOn = null;   // (an end: only a beginning has a place)
+                        else if (raidOn == what)   // the same raid again, after a restart
+                        {
+                            raidAgainAll++;
+                            if (near >= 0) foreach (var who in NamesAfter(text.Substring(near), " (near ")) Add(raidAgain, who);
+                        }
+                        else raidOn = what;
                     }
                 }
                 if (first == null) return;
+                if (done < 2)
+                {
+                    raidsTotal = Math.Max(0, raidsTotal - raidAgainAll);
+                    bossKillsTotal = Math.Max(0, bossKillsTotal - notBossAll);
+                }
                 var names = new Dictionary<string, int>();
-                foreach (var s in players.Values) { names.TryGetValue(s.name ?? "", out int n); names[s.name ?? ""] = n + 1; }
+                foreach (var s in players.Values) Add(names, s.name ?? "");
                 int fixedN = 0;
                 foreach (var s in players.Values)
                 {
-                    // only one player by that name, and seen by the log from their first visit
-                    if (string.IsNullOrEmpty(s.name) || names[s.name] > 1 || string.CompareOrdinal(first, s.firstSeen ?? "") > 0) continue;
+                    if (string.IsNullOrEmpty(s.name) || names[s.name] > 1) continue;
+                    if (done < 2)
+                    {
+                        if (raidAgain.TryGetValue(s.name, out int ra)) s.raids = Math.Max(0, s.raids - ra);
+                        if (notBoss.TryGetValue(s.name, out int nb)) s.bossKills = Math.Max(0, s.bossKills - nb);
+                        s.bossesSeen.RemoveAll(b => WorldEvents.NotBosses.Contains(b.ToLowerInvariant()));
+                    }
+                    // and the rest only for players the log saw from their first visit
+                    if (string.CompareOrdinal(first, s.firstSeen ?? "") > 0) continue;
                     if (joins.TryGetValue(s.name, out int j) && j > 0) s.sessions = j;
-                    if (longest.TryGetValue(s.name, out double l) && l > s.longest) s.longest = l;
                     if (chats.TryGetValue(s.name, out int c) && c > s.chats) s.chats = c;
+                    if (visits.TryGetValue(s.name, out var vs) && vs.Count > 0)
+                    {
+                        // the latest visits, the longest, each day (the ones the map didn't keep) and the hours of the week
+                        s.recent.Clear();
+                        foreach (var v in vs) if (v[1] - v[0] >= 30) s.recent.Add(v);
+                        if (s.recent.Count > 20) s.recent.RemoveRange(0, s.recent.Count - 20);
+                        var days = new Dictionary<string, double>(); var week = new double[168];
+                        int nights = 0;
+                        foreach (var v in vs)
+                        {
+                            if (v[1] - v[0] > s.longest) s.longest = v[1] - v[0];
+                            for (long a = v[0]; a < v[1];)
+                            {
+                                long hourEnd = (a / 3600 + 1) * 3600, b = Math.Min(v[1], hourEnd);
+                                string day = DateTimeOffset.FromUnixTimeSeconds(a).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                                days.TryGetValue(day, out double sec); days[day] = sec + (b - a);
+                                week[(int)((a / 3600 + 72) % 168)] += b - a;
+                                a = b;
+                            }
+                            foreach (long n in sleeps) if (n >= v[0] && n <= v[1]) nights++;
+                        }
+                        foreach (var kv in days) if (!s.days.ContainsKey(kv.Key)) s.days[kv.Key] = kv.Value;
+                        while (s.days.Count > 31) s.days.Remove(s.days.Keys.Min());
+                        s.week = week;
+                        if (nights > s.nights) s.nights = nights;
+                    }
+                    if (bosses.TryGetValue(s.name, out var bl))
+                    {
+                        foreach (var b in s.bossesSeen) if (!bl.Contains(b)) bl.Add(b);
+                        s.bossesSeen = bl;
+                    }
+                    if (found.TryGetValue(s.name, out var fl))
+                    {
+                        foreach (var f in s.found) if (!fl.Contains(f)) fl.Add(f);
+                        if (fl.Count > 30) fl.RemoveRange(0, fl.Count - 30);
+                        s.found = fl;
+                        if (fl.Count > s.finds) s.finds = fl.Count;
+                    }
                     fixedN++;
                 }
-                ZLog.Log($"MuninMap: visits and chats counted again from the events log for {fixedN} players");
+                ZLog.Log($"MuninMap: stats counted again from the events log for {fixedN} players ({raidAgainAll} raids counted twice, {notBossAll} kills that weren't bosses)");
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: stats repair: " + e.Message); }
+        }
+
+        // the names in "... by A, B and C" (after the marker given)
+        private static List<string> NamesAfter(string text, string marker)
+        {
+            var list = new List<string>();
+            int at = text.IndexOf(marker, StringComparison.Ordinal);
+            if (at < 0) return list;
+            string s = text.Substring(at + marker.Length).TrimEnd(')');
+            int and = s.LastIndexOf(" and ", StringComparison.Ordinal);
+            if (and >= 0) { list.AddRange(s.Substring(0, and).Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries)); list.Add(s.Substring(and + 5)); }
+            else if (s.Length > 0) list.Add(s);
+            return list;
         }
 
         // the server stopping: sessions going on end now (or they'd be lost from the recent list)
@@ -290,7 +404,7 @@ namespace MuninMap.Live
             {
                 var j = new JsonWriter(4096);
                 j.BeginObject();
-                j.Prop("savedUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)).Prop("repaired", 1);
+                j.Prop("savedUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)).Prop("repaired", Repaired);
                 j.Prop("raids", raidsTotal).Prop("nightsSlept", nightsSlept).Prop("bossKills", bossKillsTotal).Prop("peakOnline", peakOnline).Prop("peakOnlineUtc", peakOnlineUtc);
                 j.Key("players").BeginArray();
                 foreach (var s in players.Values) WritePlayer(j, s, full: true);
@@ -354,6 +468,7 @@ namespace MuninMap.Live
             j.Prop("farthest", s.farthest, 0);
             if (s.ping >= 0) j.Prop("ping", s.ping, 0);
             j.Prop("nights", s.nights).Prop("chats", s.chats).Prop("longest", Math.Max(s.longest, s.online && s.sessionStart > 0 ? Unix() - s.sessionStart : 0), 0);
+            j.Prop("counted", Math.Round(s.counted), 0);   // (always: without it, the hours of the week are taken for it)
             bool anyWeek = false; foreach (var w in s.week) if (w > 0) { anyWeek = true; break; }
             if (anyWeek) { j.Key("week").BeginArray(); foreach (var w in s.week) j.Value(Math.Round(w), 0); j.End(); }
             j.Key("bossesSeen").BeginArray(); foreach (var b in s.bossesSeen) j.Value(b); j.End();
@@ -509,8 +624,8 @@ namespace MuninMap.Live
                 }
                 else if (p.dead && !s.closeArmed && s.closeCalls > 0) { s.closeCalls--; s.closeArmed = true; }   // (that one didn't end well: it was a death)
                 if (dt > 0 && p.baseValue >= 3) s.atBase += dt;
-                if (dt > 0) s.week[(int)((Unix() / 3600 + 72) % 168)] += dt;   // (1 Jan 1970 was a Thursday)
-                if (p.inBed) s.lastInBed = Unix();
+                if (dt > 0) { s.week[(int)((Unix() / 3600 + 72) % 168)] += dt; s.counted += dt; }   // (1 Jan 1970 was a Thursday)
+                s.body = true;
                 bool sailingStep = false;   // (this step was on a boat)
                 if (p.tracked && dt > 0)
                 {
@@ -567,8 +682,10 @@ namespace MuninMap.Live
                             s.days.TryGetValue(day, out double sec);
                             s.days[day] = sec + dt;
                             s.week[(int)((Unix() / 3600 + 72) % 168)] += dt;
+                            s.counted += dt;
                         }
                         s.hasLast = false;
+                        s.body = false;
                     }
             foreach (var s in players.Values) if (s.online && !seen.Contains(s.key)) { SessionEnds(s); s.online = false; }
 
@@ -640,12 +757,12 @@ namespace MuninMap.Live
             }
             dirty = true; stale = true;
         }
-        // the night was slept through: counted for everyone in bed for it (the game wakes them as it skips)
+        // the night was slept through: counted for everyone in the world, as the game skips only when every
+        // character is in bed (Game.EverybodyIsTryingToSleep)
         public static void OnNightSlept()
         {
             nightsSlept++;
-            long now = Unix();
-            foreach (var s in players.Values) if (s.online && now - s.lastInBed < 120) s.nights++;
+            foreach (var s in players.Values) if (s.online && s.body) s.nights++;
             dirty = true; stale = true;
         }
 
@@ -788,7 +905,7 @@ namespace MuninMap.Live
                 int day = (int)(t / dayLen);
                 double frac = (t % dayLen) / dayLen;
                 j.Prop("worldTime", t, 0).Prop("day", day).Prop("dayFraction", frac, 3);
-                j.Prop("night", frac < 0.15 || frac > 0.85);
+                j.Prop("night", frac <= 0.25 || frac >= 0.75);   // (the game's own EnvMan.IsNight)
             }
             catch { }
         }

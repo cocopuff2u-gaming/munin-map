@@ -117,15 +117,15 @@ function statsHtml(st) {
   cells.push(cell(st.raids || 0, 'raids weathered'));
   if (st.nights !== undefined) cells.push(cell(st.nights, 'nights slept', 'Nights the server slept through with them in bed'));
   if (st.chats !== undefined) cells.push(cell(st.chats.toLocaleString(), 'chats sent', 'Messages said, shouted or whispered in game'));
-  // (time at base, AFK, dungeons, sailing, close calls, nights and the hours of the week are counted since
-  // 3.2.2: their record of hours is the playtime those cover)
-  const counted = (st.week || []).reduce((a, b) => a + b, 0);
+  // (time at base, AFK, dungeons, sailing and close calls are counted since 3.2.2: `counted` is the play
+  // those cover; before 3.2.5 the hours of the week were that record)
+  const counted = st.counted ?? (st.week || []).reduce((a, b) => a + b, 0);
   if (st.atBase && counted) cells.push(cell(`${Math.round(100 * Math.min(1, st.atBase / counted))}%`, 'time at base', 'At a base (fires, beds, workbenches around them) rather than out exploring'));
   if (st.dungeon) cells.push(cell(fmtDuration(st.dungeon), 'in dungeons', 'Crypts, caves and other places below'));
   if (st.afk) cells.push(cell(fmtDuration(st.afk), 'AFK', 'Not moving or turning for five minutes or more'));
   if (st.ping >= 0 && st.ping !== undefined) cells.push(cell(`${Math.round(st.ping)} ms`, 'usual ping', 'Their ping to the server, averaged'));
   let html = `<div class="pc-stats">${cells.join('')}</div>`;
-  if (counted > 0 && st.playtime > counted * 1.1) html += `<div class="pc-first">Time at base, AFK, dungeons, sailing, close calls, nights slept and the highest and farthest they've been are from their last ${fmtDuration(counted)} of play.</div>`;
+  if (counted > 0 && st.playtime > counted * 1.1) html += `<div class="pc-first">Time at base, AFK, dungeons, sailing, close calls and the highest and farthest they've been are from their last ${fmtDuration(counted)} of play.</div>`;
   // time in each biome, as one bar
   const bt = Object.entries(st.biomeTime || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
   const tot = bt.reduce((a, [, s]) => a + s, 0);

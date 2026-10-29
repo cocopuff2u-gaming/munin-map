@@ -1,6 +1,6 @@
 {
     "name": "MuninMap",
-    "version_number": "3.2.4",
+    "version_number": "3.2.5",
     "website_url": "https://github.com/cocopuff2u-gaming/munin-map",
     "description": "A live web map your dedicated server hosts itself. 2D and 3D views, players and their stats, bases, portals, wards, bosses, runestones, lava and mist, explored fog. Server only: players install nothing.",
     "dependencies": [

@@ -18,7 +18,7 @@ export function fmtDuration(sec) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
   if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
   if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  return sec > 0 && sec < 60 ? '<1m' : `${m}m`;
 }
 export function fmtDist(m) { return m >= 10000 ? `${Math.round(m / 1000)} km` : m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`; }
 export function fmtAgo(iso) {

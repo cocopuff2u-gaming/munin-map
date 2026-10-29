@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.2.5
+
+**Player stats**
+
+* **Raids counted once.** A raid the world was saved with starts again after a restart, and the map counted and announced it each time (one raid could count six times). It is now counted once, when it begins; the raid circle keeps its start time.
+* **Boss kills are bosses.** The Writhan and the Eyeless One were counted as boss kills, and Writhan was listed among the bosses a player has seen. They no longer are.
+* **Nights slept** are counted for everyone in the world when the night is skipped (the game skips only once every character is in bed). Some were missed before.
+* **Latest visits are whole visits again.** Visits before 3.2.4 were still listed cut in two at each death.
+* **The whole record, from the start.** Each day, the hours of the week, the latest visits, nights slept, the bosses they've seen and the places they found were only kept from 3.2.0–3.2.2 on. They're now filled in from the events log, which has everything since the map was installed, so the Activity tab shows players who haven't been on lately too.
+* The existing stats are set right from the events log once, on the first start with this version: raids and boss kills counted too often are taken off, and the rest is filled in.
+* **Very short visits** (a reconnect) show as "<1m", not "0m".
+
+**Map**
+
+* **"Night"** on the Stats tab follows the game's own hours (it called the hour after sunset and before sunrise day).
+
 ## 3.2.4
 
 **Player card**

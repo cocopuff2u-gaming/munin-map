@@ -24,8 +24,9 @@ namespace MuninMap.Live
             { "defeated_dragon", "Moder" }, { "defeated_goblinking", "Yagluth" }, { "defeated_queen", "The Queen" },
             { "defeated_fader", "Fader" },
             { "defeated_frozenking", "Kall Fimbulbringer's first form" }, { "defeated_frozenking_p3", "Kall Fimbulbringer" },
-            // (not the Writhan: a rare swamp creature, not a boss)
         };
+        // rare creatures, not bosses, though the game sets a "defeated_" key for them too: not counted
+        internal static readonly HashSet<string> NotBosses = new HashSet<string> { "writhan", "elakingmole" };
         private static readonly Dictionary<string, float> lastKill = new Dictionary<string, float>();
 
         // HTTP-free, main thread (the RPC observer runs there)
@@ -37,7 +38,7 @@ namespace MuninMap.Live
                 string key = (pkg.ReadString() ?? "").Trim().ToLowerInvariant();
                 int sp = key.IndexOf(' ');
                 if (sp > 0) key = key.Substring(0, sp);                    // "key value" on newer versions
-                if (!key.StartsWith("defeated_", StringComparison.Ordinal)) return;
+                if (!key.StartsWith("defeated_", StringComparison.Ordinal) || NotBosses.Contains(key.Substring("defeated_".Length))) return;
                 // one kill can reach the server more than once (several players own parts of the fight)
                 float now = Time.realtimeSinceStartup;
                 if (lastKill.TryGetValue(key, out float t) && now - t < 60f) return;
@@ -77,12 +78,18 @@ namespace MuninMap.Live
                             string start = Localize(ev.m_startMessage, Pretty(ev.m_name));
                             var there = NearbyPeers(p, null, 150f);
                             string who = Names(there);
-                            Stats.OnRaid(there);
-                            Events.Add("raid", "Raid", start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
-                            global::MuninMap.MuninMap.PostWorldEvent("⚔️ Raid: " + start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
+                            // a raid the world was saved with, going on again after a restart, has its time
+                            // so far (this looks every 2 s): it was counted and announced when it began
+                            bool resumed = ev.m_time > 10f;
+                            if (!resumed)
+                            {
+                                Stats.OnRaid(there);
+                                Events.Add("raid", "Raid", start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
+                                global::MuninMap.MuninMap.PostWorldEvent("⚔️ Raid: " + start + (who.Length > 0 ? " (near " + who + ")" : ""), p.x, p.z);
+                            }
                             endText = Localize(ev.m_endMessage, "is over");
                             RaidJson = new JsonWriter(200).BeginObject().Prop("name", start).Prop("x", p.x, 1).Prop("z", p.z, 1).Prop("r", ev.m_eventRange, 0)
-                                .Prop("since", DateTimeOffset.UtcNow.ToUnixTimeSeconds()).Prop("near", who).End().ToString();
+                                .Prop("since", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (resumed ? (long)ev.m_time : 0L)).Prop("near", who).End().ToString();
                         }
                         current = name;
                     }
