@@ -100,18 +100,36 @@ namespace MuninMap.Live
         // ("left": seconds to go, absent when it doesn't end on its own)
         public static volatile string InvasionsJson = "[]";
         private static readonly Dictionary<int, string> invasionNames = new Dictionary<int, string>();   // id -> name, the ones on now
+        // When each began, on the world's clock. The game leaves an invasion's start (and end) unset, so
+        // it's the first time this saw it, kept in invasions.txt beside the world's map data
+        // ("id<TAB>x<TAB>z<TAB>began", -1: on before this was watching) so a restart doesn't lose it.
+        // The game numbers them again from 0 once none are on, so the spot is kept to tell them apart.
+        private static readonly Dictionary<int, double[]> invasionSeen = new Dictionary<int, double[]>();   // id -> x, z, began
+        private static bool invasionsLoaded;
+        private static string InvasionsPath => Path.Combine(global::MuninMap.MuninMap.worldDataPath ?? "", "invasions.txt");
 
         private static void CheckInvasions()
         {
             var ps = PersistentEventSystem.instance;
             var list = ps != null && ps.m_activePersistentEvents != null ? ps.m_activePersistentEvents.list : null;
             double now = ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : 0;
+            // the first look once the world's clock is loaded: what's on now was on before this was running
+            bool first = false;
+            if (!invasionsLoaded && now > 1 && list != null && global::MuninMap.MuninMap.worldDataPath != null) { LoadInvasions(); invasionsLoaded = first = true; }
+            bool changed = false;
             var j = new JsonWriter(256).BeginArray();
             var on = new HashSet<int>();
             if (list != null)
                 foreach (var ev in list)
                 {
                     on.Add(ev.eventId);
+                    bool isNew = false;
+                    if (invasionsLoaded && !(invasionSeen.TryGetValue(ev.eventId, out var seen) && Mathf.Abs((float)seen[0] - ev.position.x) < 1f && Mathf.Abs((float)seen[1] - ev.position.z) < 1f))
+                    {
+                        isNew = !first;
+                        invasionSeen[ev.eventId] = new double[] { ev.position.x, ev.position.z, ev.startTime > 0 ? ev.startTime : first ? -1 : now };
+                        changed = true;
+                    }
                     if (!invasionNames.TryGetValue(ev.eventId, out string name))
                     {
                         string token = null;
@@ -120,19 +138,17 @@ namespace MuninMap.Live
                         try { fallback = Pretty(ev.internalName); } catch { }
                         name = Localize(token, fallback ?? "Invasion");
                         invasionNames[ev.eventId] = name;
-                        // new: started in the last two minutes (this looks every 2 s). Not one carried over
-                        // from before a restart, nor one met before the world's clock is loaded (no age yet)
-                        double age = now - ev.startTime;
-                        if (now > 1 && age >= 0 && age < 120)
-                        {
-                            string who = Names(NearbyPeers(ev.position, null, ev.radius + 150f));
-                            Events.Add("invasion", name, "has begun" + (who.Length > 0 ? " (near " + who + ")" : ""), ev.position.x, ev.position.z);
-                            global::MuninMap.MuninMap.PostWorldEvent("🔥 " + name + " has begun" + (who.Length > 0 ? " (near " + who + ")" : ""), ev.position.x, ev.position.z);
-                        }
                     }
+                    if (isNew)
+                    {
+                        string who = Names(NearbyPeers(ev.position, null, ev.radius + 150f));
+                        Events.Add("invasion", name, "has begun" + (who.Length > 0 ? " (near " + who + ")" : ""), ev.position.x, ev.position.z);
+                        global::MuninMap.MuninMap.PostWorldEvent("🔥 " + name + " has begun" + (who.Length > 0 ? " (near " + who + ")" : ""), ev.position.x, ev.position.z);
+                    }
+                    double began = ev.startTime > 0 ? ev.startTime : invasionSeen.TryGetValue(ev.eventId, out var b) ? b[2] : -1;
                     j.BeginObject().Prop("id", ev.eventId).Prop("name", name).Prop("x", ev.position.x, 1).Prop("z", ev.position.z, 1).Prop("r", ev.radius, 0);
-                    if (ev.duration >= 0) j.Prop("left", Math.Max(0, ev.startTime + ev.duration - now), 0);
-                    if (now > 1 && now >= ev.startTime) j.Prop("age", now - ev.startTime, 0);   // seconds since it began
+                    if (ev.duration >= 0 && ev.startTime > 0) j.Prop("left", Math.Max(0, ev.startTime + ev.duration - now), 0);
+                    if (began >= 0 && now >= began) j.Prop("age", now - began, 0);   // seconds since it began
                     j.End();
                 }
             foreach (int id in new List<int>(invasionNames.Keys))
@@ -142,7 +158,43 @@ namespace MuninMap.Live
                     global::MuninMap.MuninMap.PostWorldEvent("🔥 " + invasionNames[id] + " is over");
                     invasionNames.Remove(id);
                 }
+            if (invasionsLoaded && list != null)
+                foreach (int id in new List<int>(invasionSeen.Keys))
+                    if (!on.Contains(id)) { invasionSeen.Remove(id); changed = true; }
+            if (changed) SaveInvasions();
             InvasionsJson = j.End().ToString();
+        }
+
+        private static void LoadInvasions()
+        {
+            invasionSeen.Clear();
+            try
+            {
+                if (!File.Exists(InvasionsPath)) return;
+                foreach (var line in File.ReadAllLines(InvasionsPath))
+                {
+                    var t = line.Split('\t');
+                    if (t.Length == 4 && int.TryParse(t[0], out int id)
+                        && double.TryParse(t[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double x)
+                        && double.TryParse(t[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double z)
+                        && double.TryParse(t[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double began))
+                        invasionSeen[id] = new[] { x, z, began };
+                }
+            }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: invasions state: " + e.Message); }
+        }
+
+        private static void SaveInvasions()
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                foreach (var kv in invasionSeen)
+                    sb.Append(kv.Key).Append('\t').Append(kv.Value[0].ToString("0.#", inv)).Append('\t').Append(kv.Value[1].ToString("0.#", inv)).Append('\t').Append(kv.Value[2].ToString("0.#", inv)).Append('\n');
+                File.WriteAllText(InvasionsPath, sb.ToString());
+            }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: invasions state: " + e.Message); }
         }
 
         // ---- found: boss altars and traders, the moment their ground is explored (World/Markers).

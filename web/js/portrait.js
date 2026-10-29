@@ -82,21 +82,31 @@ async function makeEffects(THREE, list) {
     }
     const n = Math.max(4, Math.min(MAX_PARTICLES, e.max || MAX_PARTICLES, Math.ceil(e.rate * Math.max(0.1, e.life) * 1.2)));
     const geo = new THREE.BufferGeometry();
-    const pos = new Float32Array(n * 3), col = new Float32Array(n * 4), size = new Float32Array(n);
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 4), size = new Float32Array(n), age = new Float32Array(n);
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('age', new THREE.BufferAttribute(age, 1));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
     geo.setAttribute('psize', new THREE.BufferAttribute(size, 1));
     let map = softDot(THREE);
     if (e.tex) { try { const t = await new THREE.TextureLoader().loadAsync(`models/${e.tex}`); t.colorSpace = THREE.SRGBColorSpace; map = t; } catch {} }
+    // gradient-mapped (fire, frost, lightning): the picture's light picks the colour along a ramp from dark
+    // to bright, the ramp changing over the particle's life, and is its see-through too
+    const R = e.ramp, v4 = (c) => new THREE.Vector4(...(c || [1, 1, 1, 1]));
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: map }, scale: { value: 400 }, tiles: { value: e.tiles || 1 }, cover: { value: e.additive ? 0 : 1 } },
-      vertexShader: `attribute vec4 color; attribute float psize; varying vec4 vC; uniform float scale;
-        void main() { vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * scale / -mv.z; gl_Position = projectionMatrix * mv; }`,
-      fragmentShader: `uniform sampler2D map; uniform float tiles; uniform float cover; varying vec4 vC;
+      uniforms: { map: { value: map }, scale: { value: 400 }, tiles: { value: e.tiles || 1 }, cover: { value: e.additive ? 0 : 1 },
+        ramped: { value: R ? 1 : 0 }, hi0: { value: v4(R?.[0]) }, hi1: { value: v4(R?.[1]) }, lo0: { value: v4(R?.[2]) }, lo1: { value: v4(R?.[3]) } },
+      vertexShader: `attribute vec4 color; attribute float psize; attribute float age; varying vec4 vC; varying float vT; uniform float scale;
+        void main() { vC = color; vT = age; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * scale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform sampler2D map; uniform float tiles; uniform float cover; uniform float ramped; uniform vec4 hi0, hi1, lo0, lo1; varying vec4 vC; varying float vT;
         void main() { vec2 uv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y) / tiles + vec2(0.0, 1.0 - 1.0 / tiles); vec4 t = texture2D(map, uv);
           float a = t.a; if (cover > 0.5 && a > 0.99) a = smoothstep(0.03, 0.35, max(t.r, max(t.g, t.b)));   // (a covering picture with no see-through: its black is the background)
-          gl_FragColor = vec4(t.rgb * vC.rgb, a * vC.a); if (gl_FragColor.a < 0.01) discard; }`,
-      transparent: true, depthWrite: false, blending: e.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+          vec3 rgb = t.rgb;
+          if (ramped > 0.5) { vec4 c = mix(mix(lo0, lo1, vT), mix(hi0, hi1, vT), t.r); rgb = c.rgb; a = t.r * c.a; }
+          gl_FragColor = vec4(min(rgb * vC.rgb, vec3(1.0)), a * vC.a); if (gl_FragColor.a < 0.01) discard; }`,
+      transparent: true, depthWrite: false,
+      // light-adding: adds colour only, never makes the see-through background solid (its dark would show as black squares)
+      ...(e.additive ? { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor,
+        blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor } : { blending: THREE.NormalBlending }),
     });
     const points = new THREE.Points(geo, mat);
     points.frustumCulled = false;
@@ -130,9 +140,9 @@ async function makeEffects(THREE, list) {
         const t = q.age / q.life;
         pos[i * 3] = q.p.x; pos[i * 3 + 1] = q.p.y; pos[i * 3 + 2] = q.p.z;
         for (let k = 0; k < 4; k++) col[i * 4 + k] = e.color[k] * lerp3([e.fade[0][k], e.fade[1][k], e.fade[2][k]], t);
-        size[i] = e.size * lerp3(e.grow, t);
+        size[i] = e.size * lerp3(e.grow, t); age[i] = t;
       }
-      geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.attributes.psize.needsUpdate = true;
+      geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.attributes.psize.needsUpdate = true; geo.attributes.age.needsUpdate = true;
     };
     for (let i = 0; i < 40; i++) step(0.05);   // (already going when first seen)
     out.push({ object: points, step, mat });
@@ -140,11 +150,12 @@ async function makeEffects(THREE, list) {
   return out;
 }
 
-async function model(id) {
+async function model(id, again = 0) {
   if (!models.has(id)) {
     const p = (async () => {
       const [{ THREE, GLTFLoader }, d] = await Promise.all([lib(), info(id)]);
-      const gltf = await new GLTFLoader().loadAsync(`models/${d.glb}`);
+      // (asked again: the server has made it again since, so not the copy the browser kept)
+      const gltf = await new GLTFLoader().loadAsync(`models/${d.glb}${again ? `?r=${Date.now()}` : ''}`);
       const root = gltf.scene, hair = new THREE.Color(d.hairColor || '#ffffff');
       const body = await bodyTexture(THREE, d);
       root.traverse((o) => {
@@ -158,6 +169,7 @@ async function model(id) {
       });
       root.userData.effects = await makeEffects(THREE, d.effects || []);
       for (const e of root.userData.effects) root.add(e.object);
+      root.userData.partial = d.textures === false;   // made while some of its textures were still being read: made again soon
       return root;
     })();
     p.catch(() => models.delete(id));   // (asked again next time)
@@ -167,11 +179,20 @@ async function model(id) {
 }
 
 // Show portrait `id` in element `box` (sized by CSS). Resolves true when drawn, false if it couldn't be.
-export async function showPortrait(box, id) {
+// keepView: the same player in other clothes, seen from where the viewer had turned them. A portrait
+// not made yet, or made before all of its textures were in (something new), is asked for again while shown.
+export async function showPortrait(box, id, keepView = false, again = 0) {
   if (!id || !box) return false;
+  const retry = (ms) => setTimeout(() => {
+    if (!box.isConnected || box.closest('[hidden]')) return;   // (the card was closed, or shows something else now)
+    models.delete(id);
+    showPortrait(box, id, true, again + 1).then((ok) => { if (ok) box.classList.add('drawn'); });
+  }, ms);
   let root;
-  try { root = await model(id); } catch { return false; }
+  try { root = await model(id, again); } catch { if (again < 20) retry(15000); return false; }
   if (!box.isConnected) return false;
+  root.userData.id = id;
+  if (root.userData.partial && again < 40) retry(again < 6 ? 5000 : 15000);
   const { THREE, OrbitControls } = await lib();
   if (!view) {
     let renderer;
@@ -195,6 +216,8 @@ export async function showPortrait(box, id) {
   }
   const v = view;
   if (v.current !== root) {
+    // where the viewer had turned the last one (around its own middle)
+    const turned = keepView && v.current ? v.camera.position.clone().sub(v.controls.target) : null;
     if (v.current) v.scene.remove(v.current);
     v.scene.add(root); v.current = root;
     // every character the same size: framed on their body (not what they hold or wear, nor the effects),
@@ -208,7 +231,8 @@ export async function showPortrait(box, id) {
     const dist = (2.05 * 0.5) / half;
     const s = { y: 2.05 };
     v.controls.target.copy(c);
-    v.camera.position.set(c.x, c.y + s.y * 0.04, c.z - dist);
+    if (turned) v.camera.position.copy(c).add(turned);
+    else v.camera.position.set(c.x, c.y + s.y * 0.04, c.z - dist);
     v.controls.update();
   }
   const w = box.clientWidth || 140, h = box.clientHeight || 210;

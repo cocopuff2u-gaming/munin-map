@@ -250,6 +250,20 @@ namespace MuninMap.Models
                     .Prop("shape", shape).Prop("radius", radius, 3).Prop("angle", angle, 1).Prop("additive", additive).Prop("tiles", tiles)
                     .Key("color").Raw(C(c0 * tint)).Key("fade").BeginArray().Raw(C(cA)).Raw(C(cB)).Raw(C(cZ)).End()
                     .Key("grow").BeginArray().Value(s0, 3).Value(s1, 3).Value(s2, 3).End();
+                // gradient-mapped (most fire, frost and lightning): the texture is only light and dark, and the
+                // colour is picked along a ramp from the second custom colour (dark) to the first (bright), both
+                // changing over the particle's life: [bright at birth, bright at death, dark at birth, dark at death]
+                try
+                {
+                    var cd = ps.customData;
+                    if (cd.enabled && cd.GetMode(ParticleSystemCustomData.Custom1) == ParticleSystemCustomDataMode.Color
+                        && cd.GetMode(ParticleSystemCustomData.Custom2) == ParticleSystemCustomDataMode.Color)
+                    {
+                        var hi = cd.GetColor(ParticleSystemCustomData.Custom1); var lo = cd.GetColor(ParticleSystemCustomData.Custom2);
+                        j.Key("ramp").BeginArray().Raw(C(GradAt(hi, 0f))).Raw(C(GradAt(hi, 1f))).Raw(C(GradAt(lo, 0f))).Raw(C(GradAt(lo, 1f))).End();
+                    }
+                }
+                catch { }
                 string tf = tex != null ? Tex(tex) : null;
                 if (tf != null) j.Prop("tex", tf);
                 j.Prop("name", ps.name).End();
@@ -287,6 +301,22 @@ namespace MuninMap.Models
                     case ParticleSystemGradientMode.Color: return g.color;
                     case ParticleSystemGradientMode.TwoColors: return Color.Lerp(g.colorMin, g.colorMax, 0.5f);
                     default: return g.Evaluate(0.5f, 0.5f);
+                }
+            }
+            catch { return Color.white; }
+        }
+
+        // a particle colour at this point of its life (0 born, 1 gone)
+        private static Color GradAt(ParticleSystem.MinMaxGradient g, float t)
+        {
+            try
+            {
+                switch (g.mode)
+                {
+                    case ParticleSystemGradientMode.Color: return g.color;
+                    case ParticleSystemGradientMode.TwoColors: return Color.Lerp(g.colorMin, g.colorMax, 0.5f);
+                    case ParticleSystemGradientMode.TwoGradients: return Color.Lerp(g.gradientMin.Evaluate(t), g.gradientMax.Evaluate(t), 0.5f);
+                    default: return g.gradient != null ? g.gradient.Evaluate(t) : g.Evaluate(t, 0.5f);
                 }
             }
             catch { return Color.white; }

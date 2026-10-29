@@ -45,6 +45,7 @@ namespace MuninMap.Live
             public List<string> bossesSeen = new List<string>();   // bosses they were there for, first time each
             public List<string> found = new List<string>();        // places they were first to find (the last 30)
             public long deathAt; public float deathX, deathZ; public string deathBiome = "";   // their last death (unix, where)
+            public double deathPlay = -1;                                                   // their playtime then (-1: not known)
             public Dictionary<string, int> levels = new Dictionary<string, int>();   // the level of what they wore, where the game says (slot -> level)
             public Dictionary<string, int> variants = new Dictionary<string, int>(); // the style of what they wore, where it has one (slot -> variant)
             public bool hasLook; public Players.Look look;                          // how they look, last seen
@@ -164,6 +165,7 @@ namespace MuninMap.Live
                         if (bsn != null) foreach (var b in bsn) if (b is string bn2) s.bossesSeen.Add(bn2);
                         var fnd = JsonParser.Arr(d, "found");
                         if (fnd != null) foreach (var f in fnd) if (f is string fn) s.found.Add(fn);
+                        s.deathPlay = d.ContainsKey("deathPlay") ? JsonParser.Num(d, "deathPlay") : -1;
                         s.deathAt = (long)JsonParser.Num(d, "deathAt"); s.deathBiome = JsonParser.Str(d, "deathBiome") ?? "";
                         s.deathX = (float)JsonParser.Num(d, "deathX"); s.deathZ = (float)JsonParser.Num(d, "deathZ");
                         var lv = JsonParser.Obj(d, "levels");
@@ -217,8 +219,65 @@ namespace MuninMap.Live
                         if (ho is List<object> pair && pair.Count == 2 && pair[0] is double ts && pair[1] is double n)
                             onlineHistory.Add(new KeyValuePair<long, int>((long)ts, (int)n));
                 ZLog.Log($"MuninMap: stats loaded for {players.Count} players");
+                if (JsonParser.Num(doc, "repaired") < 1) RepairFromEvents();
             }
             catch (Exception e) { ZLog.LogWarning("MuninMap: stats.json not readable: " + e.Message); }
+        }
+
+        // Once (3.2.4): before, a visit was counted twice (at the join, and again when their character
+        // appeared) and once more for each death, which also cut it in two; chats were counted only from
+        // 3.2.2. The events log has every join, leave and chat since the map was installed, so visits,
+        // the longest visit and chats are counted again from it, for players it saw from their first visit.
+        private static void RepairFromEvents()
+        {
+            dirty = true;
+            try
+            {
+                string path = Path.Combine(MuninMap.worldDataPath ?? "", "events.jsonl");
+                if (!File.Exists(path)) return;
+                var joins = new Dictionary<string, int>(); var chats = new Dictionary<string, int>(); var longest = new Dictionary<string, double>();
+                var onSince = new Dictionary<string, DateTime>();
+                string first = null;
+                foreach (var line in File.ReadAllLines(path))
+                {
+                    Dictionary<string, object> d = null;
+                    try { d = JsonParser.Parse(line) as Dictionary<string, object>; } catch { }
+                    if (d == null) continue;
+                    string type = JsonParser.Str(d, "type"), name = JsonParser.Str(d, "name") ?? "", ts = JsonParser.Str(d, "ts");
+                    if (first == null) first = ts;
+                    if (!DateTime.TryParse(ts, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime t)) continue;
+                    void Ended(string who)
+                    {
+                        if (!onSince.TryGetValue(who, out DateTime from)) return;
+                        double len = (t - from).TotalSeconds;
+                        longest.TryGetValue(who, out double had); if (len > had) longest[who] = len;
+                        onSince.Remove(who);
+                    }
+                    if (type == "join") { joins.TryGetValue(name, out int n); joins[name] = n + 1; onSince[name] = t; }
+                    else if (type == "leave") Ended(name);
+                    else if (type == "server") foreach (var who in new List<string>(onSince.Keys)) Ended(who);   // (a restart: everyone was off)
+                    else if (type == "chat" || type == "shout" || type == "whisper")
+                    {
+                        if (type == "shout" && (JsonParser.Str(d, "text") == "I have arrived!" || JsonParser.Str(d, "text") == "$text_player_arrived")) continue;
+                        chats.TryGetValue(name, out int n); chats[name] = n + 1;
+                    }
+                }
+                if (first == null) return;
+                var names = new Dictionary<string, int>();
+                foreach (var s in players.Values) { names.TryGetValue(s.name ?? "", out int n); names[s.name ?? ""] = n + 1; }
+                int fixedN = 0;
+                foreach (var s in players.Values)
+                {
+                    // only one player by that name, and seen by the log from their first visit
+                    if (string.IsNullOrEmpty(s.name) || names[s.name] > 1 || string.CompareOrdinal(first, s.firstSeen ?? "") > 0) continue;
+                    if (joins.TryGetValue(s.name, out int j) && j > 0) s.sessions = j;
+                    if (longest.TryGetValue(s.name, out double l) && l > s.longest) s.longest = l;
+                    if (chats.TryGetValue(s.name, out int c) && c > s.chats) s.chats = c;
+                    fixedN++;
+                }
+                ZLog.Log($"MuninMap: visits and chats counted again from the events log for {fixedN} players");
+            }
+            catch (Exception e) { ZLog.LogWarning("MuninMap: stats repair: " + e.Message); }
         }
 
         // the server stopping: sessions going on end now (or they'd be lost from the recent list)
@@ -231,7 +290,7 @@ namespace MuninMap.Live
             {
                 var j = new JsonWriter(4096);
                 j.BeginObject();
-                j.Prop("savedUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+                j.Prop("savedUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)).Prop("repaired", 1);
                 j.Prop("raids", raidsTotal).Prop("nightsSlept", nightsSlept).Prop("bossKills", bossKillsTotal).Prop("peakOnline", peakOnline).Prop("peakOnlineUtc", peakOnlineUtc);
                 j.Key("players").BeginArray();
                 foreach (var s in players.Values) WritePlayer(j, s, full: true);
@@ -302,6 +361,7 @@ namespace MuninMap.Live
             if (s.deathAt > 0)
             {
                 j.Prop("deathAt", s.deathAt).Prop("deathBiome", s.deathBiome);
+                if (s.deathPlay >= 0) j.Prop("deathPlay", Math.Round(s.deathPlay), 0);
                 if (s.deathX != 0f || s.deathZ != 0f) j.Prop("deathX", s.deathX, 1).Prop("deathZ", s.deathZ, 1);
             }
             if (s.playerId != 0L && Structures.Stations.TryGetValue(s.playerId, out var stations) && stations.Count > 0)
@@ -338,8 +398,7 @@ namespace MuninMap.Live
         public static void OnJoin(string key, string name)
         {
             var s = Get(key, name);
-            s.sessions++;
-            if (!s.online) SessionStarts(s);
+            if (!s.online) { s.sessions++; SessionStarts(s); }   // (once a visit: the tick may have seen them first)
             s.online = true;
             s.lastSeen = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             dirty = true;
@@ -372,6 +431,8 @@ namespace MuninMap.Live
             if (who == null) return;
             who.deaths++;
             who.deathAt = Unix();
+            who.deathPlay = who.playtime;
+            who.hasLast = false;   // (where they come back isn't a portal trip)
             who.deathX = who.deathZ = 0f; who.deathBiome = "";
             if (x.HasValue && z.HasValue)
             {
@@ -383,7 +444,7 @@ namespace MuninMap.Live
         }
 
         // Main thread, once per snapshot. `visible` players report a position.
-        public static void OnTick(List<Players.Snapshot> online)
+        public static void OnTick(List<Players.Snapshot> online, HashSet<string> connected)
         {
             double now = Time.realtimeSinceStartupAsDouble;
             double dt = lastTick > 0 ? Math.Min(now - lastTick, 10.0) : 0.0;
@@ -437,7 +498,7 @@ namespace MuninMap.Live
                         dirty = true;
                     }
                 if (!s.hasLook || !Same(s.look, p.look)) { s.look = p.look; s.hasLook = true; dirty = true; }
-                if (p.ping > 0) s.ping = s.ping < 0 ? p.ping : s.ping + (p.ping - s.ping) * Math.Min(1.0, dt / 600.0);   // (a ten-minute average)
+                if (p.hasNet) s.ping = s.ping < 0 ? p.ping : s.ping + (p.ping - s.ping) * Math.Min(1.0, dt / 600.0);   // (a ten-minute average)
                 // a close call: under 10% and lived (counted again only once back over 30%); the least health had
                 if (!p.dead && p.maxHealth > 0f && p.health > 0f)
                 {
@@ -450,6 +511,7 @@ namespace MuninMap.Live
                 if (dt > 0 && p.baseValue >= 3) s.atBase += dt;
                 if (dt > 0) s.week[(int)((Unix() / 3600 + 72) % 168)] += dt;   // (1 Jan 1970 was a Thursday)
                 if (p.inBed) s.lastInBed = Unix();
+                bool sailingStep = false;   // (this step was on a boat)
                 if (p.tracked && dt > 0)
                 {
                     bool inDungeon = p.y > 1000f;   // dungeons and caves are built far above the world
@@ -476,7 +538,7 @@ namespace MuninMap.Live
                         float ground = 30f;
                         try { ground = WorldGenerator.instance.GetHeight(p.x, p.z); } catch { }
                         double step = Math.Sqrt((p.x - s.lastX) * (p.x - s.lastX) + (p.z - s.lastZ) * (p.z - s.lastZ));
-                        if (ground < 27f && step / dt > 1.0 && step / dt < 60.0) { s.sailing += dt; s.sailed += step; }
+                        if (ground < 27f && step / dt > 1.0 && step / dt < 60.0) { s.sailing += dt; s.sailed += step; sailingStep = true; }
                     }
                 }
                 if (p.tracked)
@@ -485,12 +547,29 @@ namespace MuninMap.Live
                     {
                         double d = Math.Sqrt((p.x - s.lastX) * (p.x - s.lastX) + (p.z - s.lastZ) * (p.z - s.lastZ));
                         if (dt > 0 && d / dt > 60.0 && d > 150.0) s.portalTrips++;   // faster than any boat: a portal
-                        else s.distance += d;
+                        else if (!sailingStep) s.distance += d;   // (walked: not what the boat carried them)
                     }
                     s.lastX = p.x; s.lastZ = p.z; s.hasLast = true;
                     if (!string.IsNullOrEmpty(p.biome)) { s.lastBiome = p.biome; if (s.biomes.Add(p.biome)) dirty = true; }
                 }
             }
+            // still connected but with no character this moment (dead, waiting to come back): still on,
+            // their time still counts, and where they come back isn't a trip
+            if (connected != null)
+                foreach (var key in connected)
+                    if (!seen.Contains(key) && players.TryGetValue(key, out var s) && s.online)
+                    {
+                        seen.Add(key);
+                        s.playtime += dt;
+                        if (dt > 0)
+                        {
+                            string day = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                            s.days.TryGetValue(day, out double sec);
+                            s.days[day] = sec + dt;
+                            s.week[(int)((Unix() / 3600 + 72) % 168)] += dt;
+                        }
+                        s.hasLast = false;
+                    }
             foreach (var s in players.Values) if (s.online && !seen.Contains(s.key)) { SessionEnds(s); s.online = false; }
 
             // online history, 5-minute buckets

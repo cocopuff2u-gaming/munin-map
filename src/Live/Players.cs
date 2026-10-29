@@ -20,7 +20,7 @@ namespace MuninMap.Live
         public struct Snapshot
         {
             public long id, playerId; public string key, name, biome;
-            public float x, y, z, yaw, health, maxHealth, stamina, eitr, wisp;
+            public float x, y, z, yaw, health, maxHealth, stamina, eitr, wisp, staminaTop, eitrTop;
             public bool hasPos, tracked, hidden, dead, pvp, inBed, hasWeather;
             public Weather.Now weather;
             public string[] gear;   // right, left, chest, helmet, legs, shoulder, utility, trinket, rightBack, leftBack (prefab names, "" when empty)
@@ -28,8 +28,8 @@ namespace MuninMap.Live
             public int[] variant;   // the item's style (shields, capes: the game's variant number), 0 the first
             public Look look;
             public int baseValue;   // the game's count of base pieces around them (fires, beds, workbenches): 3 or more is a base
-            public int ping; public float quality01, inBps, outBps; public int sendQueue, queueMs, rateBps;
-            public string version, platform; public uint network; public bool crossplay;   // their connection, from the server's socket (ping 0: not known)
+            public bool hasNet; public int ping; public float quality01, inBps, outBps; public int sendQueue, queueMs, rateBps;   // hasNet: the socket answered (a ping of 0 is real: on the same network)
+            public string version, platform; public uint network; public bool crossplay;   // their connection, from the server's socket
         }
 
         // how the character looks, as their game syncs it for others to draw them
@@ -121,17 +121,43 @@ namespace MuninMap.Live
             return key;
         }
 
-        public static void Forget(ZNetPeer peer) { if (peer != null) keyByPeer.Remove(peer.m_uid); }
+        public static void Forget(ZNetPeer peer) { if (peer != null) { keyByPeer.Remove(peer.m_uid); tops.Remove(peer.m_uid); } }
+
+        // How full their stamina and eitr bars are drawn. The game shares only what they have now, not
+        // their most (that comes from the food they ate, which stays in their own game), so the page
+        // shows just that number, and fills the bar against the most they've had since they last ate.
+        // Food's share shrinks as it wears off, health's with it, so it's kept per point of food health
+        // (25 health, 50 stamina and no eitr is what they have with no food), and forgotten when they
+        // eat (their max health goes up).
+        private static readonly Dictionary<long, float[]> tops = new Dictionary<long, float[]>();   // peer -> max health, stamina and eitr per food health
+        private static void Tops(ref Snapshot s)
+        {
+            if (!tops.TryGetValue(s.id, out var t) || s.maxHealth > t[0] + 0.5f) tops[s.id] = t = new[] { s.maxHealth, 0f, 0f };
+            t[0] = s.maxHealth;
+            float food = s.maxHealth - 25f;
+            if (food < 1f) { s.staminaTop = Mathf.Max(50f, s.stamina); s.eitrTop = Mathf.Max(0f, s.eitr); return; }
+            t[1] = Mathf.Max(t[1], (s.stamina - 50f) / food);
+            t[2] = Mathf.Max(t[2], s.eitr / food);
+            s.staminaTop = Mathf.Max(s.stamina, 50f + t[1] * food);
+            s.eitrTop = Mathf.Max(s.eitr, t[2] * food);
+        }
+
+
+        // Everyone connected, with or without a character in the world right now (between dying and
+        // coming back they have none): their visit goes on
+        public static readonly HashSet<string> Connected = new HashSet<string>();
 
         // Main thread.
         public static void Refresh(List<ZNetPeer> peers)
         {
             current.Clear();
+            Connected.Clear();
             if (peers != null)
             {
                 foreach (var peer in peers)
                 {
                     if (peer == null || peer.m_server || string.IsNullOrEmpty(peer.m_playerName)) continue;
+                    Connected.Add(KeyOf(peer));
                     ZDO zdo = null;
                     try { zdo = ZDOMan.instance.GetZDO(peer.m_characterID); } catch { }
                     if (zdo == null) continue;
@@ -142,6 +168,7 @@ namespace MuninMap.Live
                     if (s.maxHealth < s.health) s.maxHealth = s.health;
                     s.stamina = zdo.GetFloat(hashStamina, -1f);
                     s.eitr = zdo.GetFloat(hashEitr, -1f);
+                    Tops(ref s);
                     s.gear = new string[hashGear.Length];
                     s.quality = new int[hashGear.Length];
                     s.variant = new int[hashGear.Length];
@@ -210,7 +237,8 @@ namespace MuninMap.Live
                 var st = default(Steamworks.SteamNetConnectionRealTimeStatus_t);
                 var lanes = default(Steamworks.SteamNetConnectionRealTimeLaneStatus_t);
                 if (Steamworks.SteamGameServerNetworkingSockets.GetConnectionRealTimeStatus(steam.m_con, ref st, 0, ref lanes) != Steamworks.EResult.k_EResultOK) return;
-                if (st.m_nPing > 0) { s.ping = st.m_nPing; s.quality01 = Quality(st.m_flConnectionQualityLocal, st.m_flConnectionQualityRemote); }
+                if (st.m_nPing < 0) return;   // not measured yet
+                s.hasNet = true; s.ping = st.m_nPing; s.quality01 = Quality(st.m_flConnectionQualityLocal, st.m_flConnectionQualityRemote);
                 s.inBps = st.m_flInBytesPerSec; s.outBps = st.m_flOutBytesPerSec;
                 s.sendQueue = st.m_cbPendingReliable + st.m_cbPendingUnreliable;
                 s.queueMs = (int)Math.Min(60000L, (long)st.m_usecQueueTime / 1000L);
@@ -218,7 +246,7 @@ namespace MuninMap.Live
                 return;
             }
             socket.GetConnectionQuality(out float localQ, out float remoteQ, out int ping, out float outB, out float inB);
-            if (ping > 0) { s.ping = ping; s.quality01 = Quality(localQ, remoteQ); }
+            if (ping > 0) { s.hasNet = true; s.ping = ping; s.quality01 = Quality(localQ, remoteQ); }
             s.inBps = inB; s.outBps = outB;
             s.sendQueue = socket.GetSendQueueSize();
         }
@@ -258,8 +286,8 @@ namespace MuninMap.Live
                 j.BeginObject();
                 j.Prop("id", s.id).Prop("name", s.name);
                 j.Prop("health", (int)s.health).Prop("maxHealth", (int)s.maxHealth);
-                if (s.stamina >= 0f) j.Prop("stamina", (int)s.stamina);
-                if (s.eitr >= 0f) j.Prop("eitr", (int)s.eitr);
+                if (s.stamina >= 0f) j.Prop("stamina", (int)s.stamina).Prop("staminaTop", (int)Mathf.Ceil(s.staminaTop));
+                if (s.eitr >= 0f) j.Prop("eitr", (int)s.eitr).Prop("eitrTop", (int)Mathf.Ceil(s.eitrTop));
                 if (s.gear != null)
                 {
                     j.Key("gear").BeginObject();
@@ -278,7 +306,7 @@ namespace MuninMap.Live
                     slot => { int g = Array.IndexOf(GearSlots, slot); return g >= 0 && g < gear.Length ? gear[g] : ""; },
                     slot => { int g = Array.IndexOf(GearSlots, slot); return g >= 0 && variant != null && g < variant.Length ? variant[g] : 0; }));
                 j.Prop("atBase", s.baseValue >= 3);
-                if (s.ping > 0)
+                if (s.hasNet)
                 {
                     j.Prop("ping", s.ping).Prop("netQ", s.quality01, 2).Prop("sendQ", s.sendQueue).Prop("inBps", s.inBps, 0).Prop("outBps", s.outBps, 0);
                     if (s.queueMs > 0) j.Prop("queueMs", s.queueMs);

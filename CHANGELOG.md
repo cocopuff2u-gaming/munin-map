@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.2.4
+
+**Player card**
+
+* **Connection info for players on the same network as the server.** Their ping is 0 ms, and the card took that as "no info" and left the whole connection section out. It now shows it.
+* **The card scrolls on phones.** It was placed when it opened, before its details filled in, and could run off the bottom of the screen with nothing to scroll. It now stays on the screen as it changes (and as a phone's browser bars come and go), and scrolls when it's taller than the screen.
+* **The 3D character keeps the angle you turned it to** when what they hold changes, instead of jumping back to the front.
+* **New outfits show without reloading the page.** The first time someone wears something new, the server reads its textures from the game files in the background; the card now asks again until it's ready, rather than keeping the unfinished one until a reload.
+
+**Player stats**
+
+* **Visits counted once.** Each visit was counted twice (when they joined, and again when their character appeared), and once more after every death, which also cut the visit in two. Visits, "a visit, usually" and the longest visit are right again, and the server counts the existing ones again from the events log once, on its first start with this version.
+* **Chats from the start.** Chats were only counted from 3.2.2 on; the messages in the events log from before are now counted too (once, the same way).
+* **Respawning isn't a portal trip.** Coming back at a bed after dying no longer counts as one.
+* **Walked is on foot.** Distance travelled by boat is no longer added to it (it's in "sailed").
+* **"Played since dying"** replaces "since they died": time in game since their last death, not counting time offline. (For a death before this version, the time in their recent visits since.)
+* **Stamina and eitr show what they have, not out of 100.** The game shares only how much they have now; their most comes from the food they ate, which stays in their own game. The card measured them out of 100, so with no food it read 50/100. It now shows just the number, and fills the bar against the most they've had since they last ate. Health still shows out of their most, which the game does share.
+* **Time at base** is now a share of the time it has been counted for (since 3.2.2), not of all their playtime, which made it far too low. The card says which stats are from their recent play only.
+
+**Item effects in 3D**
+
+* **Fire, frost and lightning in their colours.** Most of the game's flames and magic take their colour from a colour ramp on the effect, not from the picture (which is only light and dark). The ramp is now used, so torches burn orange and frostfire weapons glow blue instead of white.
+* **No more black squares around flames and sparks.** Glowing effects no longer darken the see-through background behind the character.
+
+**Map**
+
+* **Invasions show how long they've been on.** The game doesn't record when an invasion began, so the card showed the world's whole age ("673 h ago"). The map now notes when each one appears and keeps that over restarts. Invasions that were already on when the map started show no start time.
+* **"Invasion has begun"** now shows in Events (and goes to the Discord webhook, if set): before, it was never sent.
+
 ## 3.2.3
 
 **Player card fixes**

@@ -23,7 +23,7 @@ namespace MuninMap
     {
         public const string GUID = "com.cocopuff2u.muninmap";
         public const string NAME = "Munin Map";
-        public const string VERSION = "3.2.3";
+        public const string VERSION = "3.2.4";
         private const string OLD_GUID = "com.valheimwebmap.server";   // the mod this one was, Valheim WebMap
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
@@ -280,7 +280,7 @@ namespace MuninMap
                 {
                     Players.Refresh(mapDataServer.players);
                     mapDataServer.BroadcastPlayers();
-                    Stats.OnTick(Players.Current);
+                    Stats.OnTick(Players.Current, Players.Connected);
                     Stats.Serve();   // the stats text, remade only when a browser is waiting for it
                     Activity.Sample(Players.Current);
                 }

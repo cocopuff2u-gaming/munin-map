@@ -71,7 +71,7 @@ function connHtml(p, server) {
   if (p.platform || p.crossplay) rows.push(['Platform', `${escape(p.platform || 'Unknown')}${p.crossplay ? ' (crossplay)' : ''}`]);
   if (p.version) rows.push(['Game version', `${escape(p.version)}${server && server !== p.version ? ` <em>server ${escape(server)}</em>` : ''}`]);
   if (p.netVersion) rows.push(['Network version', p.netVersion]);
-  if (p.ping) {
+  if (p.ping !== undefined) {
     rows.push(['Ping', `${p.ping} ms`]);
     rows.push(['Packets lost', loss(p.netQ ?? 1)]);
     rows.push(['Traffic', `↓ ${kb(p.outBps)} · ↑ ${kb(p.inBps)}`]);
@@ -92,7 +92,16 @@ function statsHtml(st) {
   if (st.sessions > 1) cells.push(cell(fmtDuration(st.playtime / st.sessions), 'a visit, usually'));
   cells.push(cell(st.deaths, 'deaths'));
   if (hours >= 1) cells.push(cell(st.deaths ? (st.deaths / hours).toFixed(st.deaths / hours < 1 ? 2 : 1) : '0', 'deaths an hour'));
-  if (st.deathAt) cells.push(cell(fmtDuration(Date.now() / 1000 - st.deathAt), 'since they died', 'Time since their last death'));
+  // played since their last death (time offline doesn't count). Deaths before this was kept: the time
+  // in their sessions since, as far as the recent ones go
+  if (st.deathAt) {
+    let played = st.deathPlay !== undefined ? st.playtime - st.deathPlay : 0;
+    if (st.deathPlay === undefined) {
+      for (const [a, b] of st.recent || []) if (b > st.deathAt) played += b - Math.max(a, st.deathAt);
+      if (st.online && st.sessionStart) played += Date.now() / 1000 - Math.max(st.sessionStart, st.deathAt);
+    }
+    cells.push(cell(fmtDuration(Math.max(0, played)), 'played since dying', `In game since their last death (${fmtAgo(new Date(st.deathAt * 1000).toISOString())})`));
+  }
   if (st.closeCalls) cells.push(cell(st.closeCalls, 'close calls', 'Times under 10% health that they lived through'));
   if (st.lowHealth !== undefined) cells.push(cell(Math.max(1, Math.round(st.lowHealth)), 'least health', 'The lowest their health has been and lived'));
   cells.push(cell(fmtDist(st.distance), 'walked'));
@@ -108,11 +117,15 @@ function statsHtml(st) {
   cells.push(cell(st.raids || 0, 'raids weathered'));
   if (st.nights !== undefined) cells.push(cell(st.nights, 'nights slept', 'Nights the server slept through with them in bed'));
   if (st.chats !== undefined) cells.push(cell(st.chats.toLocaleString(), 'chats sent', 'Messages said, shouted or whispered in game'));
-  if (st.atBase && st.playtime) cells.push(cell(`${Math.round(100 * st.atBase / st.playtime)}%`, 'time at base', 'At a base (fires, beds, workbenches around them) rather than out exploring'));
+  // (time at base, AFK, dungeons, sailing, close calls, nights and the hours of the week are counted since
+  // 3.2.2: their record of hours is the playtime those cover)
+  const counted = (st.week || []).reduce((a, b) => a + b, 0);
+  if (st.atBase && counted) cells.push(cell(`${Math.round(100 * Math.min(1, st.atBase / counted))}%`, 'time at base', 'At a base (fires, beds, workbenches around them) rather than out exploring'));
   if (st.dungeon) cells.push(cell(fmtDuration(st.dungeon), 'in dungeons', 'Crypts, caves and other places below'));
   if (st.afk) cells.push(cell(fmtDuration(st.afk), 'AFK', 'Not moving or turning for five minutes or more'));
   if (st.ping >= 0 && st.ping !== undefined) cells.push(cell(`${Math.round(st.ping)} ms`, 'usual ping', 'Their ping to the server, averaged'));
   let html = `<div class="pc-stats">${cells.join('')}</div>`;
+  if (counted > 0 && st.playtime > counted * 1.1) html += `<div class="pc-first">Time at base, AFK, dungeons, sailing, close calls, nights slept and the highest and farthest they've been are from their last ${fmtDuration(counted)} of play.</div>`;
   // time in each biome, as one bar
   const bt = Object.entries(st.biomeTime || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
   const tot = bt.reduce((a, [, s]) => a + s, 0);
@@ -202,6 +215,8 @@ export class PlayerCard {
     document.getElementById('app').appendChild(this.el);
     this.el.addEventListener('click', (e) => e.stopPropagation());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.hide(); });
+    addEventListener('resize', () => this.fit());
+    window.visualViewport?.addEventListener('resize', () => this.fit());   // (a phone's browser bars showing or hiding)
     document.addEventListener('pointerdown', (e) => { if (!this.el.hidden && !this.el.contains(e.target) && !e.target.closest('.mk-player') && !e.target.closest('#panel-players') && !e.target.closest('.pl-table')) this.hide(); });
     statsStore.onChange(() => { if (this.name && !this.el.hidden) this.refresh(); });
     onNames = () => { if (this.name && !this.el.hidden) this.refresh(); };   // the game's item names came in
@@ -220,6 +235,19 @@ export class PlayerCard {
     if (left < 8) left = 8;
     top = Math.max(8, Math.min(innerHeight - h - 8, top));
     this.el.style.left = left + 'px'; this.el.style.top = top + 'px';
+    this.fit();
+  }
+  // kept on the screen as it is now (its content changes after it opens; on a phone the browser's bars
+  // take part of the screen): moved up if its bottom would be off it, and no taller than the room
+  // below its top, so what doesn't fit scrolls
+  fit() {
+    if (this.el.hidden) return;
+    const vh = window.visualViewport?.height || innerHeight;
+    const h = Math.min(this.el.scrollHeight, vh - 16);
+    let top = parseFloat(this.el.style.top) || 8;
+    if (top + h > vh - 8) top = Math.max(8, vh - 8 - h);
+    this.el.style.top = top + 'px';
+    this.el.style.maxHeight = (vh - 8 - top) + 'px';
   }
   showByName(name) { this.show({ name }, innerWidth / 2 - 160, innerHeight / 2); }
 
@@ -246,6 +274,10 @@ export class PlayerCard {
   render(p, st) {
     const PL = this.app.layers.players, name = this.name, col = PL.color(name);
     const bar = (label, v, max, cls) => max > 0 ? `<div class="pc-bar"><span>${label}</span><div class="hp ${cls}"><i class="${v / max < 0.3 ? 'low' : ''}" style="width:${Math.round(100 * Math.max(0, Math.min(1, v / max)))}%"></i></div><b>${Math.round(v)}${max ? ` / ${Math.round(max)}` : ''}</b></div>` : '';
+    // stamina and eitr: only what they have now is shown as a number. The game never shares their most
+    // (it comes from the food they ate, which stays in their own game), so the bar is filled against
+    // the most they've had since they last ate (the server keeps it), and no maximum is written
+    const amount = (label, v, top, cls) => `<div class="pc-bar"><span>${label}</span><div class="hp ${cls}"><i style="width:${Math.round(100 * Math.max(0, Math.min(1, top > 0 ? v / top : 1)))}%"></i></div><b>${Math.round(v)}</b></div>`;
     // who, and whether they're on
     let status;
     if (p) {
@@ -255,7 +287,7 @@ export class PlayerCard {
     } else status = st?.lastSeen ? `Last seen ${fmtAgo(st.lastSeen)}${st.lastBiome ? ' · ' + escape(st.lastBiome) : ''}` : 'Offline';
     const where = p ? (p.x !== undefined ? `${escape(p.biome || '')}${p.weather ? ` · ${escape(p.weather)}` : ''} · ${escape(this.app.sidebar?.whereText?.(p.x, p.z) || `${p.x}, ${p.z}`)}` : 'Position hidden') : '';
     // their connection: ping, and how the game rates the link (live only)
-    const net = p && p.ping ? netHtml(p) : '';
+    const net = p && p.ping !== undefined ? netHtml(p) : '';
     const conn = p ? connHtml(p, statsStore.data?.server?.gameVersion) : '';
     // what they wear: the game's icon and name, what it does when its level is certain (the game shares
     // it for the hands and the cape; else only the slot), the slot (offline: what they wore when last seen)
@@ -310,7 +342,7 @@ export class PlayerCard {
     const portrait = p?.portrait || st?.portrait || '';
     // the same card as a second ago but for the bars, the place and the ping: just move those
     // (rebuilding it all every update remade its pictures and could hitch the map)
-    const barsHtml = (p ? bar('Health', p.health, p.maxHealth, 'hp-health') : '') + (p && p.stamina !== undefined ? bar('Stamina', p.stamina, Math.max(p.stamina, 100), 'hp-stamina') : '') + (p && p.eitr !== undefined && p.eitr > 0 ? bar('Eitr', p.eitr, Math.max(p.eitr, 100), 'hp-eitr') : '');
+    const barsHtml = (p ? bar('Health', p.health, p.maxHealth, 'hp-health') : '') + (p && p.stamina !== undefined ? amount('Stamina', p.stamina, p.staminaTop, 'hp-stamina') : '') + (p && p.eitr !== undefined && p.eitr > 0 ? amount('Eitr', p.eitr, p.eitrTop, 'hp-eitr') : '');
     const sig = [name, status, !!where, !!net, !!conn, gear, armorText, activity, life, placeRows, badges, following, !!there, portrait].join('|');
     if (sig === this.sig && !this.el.hidden) {
       const b = this.el.querySelector('.pc-bars'), w = this.el.querySelector('.pc-where'), n = this.el.querySelector('.pc-net');
@@ -357,14 +389,18 @@ export class PlayerCard {
     // a fade at the bottom of the places while there's more below
     const fadePlaces = () => pl && pl.classList.toggle('more', pl.scrollTop + pl.clientHeight < pl.scrollHeight - 4);
     if (pl) { pl.scrollTop = scroll; fadePlaces(); pl.addEventListener('scroll', fadePlaces, { passive: true }); }
+    this.fit();
     const box = this.el.querySelector('.pc-portrait');
-    if (portrait) showPortrait(box, portrait).then((ok) => { if (ok) box.classList.add('drawn'); });
+    // (the same player again, in other clothes: as the viewer had turned them)
+    if (portrait) showPortrait(box, portrait, this.portraitOf === name).then((ok) => { if (ok) box.classList.add('drawn'); });
+    this.portraitOf = name;
     this.el.querySelector('[data-act=close]').addEventListener('click', () => this.hide());
     this.el.querySelectorAll('.pc-tabs button').forEach((b) => b.addEventListener('click', () => {
       this.tab = b.dataset.tab;   // (kept for the next card too)
       this.el.querySelectorAll('.pc-tabs button').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
       this.el.querySelectorAll('.pc-tab').forEach((t) => { t.hidden = t.dataset.tab !== this.tab; });
       fadePlaces();
+      this.fit();
     }));
     this.el.querySelector('[data-act=follow]')?.addEventListener('click', () => { PL.follow(following ? null : p.id); this.refresh(); });
     this.el.querySelector('[data-act=goto]').addEventListener('click', () => there && this.app.goTo(there[0], there[1], Math.max(this.app.mode === '2d' ? this.app.map.getZoom() : 7, 7)));
