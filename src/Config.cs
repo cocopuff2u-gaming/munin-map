@@ -48,6 +48,7 @@ namespace MuninMap
 
         public static string URL = "";
         public static string MAP_TITLE = "";
+        public static string DATA_PATH = "";
 
         // tile renderer
         public static int RENDER_THREADS = 1;
@@ -157,6 +158,12 @@ namespace MuninMap
             TILE_WEBP = config.Bind("Server", "tile_webp",
                 MuninConfig.TILE_WEBP,
                 "Store map and overlay tiles as lossless WebP: same picture, 25-35% less upload per tile. New tiles are served as PNG at once and converted in the background. Browsers without WebP still get PNG. ImageSharp is merged into MuninMap.dll.").Value;
+
+            DATA_PATH = config.Bind("Server", "data_path",
+                MuninConfig.DATA_PATH,
+                "Where the map keeps what it makes and records (tiles, stats, player cards, models): a folder, absolute or under BepInEx. "
+                + "Empty: BepInEx/config/MuninMap, outside the plugin's folder, so updating the mod (by hand or with a mod manager) leaves it alone. "
+                + "Change it with the server stopped and move the folder there yourself.").Value;
 
             SERVER_PORT = config.Bind("Server", "server_port",
                 MuninConfig.SERVER_PORT,
@@ -358,6 +365,29 @@ namespace MuninMap
             return WORLD_NAME;
         }
 
+        // Travel speeds from the game's own prefabs (m/s), read once on the main thread: a player's jog, which
+        // costs no stamina, and a ridden lox: running until its saddle's stamina is spent (an unskilled rider),
+        // then trotting (its stamina comes back far too slowly to run again on the way)
+        private static float speedFoot, speedLox, loxTrot, loxRunFor;
+        public static void ReadSpeeds()
+        {
+            if (speedFoot > 0f || ZNetScene.instance == null) return;
+            try
+            {
+                var player = ZNetScene.instance.GetPrefab("Player")?.GetComponent<Character>();
+                var lox = ZNetScene.instance.GetPrefab("Lox");
+                var loxC = lox != null ? lox.GetComponent<Character>() : null;
+                var sadle = lox != null ? lox.GetComponentInChildren<Sadle>(true) : null;
+                if (loxC != null && sadle != null && sadle.m_runStaminaDrain > 0f)
+                {
+                    speedLox = loxC.m_runSpeed; loxTrot = loxC.m_speed; loxRunFor = sadle.m_maxStamina / sadle.m_runStaminaDrain;
+                    ZLog.Log($"MuninMap: travel speeds: lox run {loxC.m_runSpeed} trot {loxC.m_speed} walk {loxC.m_walkSpeed}, saddle stamina {sadle.m_maxStamina} drain {sadle.m_runStaminaDrain} regen {sadle.m_staminaRegen}; player jog {player?.m_speed} run {player?.m_runSpeed}");
+                }
+                speedFoot = player != null ? player.m_speed : -1f;
+            }
+            catch { speedFoot = -1f; }
+        }
+
         public static string MakeClientConfigJson()
         {
             Dictionary<string, object> config = new Dictionary<string, object>();
@@ -371,6 +401,8 @@ namespace MuninMap
             config["fog_pixel"] = World.Fog.CELL;
             config["update_interval"] = PLAYER_UPDATE_INTERVAL;
             config["explore_radius"] = EXPLORE_RADIUS;
+            if (speedFoot > 0f) config["speed_foot"] = speedFoot;
+            if (speedLox > 0f) { config["speed_lox"] = speedLox; config["speed_lox_trot"] = loxTrot; config["lox_run_seconds"] = loxRunFor; }
             config["max_messages"] = MAX_MESSAGES;
             config["web_pins"] = WEB_PINS;
             config["web_pings"] = WEB_PINGS;

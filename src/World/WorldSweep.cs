@@ -159,6 +159,7 @@ namespace MuninMap.World
             ForestMap.Begin();
             WorldObjects.Begin();
             Demisters.Begin();
+            LocationTerrain.Begin();
             Hotspots.Begin();
             SpawnerBosses.Begin();
             var changedZones = new HashSet<long>();
@@ -186,6 +187,7 @@ namespace MuninMap.World
                             if (Runestones.IsProxy(pref)) { try { Markers.ObserveProxy(zdo, p); } catch { } }
                             if (SpawnerBosses.Is(pref)) SpawnerBosses.Observe(zdo);   // Lord Reto, who leaves no world key
                             if (pref == tombstoneHash) Fog.AddTrace(p);   // where a player died   // recorded maps: exact explored areas (and still a building piece below)
+                            if (LocationTerrain.Is(pref)) LocationTerrain.Observe(zdo, p);   // a placed location: the ground it shapes
                             if (pref == terrainCompilerHash)
                             {
                                 if (TerrainPatches.Observe(zdo, p))
@@ -218,7 +220,7 @@ namespace MuninMap.World
                                 }
                                 else if (!Markers.Observe(zdo, pref, p))
                                 {
-                                    if (Vegetation.Observe(pref, p)) { if (inLegacy) ForestMap.Observe(pref, legacyIdx); }
+                                    if (Vegetation.Observe(pref, p, zdo)) { if (inLegacy) ForestMap.Observe(pref, legacyIdx); }
                                     else Ruins.Observe(zdo, pref, p);
                                 }
                             }
@@ -273,6 +275,7 @@ namespace MuninMap.World
             }
             yield return Step("map tables", MapTables(mapTables));
             yield return Step("traces", Once(() => Fog.RevealTraces()));
+            yield return Step("location ground", LocationTerrain.Finish(changedZones, MuninMap.worldDataPath));
             yield return Step("trees", Vegetation.Finish(changedZones));
             yield return Step("buildings", Structures.Finish());
             int changedChunks = Structures.LastChanged;
@@ -293,6 +296,14 @@ namespace MuninMap.World
             // otherwise count as "changed" and every close-zoom tile on disk would
             // be re-rendered at each restart.
             int rerendered = 0;
+            // once, when the changed ground moved to its own overlay (terra tiles): every zone with any is
+            // made again, so its ground tiles drop it and its overlay is made
+            if (Sweeps == 0 && TileStore.FirstTime("terra-overlay-1"))
+            {
+                foreach (long key in TerrainPatches.Zones()) changedZones.Add(key);
+                foreach (long key in LocationTerrain.Zones()) changedZones.Add(key);
+                foreach (long key in changedZones) { TileMath.UnzoneKey(key, out int zx, out int zz); TileStore.OnZoneChanged(zx, zz); rerendered++; }
+            }
             if (Sweeps > 0)
                 foreach (long key in changedZones)
                 {

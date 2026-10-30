@@ -30,7 +30,7 @@ done
 echo "game assemblies: $MANAGED"
 mkdir -p libs/valheim
 for f in assembly_valheim.dll assembly_utils.dll Mono.Security.dll UnityEngine.dll UnityEngine.CoreModule.dll \
-         UnityEngine.JSONSerializeModule.dll UnityEngine.ImageConversionModule.dll UnityEngine.ParticleSystemModule.dll Splatform.dll com.rlabrecque.steamworks.net.dll; do
+         UnityEngine.JSONSerializeModule.dll UnityEngine.ImageConversionModule.dll UnityEngine.ParticleSystemModule.dll Splatform.dll com.rlabrecque.steamworks.net.dll SoftReferenceableAssets.dll; do
   [ -f "$MANAGED/$f" ] && cp -f "$MANAGED/$f" libs/valheim/ || echo "warning: missing $f"
 done
 

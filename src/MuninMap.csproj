@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>3.2.6</Version>
+    <Version>3.3.0</Version>
     <OutputType>Library</OutputType>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>9.0</LangVersion>
@@ -43,6 +43,7 @@
     <Reference Include="UnityEngine"><HintPath>..\libs\valheim\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>..\libs\valheim\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>..\libs\valheim\UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SoftReferenceableAssets"><HintPath>..\libs\valheim\SoftReferenceableAssets.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.JSONSerializeModule"><HintPath>..\libs\valheim\UnityEngine.JSONSerializeModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Splatform"><HintPath>..\libs\valheim\Splatform.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="steamworks"><HintPath>..\libs\valheim\com.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>

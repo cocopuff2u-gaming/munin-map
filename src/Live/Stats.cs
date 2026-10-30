@@ -67,6 +67,10 @@ namespace MuninMap.Live
             public double idleFor; public float idleX, idleZ, idleYaw; public bool closeArmed = true;
         }
 
+        // EnvMan.RescaleDayFraction
+        internal static double DayFraction(double f) =>
+            f >= 0.15 && f <= 0.85 ? 0.25 + (f - 0.15) / 0.7 * 0.5 : f < 0.5 ? f / 0.15 * 0.25 : 0.75 + (f - 0.85) / 0.15 * 0.25;
+
         private static long Unix() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         private static void SessionStarts(PlayerStat s) { s.sessionStart = Unix(); }
         private static void SessionEnds(PlayerStat s)
@@ -903,9 +907,12 @@ namespace MuninMap.Live
                 float dayLen = 1800f;
                 try { if (EnvMan.instance != null) dayLen = EnvMan.instance.m_dayLengthSec; } catch { }
                 int day = (int)(t / dayLen);
-                double frac = (t % dayLen) / dayLen;
-                j.Prop("worldTime", t, 0).Prop("day", day).Prop("dayFraction", frac, 3);
-                j.Prop("night", frac <= 0.25 || frac >= 0.75);   // (the game's own EnvMan.IsNight)
+                // the time of day as the game has it: the clock's fraction stretched so the day (0.15 to 0.85 of
+                // the clock) runs from 0.25 to 0.75 (EnvMan.RescaleDayFraction), night below and above that
+                // (EnvMan.CalculateNight). dayLength and worldTime let the page keep the clock going between updates.
+                double frac = DayFraction((t % dayLen) / dayLen);
+                j.Prop("worldTime", t, 0).Prop("dayLength", dayLen, 0).Prop("day", day).Prop("dayFraction", frac, 4);
+                j.Prop("night", frac <= 0.25 || frac >= 0.75);
             }
             catch { }
         }

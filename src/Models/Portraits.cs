@@ -41,12 +41,25 @@ namespace MuninMap.Models
         private static volatile bool texDone;
         private static readonly object sync = new object();
 
+        private static int StanceOf(Spec spec)
+        {
+            ItemDrop.ItemData.SharedData Shared(string slot)
+            {
+                if (!spec.gear.TryGetValue(slot, out string n) || string.IsNullOrEmpty(n)) return null;
+                try { return ObjectDB.instance.GetItemPrefab(n)?.GetComponent<ItemDrop>()?.m_itemData?.m_shared; } catch { return null; }
+            }
+            var left = Shared("left");
+            if (left != null) return (int)(left.m_itemType == ItemDrop.ItemData.ItemType.Torch ? ItemDrop.ItemData.AnimationState.LeftTorch : left.m_animationState);
+            var right = Shared("right");
+            return right != null ? (int)right.m_animationState : (int)ItemDrop.ItemData.AnimationState.Unarmed;
+        }
+
         private static readonly string[] Slots = { "helmet", "chest", "legs", "shoulder", "utility", "trinket", "right", "left", "rightBack", "leftBack" };
 
         // Main thread: the portrait id for this look, gear and gear styles (remembered, so it can be made when asked)
         public static string Id(Players.Look look, Func<string, string> gearOf, Func<string, int> variantOf)
         {
-            var sb = new StringBuilder("p4|");
+            var sb = new StringBuilder("p13|");
             sb.Append(look.model).Append('|').Append(Players.Hex(look.skin)).Append('|').Append(Players.Hex(look.hair)).Append('|').Append(look.hairItem).Append('|').Append(look.beardItem);
             var spec = new Spec { model = look.model, skin = look.skin, hair = look.hair, hairItem = look.hairItem, beardItem = look.beardItem };
             foreach (var slot in Slots)
@@ -197,150 +210,71 @@ namespace MuninMap.Models
         // way, how many and how long, speed, size, colour from birth to death, gravity, the shape they come
         // out of, the particle texture and whether it adds light (fire) or covers (smoke). An approximation
         // the page animates, from the game's own numbers.
-        private static void Effects(GameObject go, Matrix4x4 toRoot, List<string> outList, PrefabExporter.Result res, List<string> wantMats)
+        private static void Effects(GameObject go, Matrix4x4 toRoot, List<string> outList, PrefabExporter.Result res, List<string> wantMats, List<string> meshes)
         {
+            // a particle mesh: read here when the engine allows, else the copy read from the game files (asked for
+            // once: the portrait is made again when it's in)
+            MeshCache.Data MeshOf(Mesh mesh)
+            {
+                try
+                {
+                    if (mesh.isReadable)
+                    {
+                        var v = mesh.vertices; var uv = mesh.uv; var t = mesh.triangles;
+                        var d = new MeshCache.Data { positions = new float[v.Length * 3] };
+                        for (int i = 0; i < v.Length; i++) { d.positions[i * 3] = v[i].x; d.positions[i * 3 + 1] = v[i].y; d.positions[i * 3 + 2] = v[i].z; }
+                        if (uv != null && uv.Length == v.Length) { d.uvs = new float[uv.Length * 2]; for (int i = 0; i < uv.Length; i++) { d.uvs[i * 2] = uv[i].x; d.uvs[i * 2 + 1] = uv[i].y; } }
+                        var tu = new uint[t.Length]; for (int i = 0; i < t.Length; i++) tu[i] = (uint)t[i]; d.subMeshes.Add(tu);
+                        return d;
+                    }
+                    int idx0 = 0; try { idx0 = (int)mesh.GetIndexCount(0); } catch { }
+                    string key = string.IsNullOrEmpty(mesh.name) || mesh.vertexCount <= 0 ? null : MeshCache.Key(mesh.name, mesh.vertexCount, mesh.subMeshCount, idx0);
+                    if (key == null) return null;
+                    var c = MeshCache.Load(Dir, key);
+                    if (c == null && !meshes.Contains(key)) meshes.Add(key);
+                    return c;
+                }
+                catch { return null; }
+            }
             string V3(Vector3 v) => "[" + F(v.x) + "," + F(v.y) + "," + F(-v.z) + "]";
             string C(Color c) => "[" + F(c.r) + "," + F(c.g) + "," + F(c.b) + "," + F(c.a) + "]";
             foreach (var ps in go.GetComponentsInChildren<ParticleSystem>(false))
             {
                 if (ps == null || !ps.gameObject.activeInHierarchy) continue;
-                var main = ps.main; var em = ps.emission; var sh = ps.shape;
-                float rate = em.enabled ? Val(em.rateOverTime) : 0f;
-                float bursts = 0f;
-                try { for (int b = 0; b < em.burstCount; b++) bursts += Val(em.GetBurst(b).count) / Mathf.Max(0.2f, em.GetBurst(b).repeatInterval > 0 ? em.GetBurst(b).repeatInterval : main.duration); } catch { }
-                rate += bursts;
-                if (rate <= 0f) continue;
-                var pr = ps.GetComponent<ParticleSystemRenderer>();
-                if (pr == null || !pr.enabled || pr.renderMode == ParticleSystemRenderMode.Mesh) continue;
-                // render mode None: the particles aren't drawn, only their trails (lightning arcs, swirls)
-                var tr = ps.trails;
-                bool trailOnly = pr.renderMode == ParticleSystemRenderMode.None;
-                bool trailed = false; try { trailed = tr.enabled; } catch { }
-                if (trailOnly && !trailed) continue;
-                var mat = trailOnly && pr.trailMaterial != null ? pr.trailMaterial : pr.sharedMaterial;
-                string tex = null; string shader = ""; Color tint = Color.white;
-                if (mat != null)
+                string Picture(Material m)
                 {
-                    tex = PrefabExporter.ColorTextureName(mat);
-                    try { shader = mat.shader != null ? mat.shader.name.ToLowerInvariant() : ""; } catch { }
-                    var tc = Saved(mat, "_TintColor", wantMats) ?? Saved(mat, "_Color", wantMats);
-                    if (tc.HasValue) tint = tc.Value;
+                    string t = PrefabExporter.ColorTextureName(m);
+                    if (t == null) return null;
+                    if (!res.wants.Contains(t)) res.wants.Add(t);
+                    return Tex(t);
                 }
-                if (tex != null && !res.wants.Contains(tex)) res.wants.Add(tex);
-                // light-adding (fire) or covering (smoke): the shader says on a client; on a dedicated server its name
-                // is all that's left, so the effect's own names are read too (flames, embers, sparks, flares glow)
-                string words = (shader + " " + (mat != null ? mat.name : "") + " " + (tex ?? "") + " " + ps.name).ToLowerInvariant();
-                // light-adding (fire, sparks, magic: most item effects) or covering (smoke, blood): the shader
-                // says on a client; on a dedicated server only names are left, so covering is told by them
-                bool additive = !(words.Contains("smoke") || words.Contains("dust") || words.Contains("cloud") || words.Contains("blood")
-                    || words.Contains("poison") || words.Contains("ooz") || words.Contains("drip") || words.Contains("splat") || words.Contains("steam"));
-                float scale = 1f;
-                try { if (main.scalingMode != ParticleSystemScalingMode.Shape) scale = Mathf.Max(0.01f, ps.transform.lossyScale.x); } catch { }
-                Color c0 = Grad(main.startColor), cA = Color.white, cB = Color.white, cZ = Color.white;
-                var col = ps.colorOverLifetime;
-                if (col.enabled) { cA = col.color.Evaluate(0f, 0.5f); cB = col.color.Evaluate(0.5f, 0.5f); cZ = col.color.Evaluate(1f, 0.5f); }
-                float s0 = 1f, s1 = 1f, s2 = 1f;
-                var sol = ps.sizeOverLifetime;
-                if (sol.enabled) { s0 = sol.size.Evaluate(0f, 0.5f); s1 = sol.size.Evaluate(0.5f, 0.5f); s2 = sol.size.Evaluate(1f, 0.5f); }
-                Vector3 pos = toRoot.MultiplyPoint3x4(ps.transform.position), dir = toRoot.MultiplyVector(ps.transform.forward).normalized;
-                string shape = sh.enabled ? sh.shapeType.ToString() : "Sphere";
-                float radius = sh.enabled ? sh.radius * scale : 0.01f, angle = sh.enabled ? sh.angle : 25f;
-                int tiles = 1; try { var ts = ps.textureSheetAnimation; if (ts.enabled) tiles = Math.Max(1, ts.numTilesX); } catch { }
-                float life = Val(main.startLifetime);
-                if (!(life > 0.01f)) life = main.duration > 0.05f ? main.duration : 1f;   // (no lifetime given: as long as the effect runs)
-                var j = new JsonWriter(512);
-                j.BeginObject().Prop("kind", "particles").Key("pos").Raw(V3(pos)).Key("dir").Raw(V3(dir))
-                    .Prop("rate", Mathf.Min(rate, 120f), 2).Prop("life", life, 3).Prop("speed", Val(main.startSpeed) * scale, 3)
-                    .Prop("size", Mathf.Min(Val(main.startSize) * scale, 0.6f), 3).Prop("gravity", Val(main.gravityModifier), 3).Prop("max", Math.Min(main.maxParticles, 200))
-                    .Prop("shape", shape).Prop("radius", radius, 3).Prop("angle", angle, 1).Prop("additive", additive).Prop("tiles", tiles)
-                    .Key("color").Raw(C(c0 * tint)).Key("fade").BeginArray().Raw(C(cA)).Raw(C(cB)).Raw(C(cZ)).End()
-                    .Key("grow").BeginArray().Value(s0, 3).Value(s1, 3).Value(s2, 3).End();
-                // gradient-mapped (most fire, frost and lightning): the texture is only light and dark, and the
-                // colour is picked along a ramp from the second custom colour (dark) to the first (bright), both
-                // changing over the particle's life: [bright at birth, bright at death, dark at birth, dark at death]
-                try
-                {
-                    var cd = ps.customData;
-                    if (cd.enabled && cd.GetMode(ParticleSystemCustomData.Custom1) == ParticleSystemCustomDataMode.Color
-                        && cd.GetMode(ParticleSystemCustomData.Custom2) == ParticleSystemCustomDataMode.Color)
-                    {
-                        var hi = cd.GetColor(ParticleSystemCustomData.Custom1); var lo = cd.GetColor(ParticleSystemCustomData.Custom2);
-                        j.Key("ramp").BeginArray().Raw(C(GradAt(hi, 0f))).Raw(C(GradAt(hi, 1f))).Raw(C(GradAt(lo, 0f))).Raw(C(GradAt(lo, 1f))).End();
-                    }
-                }
-                catch { }
-                // trails: how long they stay (a share of the particle's life) and how wide; trail-only ones
-                // draw nothing else
-                if (trailed)
-                {
-                    float width = 1f, ratio = 0.5f;
-                    try { width = Val(tr.widthOverTrail) * (tr.sizeAffectsWidth ? Val(main.startSize) * scale : 1f); ratio = Val(tr.lifetime); } catch { }
-                    j.Key("trail").BeginObject().Prop("life", Mathf.Clamp(ratio, 0.05f, 1f), 3).Prop("width", Mathf.Clamp(width, 0.003f, 0.3f), 4).Prop("only", trailOnly).End();
-                }
-                // noise: the wander the game adds to each particle's path (what makes lightning jagged)
-                try
-                {
-                    var nz = ps.noise;
-                    if (nz.enabled) j.Key("noise").BeginObject().Prop("strength", Val(nz.strength) * scale, 3).Prop("freq", nz.frequency, 3).End();
-                }
-                catch { }
-                string tf = tex != null ? Tex(tex) : null;
-                if (tf != null) j.Prop("tex", tf);
-                j.Prop("name", ps.name).End();
-                outList.Add(j.ToString());
+                string one = ParticleExport.System(ps, toRoot, Picture, (m, prop) => Saved(m, prop, wantMats), MeshOf);
+                if (one != null) outList.Add(one);
             }
             foreach (var l in go.GetComponentsInChildren<Light>(false))
             {
-                if (l == null || !l.enabled || !l.gameObject.activeInHierarchy || l.intensity <= 0f) continue;
-                var j = new JsonWriter(160);
-                j.BeginObject().Prop("kind", "light").Key("pos").Raw(V3(toRoot.MultiplyPoint3x4(l.transform.position)))
-                    .Key("color").Raw(C(l.color)).Prop("intensity", l.intensity, 2).Prop("range", l.range, 2).Prop("name", l.name).End();
+                if (l == null || !l.enabled || !l.gameObject.activeInHierarchy) continue;
+                // a flickering one (LightFlicker): its own strength (the flicker zeroes the light until it runs),
+                // its flicker and its wander, played on the page with the game's own sums
+                var fl = l.GetComponent<LightFlicker>();
+                float intensity = fl != null ? fl.m_baseIntensity : l.intensity;
+                if (intensity <= 0f) continue;
+                Vector3 at = fl != null && l.transform.parent != null ? l.transform.parent.TransformPoint(fl.m_basePosition) : l.transform.position;
+                var j = new JsonWriter(200);
+                j.BeginObject().Prop("kind", "light").Key("pos").Raw(V3(toRoot.MultiplyPoint3x4(at)))
+                    .Key("color").Raw(C(l.color)).Prop("intensity", intensity, 2).Prop("range", l.range, 2).Prop("name", l.name);
+                if (fl != null && fl.enabled)
+                {
+                    // (its wander is in its parent's space: the parent's three axes, in the model's, times m_movement)
+                    Vector3 Axis(Vector3 a) => toRoot.MultiplyVector(l.transform.parent != null ? l.transform.parent.TransformVector(a) : a) * fl.m_movement;
+                    j.Key("flicker").BeginObject().Prop("amount", fl.m_flickerIntensity, 3).Prop("speed", fl.m_flickerSpeed, 3)
+                        .Key("axes").BeginArray().Raw(V3(Axis(Vector3.right))).Raw(V3(Axis(Vector3.up))).Raw(V3(Axis(Vector3.forward))).End().End();
+                }
+                j.End();
                 outList.Add(j.ToString());
             }
         }
         private static string F(float v) => v.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
-        private static float Val(ParticleSystem.MinMaxCurve c)
-        {
-            try
-            {
-                switch (c.mode)
-                {
-                    case ParticleSystemCurveMode.Constant: return c.constant;
-                    case ParticleSystemCurveMode.TwoConstants: return (c.constantMin + c.constantMax) * 0.5f;
-                    default: return c.Evaluate(0.5f, 0.5f);
-                }
-            }
-            catch { return 0f; }
-        }
-        private static Color Grad(ParticleSystem.MinMaxGradient g)
-        {
-            try
-            {
-                switch (g.mode)
-                {
-                    case ParticleSystemGradientMode.Color: return g.color;
-                    case ParticleSystemGradientMode.TwoColors: return Color.Lerp(g.colorMin, g.colorMax, 0.5f);
-                    default: return g.Evaluate(0.5f, 0.5f);
-                }
-            }
-            catch { return Color.white; }
-        }
-
-        // a particle colour at this point of its life (0 born, 1 gone)
-        private static Color GradAt(ParticleSystem.MinMaxGradient g, float t)
-        {
-            try
-            {
-                switch (g.mode)
-                {
-                    case ParticleSystemGradientMode.Color: return g.color;
-                    case ParticleSystemGradientMode.TwoColors: return Color.Lerp(g.colorMin, g.colorMax, 0.5f);
-                    case ParticleSystemGradientMode.TwoGradients: return Color.Lerp(g.gradientMin.Evaluate(t), g.gradientMax.Evaluate(t), 0.5f);
-                    default: return g.gradient != null ? g.gradient.Evaluate(t) : g.Evaluate(t, 0.5f);
-                }
-            }
-            catch { return Color.white; }
-        }
 
         // the style (variant) of the item this part belongs to: the slot it was put on for
         private static int StyleOf(VisEquipment ve, Renderer r, Func<string, int> V)
@@ -431,6 +365,11 @@ namespace MuninMap.Models
                         // animated though no camera sees it (the server has none), then run for a second
                         // and a half so the idle has settled in, arms down
                         animType.GetProperty("cullingMode")?.SetValue(anim, Enum.ToObject(animType.GetProperty("cullingMode").PropertyType, 0));
+                        // the stance for what's in the hands, as the game sets it (Humanoid.SetupAnimationState): the
+                        // left hand's item (a torch there has its own), else the right's, else unarmed
+                        int state = StanceOf(spec);
+                        animType.GetMethod("SetFloat", new[] { typeof(string), typeof(float) })?.Invoke(anim, new object[] { "statef", (float)state });
+                        animType.GetMethod("SetInteger", new[] { typeof(string), typeof(int) })?.Invoke(anim, new object[] { "statei", state });
                         var update = animType.GetMethod("Update", new[] { typeof(float) });
                         update?.Invoke(anim, new object[] { 0f });
                         for (int i = 0; i < 30; i++) update?.Invoke(anim, new object[] { 0.05f });
@@ -657,7 +596,7 @@ namespace MuninMap.Models
                 }
                 // the effects the game plays on what they carry (a fire staff's flames, sparks, glowing
                 // mist) and the lights some items give: their settings, for the page to play
-                try { Effects(go, toRoot, effects, res, mats2); } catch (Exception e) { skipped.Add("effects: " + e.Message); }
+                try { Effects(go, toRoot, effects, res, mats2, meshes); } catch (Exception e) { skipped.Add("effects: " + e.Message); }
             }
             finally { if (go != null) UnityEngine.Object.DestroyImmediate(go); }
             if (writer.Count == 0) return;
@@ -700,11 +639,18 @@ namespace MuninMap.Models
             if (shader != "Unlit/WeaponGlow" && !(PrefabExporter.Has(mat, "_ScrollSpeed") && PrefabExporter.Has(mat, "_CurlTex"))) return;
             var c = Saved(mat, "_Color", wantMats) ?? new Color(0.5f, 0.8f, 1f, 1f);
             prim.name = "munin_weaponglow" + outList.Count;
+            // the shader's own numbers (Unlit/WeaponGlow; its defaults where the material keeps none), and the
+            // curl noise it swirls with, read from the game files once
             float Num(string prop, float dflt) { var v = Saved(mat, "#" + prop, wantMats); return v.HasValue ? v.Value.r : dflt; }
-            var j = new JsonWriter(200);
-            j.BeginObject().Prop("name", prim.name).Key("color").BeginArray().Value(c.r, 3).Value(c.g, 3).Value(c.b, 3).Value(c.a, 3).End()
-                .Prop("scroll", Num("_ScrollSpeed", 0.13f), 3).Prop("scale", Num("_TexScale", 1f), 3).Prop("push", Num("_VertPush", 0.004f), 4)
-                .Prop("pixel", Num("_PixelSize", 64f), 1).Prop("mat", mat.name).End();
+            var edge = Saved(mat, "_EdgeFading", wantMats) ?? new Color(0f, 1f, 0f, 1f);
+            NoiseExtractor.Ensure(UnityEngine.Application.dataPath, HdDir);
+            var j = new JsonWriter(320);
+            j.BeginObject().Prop("name", prim.name).Key("color").BeginArray().Value(c.r, 4).Value(c.g, 4).Value(c.b, 4).Value(c.a, 4).End()
+                .Prop("scroll", Num("_ScrollSpeed", 0.25f), 4).Prop("scrollX", Num("_ScrollSpeedX", 0.05f), 4).Prop("scale", Num("_TexScale", 1f), 4)
+                .Prop("push", Num("_VertPush", 0.05f), 5).Prop("pixel", Num("_PixelSize", 64f), 3)
+                .Prop("curlSize", Num("_CurlSize", 1f), 4).Prop("curlStrength", Num("_CurlStrength", 0.05f), 4).Prop("warp", Num("_DomainWarp", 0f) > 0.5f)
+                .Key("edge").BeginArray().Value(edge.r, 4).Value(edge.g, 4).Value(edge.b, 4).Value(edge.a, 4).End()
+                .Prop("noise", "hd/" + NoiseExtractor.FileName).Prop("mat", mat.name).End();
             outList.Add(j.ToString());
         }
 

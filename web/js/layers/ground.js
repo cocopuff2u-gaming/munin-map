@@ -22,10 +22,14 @@ const span = (z) => TILE * Math.pow(2, MAX_ZOOM - z);
 const perSide = (z) => Math.ceil((2 * WORLD_HALF) / span(z));
 
 export class GroundGL extends L.Layer {
-  constructor(template) {
+  // opts.minZoom: no tiles below this zoom (an overlay that starts there); opts.alpha(zoom): how much of
+  // the layer shows at a zoom (an overlay fading in with the trees)
+  constructor(template, opts = {}) {
     super();
     this.template = template;
-    this.order = 0;
+    this.minZoom = opts.minZoom || 0;
+    this.alphaAt = opts.alpha || null;
+    this.order = opts.order ?? 0;
     this.tex = new Map();       // "z/x/y" -> {tex, born, seen}
     this.missing = new Set();   // tiles the server doesn't have (yet): not asked for again until it renders them
     this.queue = new Map();     // "z/x/y" -> priority (lower first)
@@ -45,8 +49,9 @@ export class GroundGL extends L.Layer {
       clearTimeout(this.focusTimer);
       this.focusTimer = setTimeout(() => this.sc && this.sc.idleWork(), 250);
     });
-    for (let x = 0; x < perSide(BASE_ZOOM); x++)
-      for (let y = 0; y < perSide(BASE_ZOOM); y++) this.want(`${BASE_ZOOM}/${x}/${y}`, -1);
+    if (this.minZoom <= BASE_ZOOM)
+      for (let x = 0; x < perSide(BASE_ZOOM); x++)
+        for (let y = 0; y < perSide(BASE_ZOOM); y++) this.want(`${BASE_ZOOM}/${x}/${y}`, -1);
     this.pump();
   }
   onRemove(map) { map.off('move', this.onMove, this); this.sc.remove(this); }
@@ -70,7 +75,8 @@ export class GroundGL extends L.Layer {
   // the whole padded canvas one zoom out (cheap, a quarter of the tiles), which is what a zoom-out
   // or a long drag shows first.
   need(v) {
-    const tz = Math.max(0, Math.min(MAX_ZOOM, Math.round(v.zoom)));
+    if (this.alphaAt && this.alphaAt(v.zoom + 0.5) <= 0) return;   // (an overlay not showing yet: nothing to load)
+    const tz = Math.max(this.minZoom, Math.min(MAX_ZOOM, Math.round(v.zoom)));
     const s = v.screen ? v : screenArea(v), cx = (s.x + s.x1) / 2, cz = (s.z + s.z0) / 2, sp = span(tz);
     const r = this.range({ x: s.x - sp, x1: s.x1 + sp, z: s.z + sp, z0: s.z0 - sp }, tz);
     // called every frame of a zoom or drag: the same tiles as last time need no new queue
@@ -83,7 +89,7 @@ export class GroundGL extends L.Layer {
         const mx = -WORLD_HALF + (x + 0.5) * sp, mz = WORLD_HALF - (y + 0.5) * sp;
         this.want(`${tz}/${x}/${y}`, Math.hypot(mx - cx, mz - cz) / sp);
       }
-    if (tz > BASE_ZOOM) {
+    if (tz > Math.max(BASE_ZOOM, this.minZoom)) {
       const r2 = this.range(v, tz - 1);
       for (let y = r2.y0; y <= r2.y1; y++) for (let x = r2.x0; x <= r2.x1; x++) this.want(`${tz - 1}/${x}/${y}`, 1000);
     }
@@ -105,7 +111,7 @@ export class GroundGL extends L.Layer {
     if (this.prewarmKey === key) return false;
     this.prewarmKey = key;
     const around = (share, tz, pri) => {
-      if (tz < BASE_ZOOM || tz > MAX_ZOOM) return;
+      if (tz < Math.max(BASE_ZOOM, this.minZoom) || tz > MAX_ZOOM) return;
       const w = (s.x1 - s.x) * share / 2, h = (s.z - s.z0) * share / 2, sp = span(tz);
       const r = this.range({ x: cx - w, x1: cx + w, z: cz + h, z0: cz - h }, tz);
       for (let y = r.y0; y <= r.y1; y++)
@@ -114,6 +120,7 @@ export class GroundGL extends L.Layer {
           this.want(`${tz}/${x}/${y}`, pri + Math.hypot(mx - cx, mz - cz) / sp);
         }
     };
+    if (this.alphaAt && this.alphaAt(v.zoom + 1) <= 0) return false;
     around(0.5, z + 1, 5000);
     around(0.25, z + 2, 6000);
     around(0.125, z + 3, 7000);
@@ -243,33 +250,39 @@ export class GroundGL extends L.Layer {
     gl.bindVertexArray(sc.quadVao);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(p.u.u_tex, 0);
-    const tz = Math.max(0, Math.min(MAX_ZOOM, Math.round(v.zoom)));
+    const layerAlpha = this.alphaAt ? this.alphaAt(v.zoom) : 1;
+    if (layerAlpha <= 0) return;
+    const tz = Math.max(this.minZoom, Math.min(MAX_ZOOM, Math.round(v.zoom)));
     const r = this.range(v, tz);
-    let fading = false;
+    // a new zoom level's tiles fade in over the last level's, as the tree tiles do (a tile already loaded
+    // at that level used to snap in: paths in the snow and the like appeared all at once)
+    if (tz !== this.drawnZoom) { if (this.drawnZoom !== undefined) this.zoomAt = now; this.drawnZoom = tz; }
+    const zf = this.zoomAt ? Math.min(1, (now - this.zoomAt) / FADE_MS) : 1;
+    let fading = zf < 1;
     for (let y = r.y0; y <= r.y1; y++)
       for (let x = r.x0; x <= r.x1; x++) {
         const key = `${tz}/${x}/${y}`, t = this.tex.get(key);
-        const f = t ? (t.born ? Math.min(1, (now - t.born) / FADE_MS) : 1) : 0;
+        const f = t ? Math.min(zf, t.born ? Math.min(1, (now - t.born) / FADE_MS) : 1) : 0;
         if (f < 1) {
           // stand-in: the nearest loaded ancestor, stretched, then any sharper children on top
-          for (let l = 1; l <= tz; l++) {
+          for (let l = 1; l <= tz - this.minZoom; l++) {
             const a = this.tex.get(`${tz - l}/${x >> l}/${y >> l}`);
             if (!a) continue;
             const k = 1 << l, u0 = (x - ((x >> l) << l)) / k, v0 = (y - ((y >> l) << l)) / k;
             a.seen = now;
-            this.quad(gl, p, a, tz, x, y, [u0, v0, u0 + 1 / k, v0 + 1 / k], 1);
+            this.quad(gl, p, a, tz, x, y, [u0, v0, u0 + 1 / k, v0 + 1 / k], layerAlpha);
             break;
           }
           if (tz < MAX_ZOOM)
             for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
               const c = this.tex.get(`${tz + 1}/${2 * x + dx}/${2 * y + dy}`);
-              if (c) { c.seen = now; this.quad(gl, p, c, tz + 1, 2 * x + dx, 2 * y + dy, [0, 0, 1, 1], 1); }
+              if (c) { c.seen = now; this.quad(gl, p, c, tz + 1, 2 * x + dx, 2 * y + dy, [0, 0, 1, 1], layerAlpha); }
             }
         }
         if (t) {
           t.seen = now;
           if (f < 1) fading = true;
-          this.quad(gl, p, t, tz, x, y, [0, 0, 1, 1], f);
+          this.quad(gl, p, t, tz, x, y, [0, 0, 1, 1], f * layerAlpha);
         }
       }
     gl.bindVertexArray(null);

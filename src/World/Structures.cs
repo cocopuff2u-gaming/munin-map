@@ -409,13 +409,27 @@ namespace MuninMap.World
         {
             if (shapeCache.TryGetValue(prefabHash, out var s)) return s;
             string name = null;
+            WearNTear.MaterialType? built = null;
             try
             {
                 var go = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(prefabHash) : null;
-                if (go != null) name = go.name;
+                if (go != null) { name = go.name; var wnt = go.GetComponent<WearNTear>(); if (wnt != null) built = wnt.m_materialType; }
             }
             catch { }
             s = ShapeOfName(name ?? ("#" + prefabHash));
+            // what the piece is made of as the game has it (WearNTear.m_materialType: what its support and
+            // damage go by), where the name gave no more than wood or nothing: the special looks the game
+            // doesn't tell apart (thatch, fire, portals, cloth...) are kept from the name
+            if (built.HasValue && (s.mat == Palette.Material.Wood || s.mat == Palette.Material.Misc))
+                switch (built.Value)
+                {
+                    case WearNTear.MaterialType.Stone: s.mat = Palette.Material.Stone; break;
+                    case WearNTear.MaterialType.Iron: s.mat = Palette.Material.Iron; break;
+                    case WearNTear.MaterialType.HardWood: s.mat = Palette.Material.CoreWood; break;
+                    case WearNTear.MaterialType.Marble: s.mat = Palette.Material.BlackMarble; break;
+                    case WearNTear.MaterialType.Ashstone: s.mat = Palette.Material.Grausten; break;
+                    case WearNTear.MaterialType.Wood: s.mat = Palette.Material.Wood; break;
+                }
             shapeCache[prefabHash] = s;
             return s;
         }

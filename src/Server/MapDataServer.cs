@@ -309,6 +309,7 @@ namespace MuninMap
             string path = req.Url.AbsolutePath;
 
             if (path.StartsWith("/tiles/", StringComparison.Ordinal)) return post ? false : ServeTile(e, path);
+            if (path == "/data/environments.json") return post ? false : Text(e, Live.Weather.EnvironmentsJson(), "application/json", nocache: true);   // (each weather's light: the 3D sky)
             if (path.StartsWith("/data/", StringComparison.Ordinal)) return post ? false : ServeData(e, path);
             if (path.StartsWith("/models/", StringComparison.Ordinal)) return post ? false : ServeModel(e, path);
             if (path.StartsWith("/icons/game/", StringComparison.Ordinal)) return post ? false : ServeGameIcon(e, path);
@@ -529,7 +530,7 @@ namespace MuninMap
             string[] p = path.Split('/');
             if (p.Length != 6 || !p[5].EndsWith(".png", StringComparison.Ordinal)) { NotFound(res); return true; }
             string layer = p[2];
-            if (layer != "map" && layer != "height" && layer != "veg") { NotFound(res); return true; }
+            if (layer != "map" && layer != "height" && layer != "veg" && layer != "terra") { NotFound(res); return true; }
             if (!int.TryParse(p[3], out int z) || !int.TryParse(p[4], out int x) || !int.TryParse(p[5].Substring(0, p[5].Length - 4), out int y))
             { NotFound(res); return true; }
 
@@ -704,8 +705,12 @@ namespace MuninMap
             if (!File.Exists(full)) { NotFound(res); return true; }
             byte[] data;
             try { data = File.ReadAllBytes(full); } catch { NotFound(res); return true; }
-            bool glb = name.EndsWith(".glb", StringComparison.Ordinal);
-            return Bytes(e, data, glb ? "model/gltf-binary" : "image/png", "no-cache", compressible: glb);
+            bool glb = name.EndsWith(".glb", StringComparison.Ordinal), json = name.EndsWith(".json", StringComparison.Ordinal);
+            // (a portrait's info, its effects' recordings mostly, packs to under half; the tag, from when the file
+            // was written, lets a card opened again come from the browser's copy)
+            string etag = null;
+            try { var fi = new FileInfo(full); etag = "\"" + fi.LastWriteTimeUtc.Ticks.ToString("x") + "-" + fi.Length.ToString("x") + "\""; } catch { }
+            return Bytes(e, data, glb ? "model/gltf-binary" : json ? "application/json" : "image/png", "no-cache", compressible: glb || json, etag: etag);
         }
 
         // /icons/game/{sprite}.png: the game's own map icons, cut from its UI atlas (World/MapIcons)

@@ -67,7 +67,9 @@ namespace MuninMap.Tiles
         }
 
         // Main thread. Returns true when the prefab is vegetation (so callers can stop classifying it).
-        public static bool Observe(int prefabHash, Vector3 pos)
+        private static readonly int hashScale = "scale".GetStableHashCode(), hashScaleScalar = "scaleScalar".GetStableHashCode();
+
+        public static bool Observe(int prefabHash, Vector3 pos, ZDO zdo = null)
         {
             var c = Classify(prefabHash);
             if (building != null) { classSeen.TryGetValue(prefabHash, out int seenN); classSeen[prefabHash] = seenN + 1; }
@@ -75,7 +77,16 @@ namespace MuninMap.Tiles
             if (building == null) return true;
             long key = TileMath.ZoneKey(TileMath.ZoneCoord(pos.x), TileMath.ZoneCoord(pos.z));
             if (!building.TryGetValue(key, out var list)) building[key] = list = new List<Point>(64);
-            list.Add(new Point { x = pos.x, y = pos.y, z = pos.z, kind = c.kind, size = c.size });
+            // each tree's own size: the game scales each one it places (ZoneSystem.PlaceVegetation) and keeps it
+            float scale = 1f;
+            if (zdo != null)
+                try
+                {
+                    float sx = zdo.GetVec3(hashScale, Vector3.one).x * zdo.GetFloat(hashScaleScalar, 1f);
+                    if (sx > 0.05f) scale = Mathf.Clamp(sx, 0.3f, 3f);
+                }
+                catch { }
+            list.Add(new Point { x = pos.x, y = pos.y, z = pos.z, kind = c.kind, size = c.size * scale });
             return true;
         }
 

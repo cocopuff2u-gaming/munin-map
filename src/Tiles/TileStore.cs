@@ -44,8 +44,9 @@ namespace MuninMap.Tiles
         private static readonly HashSet<long> haveColor = new HashSet<long>();
         private static readonly HashSet<long> haveHeight = new HashSet<long>();
         private static readonly HashSet<long> haveVeg = new HashSet<long>();
+        private static readonly HashSet<long> haveTerra = new HashSet<long>();   // the changed-ground overlay (zoom 5+), where there is any
         // bump when the tile look changes: the tiles it touches are dropped and re-rendered (DropStaleFormat)
-        private const int TILE_FORMAT = 3;
+        private const int TILE_FORMAT = 6;
         private static readonly List<long> redo = new List<long>();   // dropped close-zoom tiles, queued again on Start
         private static readonly ConcurrentDictionary<long, byte[]> memColor = new ConcurrentDictionary<long, byte[]>();   // small zooms only
         private static readonly ConcurrentQueue<Job> mainSampleQueue = new ConcurrentQueue<Job>();
@@ -89,13 +90,15 @@ namespace MuninMap.Tiles
             Directory.CreateDirectory(Path.Combine(root, "map"));
             Directory.CreateDirectory(Path.Combine(root, "height"));
             Directory.CreateDirectory(Path.Combine(root, "veg"));
+            Directory.CreateDirectory(Path.Combine(root, "terra"));
             DropStaleFormat();
             lock (queueLock)
             {
-                haveColor.Clear(); haveHeight.Clear(); haveVeg.Clear();
+                haveColor.Clear(); haveHeight.Clear(); haveVeg.Clear(); haveTerra.Clear();
                 Scan("map", haveColor);
                 Scan("height", haveHeight);
                 Scan("veg", haveVeg);
+                Scan("terra", haveTerra);
             }
             ZLog.Log($"MuninMap: tile store at {root}: {haveColor.Count} map tiles, {haveHeight.Count} height tiles on disk");
         }
@@ -104,6 +107,10 @@ namespace MuninMap.Tiles
         // the look changed, so they render again:
         //   2  close zooms (5+) of everything; overview tiles (zoom 0-4) are kept
         //   3  map tiles at every zoom that reach the Ashlands (its lava and ashen sea)
+        //   4  map tiles at every zoom with mountains (snow judged the same at every zoom), swamp or
+        //      Mistlands (their forest as the game's own map has it) in them
+        //   5  map tiles at zooms 2-4 (paths, clearings and paving shown there too, thinning out)
+        //   6  map tiles at zooms 2-4 again (terraforming from zoom 5 only, with the trees)
         private static void DropStaleFormat()
         {
             string marker = Path.Combine(root, "format.txt");
@@ -121,7 +128,7 @@ namespace MuninMap.Tiles
                     try
                     {
                         foreach (string f in TileFiles(dir))
-                            if (all || TouchesAshlands(z, f))
+                            if (all || (have < 3 && TouchesAshlands(z, f)) || (have < 4 && TouchesBiome(z, f, Heightmap.Biome.Mountain | Heightmap.Biome.Swamp | Heightmap.Biome.Mistlands)) || (have < 6 && z >= 2 && z <= 4))
                             {
                                 File.Delete(f); dropped++;
                                 // close zooms only render on demand: queue these again so nobody waits for them
@@ -145,6 +152,20 @@ namespace MuninMap.Tiles
             float fz = Math.Max(Math.Abs(minZ - 4000f), Math.Abs(maxZ - 4000f));
             float nx = Math.Max(minX, Math.Min(0f, maxX)), nz = Math.Max(minZ, Math.Min(0f, maxZ));
             return fx * fx + fz * fz > 11850f * 11850f && nx * nx + nz * nz < 10500f * 10500f;
+        }
+
+        // any of these biomes in the tile (looked at every 64 m or so, at most 64 x 64 points; unsure: yes)
+        private static bool TouchesBiome(int z, string file, Heightmap.Biome which)
+        {
+            if (!TileName(file, out int x, out int y)) return false;
+            var wg = WorldGenerator.instance;
+            if (wg == null) return true;
+            TileMath.TileBounds(z, x, y, out float minX, out float minZ, out float maxX, out float maxZ);
+            int n = Math.Max(8, Math.Min(64, (int)((maxX - minX) / 64f)));
+            for (int i = 0; i <= n; i++)
+                for (int k = 0; k <= n; k++)
+                    if ((wg.GetBiome(minX + (maxX - minX) * i / n, minZ + (maxZ - minZ) * k / n) & which) != 0) return true;
+            return false;
         }
 
         private static bool TileName(string file, out int x, out int y)
@@ -236,11 +257,12 @@ namespace MuninMap.Tiles
             }
         }
 
-        // The ground in a zone changed: re-render the tiles that show it.
+        // The ground in a zone changed: re-render the tiles that show it (from zoom 5, where terraforming
+        // shows: TileRenderer)
         public static void OnZoneChanged(int zx, int zz)
         {
             float cx = TileMath.ZoneCenter(zx), cz = TileMath.ZoneCenter(zz);
-            for (int z = 4; z <= TileMath.MAX_ZOOM; z++)
+            for (int z = 5; z <= TileMath.MAX_ZOOM; z++)
             {
                 // a zone can straddle up to four tiles at close zoom
                 for (int dz = -1; dz <= 1; dz += 2)
@@ -364,18 +386,22 @@ namespace MuninMap.Tiles
             job.work.Compose();
             job.work.Encode();
 
-            bool hasVeg = job.work.VegImage != null;
+            bool hasVeg = job.work.VegImage != null, hasTerra = job.work.TerraImage != null;
             string name = job.x + "_" + job.y;
             lock (diskLock)
             {
                 WriteTile(Path.Combine(root, "map", job.zoom.ToString()), name, job.work.ColorImage);
                 if (wantHeight) WriteAtomic(Path.Combine(root, "height", job.zoom.ToString()), name + ".png", job.work.HeightPng);
                 if (hasVeg) WriteTile(Path.Combine(root, "veg", job.zoom.ToString()), name, job.work.VegImage);
+                string terraDir = Path.Combine(root, "terra", job.zoom.ToString());
+                if (hasTerra) WriteTile(terraDir, name, job.work.TerraImage);
+                else if (job.zoom >= 5) foreach (var ext in new[] { ".png", ".webp" }) try { string f = Path.Combine(terraDir, name + ext); if (File.Exists(f)) File.Delete(f); } catch { }
             }
             if (WebP.Enabled)
             {
                 toWebp.Enqueue(Path.Combine(root, "map", job.zoom.ToString(), name + ".png"));
                 if (hasVeg) toWebp.Enqueue(Path.Combine(root, "veg", job.zoom.ToString(), name + ".png"));
+                if (hasTerra) toWebp.Enqueue(Path.Combine(root, "terra", job.zoom.ToString(), name + ".png"));
                 webpWake.Set();
             }
 
@@ -384,6 +410,7 @@ namespace MuninMap.Tiles
                 haveColor.Add(job.key);
                 if (wantHeight) haveHeight.Add(job.key);
                 if (hasVeg) haveVeg.Add(job.key);
+                if (hasTerra) haveTerra.Add(job.key); else haveTerra.Remove(job.key);
             }
             if (job.zoom <= 4) memColor[job.key] = job.work.ColorImage;
             lock (notify) notify.Add(job.zoom + "/" + job.x + "/" + job.y);
@@ -433,7 +460,7 @@ namespace MuninMap.Tiles
             int done = 0; long saved = 0;
             try
             {
-                foreach (string layer in new[] { "map", "veg" })
+                foreach (string layer in new[] { "map", "veg", "terra" })
                     for (int z = 5; z <= TileMath.MAX_ZOOM; z++)
                     {
                         string dir = Path.Combine(root, layer, z.ToString());
@@ -471,7 +498,7 @@ namespace MuninMap.Tiles
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                foreach (string layer in new[] { "map", "veg" })
+                foreach (string layer in new[] { "map", "veg", "terra" })
                     for (int z = 0; z <= TileMath.MAX_ZOOM; z++)
                     {
                         string dir = Path.Combine(root, layer, z.ToString());
@@ -586,15 +613,21 @@ namespace MuninMap.Tiles
             etag = null;
             if (!TileMath.Valid(zoom, x, y)) return null;
             long key = TileMath.Key(zoom, x, y);
-            bool height = layer == "height", vegL = layer == "veg";
-            if (vegL && zoom < 5) return null;   // no overlay at overview zooms
-            bool have; lock (queueLock) have = height ? haveHeight.Contains(key) : vegL ? haveVeg.Contains(key) : haveColor.Contains(key);
+            bool height = layer == "height", vegL = layer == "veg", terraL = layer == "terra";
+            if ((vegL || terraL) && zoom < 5) return null;   // no overlay at overview zooms
+            bool have; lock (queueLock) have = height ? haveHeight.Contains(key) : vegL ? haveVeg.Contains(key) : terraL ? haveTerra.Contains(key) : haveColor.Contains(key);
+            if (!have && terraL)
+            {
+                // most tiles have no changed ground: once the tile itself is made, that's a clear tile
+                bool made; lock (queueLock) made = haveColor.Contains(key);
+                if (made) { etag = "\"t-clear\""; return ClearTile; }
+            }
             if (!have)
             {
                 if (!height || zoom <= MuninConfig.HeightMaxZoom) RequestMissing(zoom, x, y);
                 return null;
             }
-            bool color = !height && !vegL;
+            bool color = !height && !vegL && !terraL;
             byte[] data;
             if (!(color && memColor.TryGetValue(key, out data)))
             {
@@ -608,6 +641,22 @@ namespace MuninMap.Tiles
             etag = "\"" + layer[0] + data.Length.ToString("x") + "-" + Fnv1a(data).ToString("x") + "\"";
             return data;
         }
+
+        // true the first time this is asked with a name, for this tile store (a marker file beside the tiles)
+        public static bool FirstTime(string name)
+        {
+            try
+            {
+                string f = Path.Combine(root, name + ".done");
+                if (File.Exists(f)) return false;
+                File.WriteAllText(f, DateTime.UtcNow.ToString("o"));
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static byte[] clearTile;
+        private static byte[] ClearTile => clearTile ??= Util.Png.Encode(new byte[4], 1, 1, Util.Png.Format.RGBA);
 
         public static List<string> DrainNotifications()
         {

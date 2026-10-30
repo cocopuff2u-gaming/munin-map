@@ -12,7 +12,8 @@ namespace MuninMap
     // This is the ChatMessage RPC the mod already reads, sent in reverse --
     // position, type, sender, text -- addressed to Everybody.
     //
-    // The shared secret lives in a file next to the DLL rather than in the
+    // The shared secret lives in a file in the map's data folder (BepInEx/config/MuninMap;
+    // next to the DLL in older versions, still read from there) rather than in the
     // BepInEx config, because BepInEx rewrites its config on shutdown: a token
     // written while the server is running would be thrown away. No file or an
     // empty one means the endpoint is closed.
@@ -29,8 +30,8 @@ namespace MuninMap
             {
                 try
                 {
-                    string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "";
-                    string path = Path.Combine(dir, TokenFile);
+                    string path = Path.Combine(MuninMap.mapDataPath ?? "", TokenFile);
+                    if (!File.Exists(path)) path = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "", TokenFile);
                     if (!File.Exists(path)) return null;
                     var stamp = File.GetLastWriteTimeUtc(path);
                     if (tokenCache == null || stamp != tokenStamp)

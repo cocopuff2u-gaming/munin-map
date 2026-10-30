@@ -64,6 +64,55 @@ namespace MuninMap.Live
         private static readonly int hashHair = "HairItem".GetStableHashCode(), hashBeard = "BeardItem".GetStableHashCode(), hashBase = "baseValue".GetStableHashCode();
         private static Dictionary<int, string> itemNames;
 
+        // The last weapon held, for a while: players often put theirs away (back in the bag) to run, and a card,
+        // or the one kept for when they're offline, would then show empty hands. With nothing in the hands or on
+        // the back, the weapon (and shield) last held is shown put away on the back, as the game draws a sheathed
+        // one, until they've been online ten minutes without holding a weapon. (Tools and torches aren't
+        // remembered: a hammer is in the hands for building, not carried.)
+        private const int Right = 0, Left = 1, RightBack = 8, LeftBack = 9;
+        private const float RememberFor = 600f;
+        private sealed class Held { public string right = "", left = ""; public int rightQ, leftQ, leftV; public float unarmed = RememberFor, last; }
+        private static readonly Dictionary<string, Held> held = new Dictionary<string, Held>();
+        private static readonly Dictionary<string, bool> isWeapon = new Dictionary<string, bool>();
+
+        private static bool IsWeapon(string item)
+        {
+            if (string.IsNullOrEmpty(item)) return false;
+            if (isWeapon.TryGetValue(item, out bool w)) return w;
+            try
+            {
+                var shared = ObjectDB.instance.GetItemPrefab(item)?.GetComponent<ItemDrop>()?.m_itemData?.m_shared;
+                if (shared == null) return false;
+                var t = shared.m_itemType;
+                w = t == ItemDrop.ItemData.ItemType.OneHandedWeapon || t == ItemDrop.ItemData.ItemType.TwoHandedWeapon || t == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft
+                    || t == ItemDrop.ItemData.ItemType.Bow || t == ItemDrop.ItemData.ItemType.Shield;
+            }
+            catch { return false; }
+            return isWeapon[item] = w;
+        }
+
+        private static void RememberWeapon(ref Snapshot s)
+        {
+            float now = Time.realtimeSinceStartup;
+            if (!held.TryGetValue(s.key, out var h)) held[s.key] = h = new Held { last = now };
+            float dt = Mathf.Clamp(now - h.last, 0f, 10f); h.last = now;   // (online time only: a gap while away doesn't count)
+            var g = s.gear;
+            bool hands = IsWeapon(g[Right]) || IsWeapon(g[Left]);
+            if (hands)
+            {
+                // held now: remembered as it is
+                h.right = IsWeapon(g[Right]) ? g[Right] : ""; h.rightQ = h.right.Length > 0 ? s.quality[Right] : 0;
+                h.left = IsWeapon(g[Left]) ? g[Left] : ""; h.leftQ = h.left.Length > 0 ? s.quality[Left] : 0; h.leftV = h.left.Length > 0 ? s.variant[Left] : 0;
+                h.unarmed = 0f;
+                return;
+            }
+            h.unarmed += dt;
+            bool empty = g[Right].Length == 0 && g[Left].Length == 0 && g[RightBack].Length == 0 && g[LeftBack].Length == 0;
+            if (!empty || h.unarmed > RememberFor || (h.right.Length == 0 && h.left.Length == 0)) return;
+            if (h.right.Length > 0) { g[RightBack] = h.right; s.quality[RightBack] = h.rightQ; }
+            if (h.left.Length > 0) { g[LeftBack] = h.left; s.quality[LeftBack] = h.leftQ; s.variant[LeftBack] = h.leftV; }
+        }
+
         // item name hash -> prefab name, from the object database (built once, lazily)
         private static string ItemName(int hash)
         {
@@ -150,6 +199,7 @@ namespace MuninMap.Live
         // Main thread.
         public static void Refresh(List<ZNetPeer> peers)
         {
+            MuninConfig.ReadSpeeds();
             current.Clear();
             Connected.Clear();
             if (peers != null)
@@ -180,6 +230,7 @@ namespace MuninMap.Live
                         if (hashVariant[g] != 0) try { s.variant[g] = zdo.GetInt(hashVariant[g], 0); } catch { }
                     }
                     try { s.wisp = WispRange(zdo.GetInt(hashGear[Utility], 0)); } catch { }
+                    if (!s.dead) RememberWeapon(ref s);
                     try
                     {
                         s.look.model = zdo.GetInt(hashModel, 0);

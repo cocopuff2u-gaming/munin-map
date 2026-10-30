@@ -43,6 +43,16 @@ namespace MuninMap.Live
                         if (e.m_deepnorthOverride && north) setup = e.m_env;
                     }
                 }
+                // what the game puts first (EnvMan.GetEnvironmentOverride), for this spot: a raid's own weather
+                // inside its area and biome, an alternative biome's forced weather, a world event's weather
+                // within its radius
+                try
+                {
+                    string forced = Override(pos, sector, wg);
+                    var fe = string.IsNullOrEmpty(forced) ? null : env.GetEnv(forced);
+                    if (fe != null) setup = fe;
+                }
+                catch { }
                 if (setup == null) return false;
                 float angle = 0f, intensity = 0.5f;
                 env.AddWindOctave(sec, 1, ref angle, ref intensity);
@@ -57,6 +67,51 @@ namespace MuninMap.Live
             catch { return false; }
             finally { UnityEngine.Random.state = state; }
         }
+
+        private static string Override(Vector3 pos, BiomeSector sector, WorldGenerator wg)
+        {
+            var rs = RandEventSystem.instance;
+            var re = rs?.GetCurrentRandomEvent();
+            if (re != null && !string.IsNullOrEmpty(re.m_forceEnvironment) && rs.IsInsideRandomEventArea(re, pos) && (wg.GetBiome(pos) & re.m_biome) != 0)
+                return re.m_forceEnvironment;
+            if (sector?.AltBiomes != null)
+                foreach (var alt in sector.AltBiomes)
+                    if (alt != null && !string.IsNullOrEmpty(alt.m_forceEnvironment)) return alt.m_forceEnvironment;
+            var pe = PersistentEventSystem.instance;
+            if (pe?.m_activePersistentEvents?.list != null)
+                foreach (var ev in pe.m_activePersistentEvents.list)
+                    if (ev != null && (ev.position - pos).sqrMagnitude < ev.radius * ev.radius) return ev.Source?.GetEnvironmentOverride(pos);
+            return null;
+        }
+
+        // Each weather's light as the game sets it (EnvMan.SetEnv): sun, fog and ambient colours for night,
+        // morning, day and evening, fog density, light strength, sun angle. Plain fields, read once.
+        private static string environmentsJson;
+        public static string EnvironmentsJson()
+        {
+            if (environmentsJson != null) return environmentsJson;
+            var env = EnvMan.instance;
+            if (env == null || env.m_environments == null) return "{}";
+            var j = new JsonWriter(8192);
+            void C(string key, Color c) => j.Key(key).BeginArray().Value(c.r, 3).Value(c.g, 3).Value(c.b, 3).End();
+            void Q(string key, Color n, Color m, Color d, Color e) => j.Key(key).BeginArray().Raw(Arr(n)).Raw(Arr(m)).Raw(Arr(d)).Raw(Arr(e)).End();
+            j.BeginObject();
+            foreach (var e in env.m_environments)
+            {
+                if (e == null || string.IsNullOrEmpty(e.m_name)) continue;
+                j.Key(e.m_name).BeginObject().Prop("dark", e.m_alwaysDark).Prop("lightDay", e.m_lightIntensityDay, 3).Prop("lightNight", e.m_lightIntensityNight, 3).Prop("sunAngle", e.m_sunAngle, 2);
+                C("ambDay", e.m_ambColorDay); C("ambNight", e.m_ambColorNight);
+                // each of these: night, morning, day, evening
+                Q("sun", e.m_sunColorNight, e.m_sunColorMorning, e.m_sunColorDay, e.m_sunColorEvening);
+                Q("fog", e.m_fogColorNight, e.m_fogColorMorning, e.m_fogColorDay, e.m_fogColorEvening);
+                Q("fogSun", e.m_fogColorSunNight, e.m_fogColorSunMorning, e.m_fogColorSunDay, e.m_fogColorSunEvening);
+                j.Key("fogDensity").BeginArray().Value(e.m_fogDensityNight, 4).Value(e.m_fogDensityMorning, 4).Value(e.m_fogDensityDay, 4).Value(e.m_fogDensityEvening, 4).End();
+                j.End();
+            }
+            j.End();
+            return environmentsJson = j.ToString();
+        }
+        private static string Arr(Color c) => "[" + c.r.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "," + c.g.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "," + c.b.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "]";
 
         // The weather to come in each biome: the same draw as above for the next periods. Picked by the
         // period alone, so it holds for everyone (alt biome variants aside, which add or block a few).
@@ -91,6 +146,7 @@ namespace MuninMap.Live
                     if (list == null || list.Count == 0) continue;
                     list = new List<EnvEntry>(list);   // (the game hands back a shared list)
                     j.BeginObject().Prop("biome", b.Value).Key("weather").BeginArray();
+                    var raw = new List<string>();
                     for (int k = 0; k < ForecastPeriods; k++)
                     {
                         UnityEngine.Random.InitState((int)(period + k));
@@ -101,8 +157,12 @@ namespace MuninMap.Live
                             if (e.m_deepnorthOverride && b.Key == Heightmap.Biome.DeepNorth) setup = e.m_env;
                         }
                         j.Value(setup != null ? Name(setup.m_name) : "");
+                        raw.Add(setup != null ? setup.m_name : "");
                     }
-                    j.End().End();
+                    j.End();
+                    // (the game's own names, for the 3D view's sky: data/environments.json)
+                    j.Key("env").BeginArray(); foreach (var r in raw) j.Value(r); j.End();
+                    j.End();
                 }
                 j.End().End();
                 forecastJson = j.ToString();

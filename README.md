@@ -126,7 +126,9 @@ don't need to do anything, and the server stays playable.
 * **Runestones and Vegvisirs** are found once, in about 3 to 4 minutes.
 
 After that, later starts are quick: everything is kept in
-`BepInEx/plugins/MuninMap/map_data`.
+`BepInEx/config/MuninMap`, outside the plugin's folder, so updating the mod
+(by hand or with a mod manager) leaves your map alone. The `data_path` setting
+puts it somewhere else.
 
 ---
 
@@ -188,8 +190,8 @@ Every setting is listed in [docs/ADVANCED.md](https://github.com/cocopuff2u-gami
 
 ## Admin extras
 
-Make a file called `announce.token` next to `MuninMap.dll` with a secret word
-in it. That secret lets you:
+Make a file called `announce.token` in `BepInEx/config/MuninMap` with a secret
+word in it (one next to `MuninMap.dll` is moved there by itself). That secret lets you:
 
 * **See the server's log** in the page: **Events**, then **Server log**, then enter the secret.
 * **Send a message** to everyone in game:
@@ -223,8 +225,9 @@ touches the other mod's folder; you move things over yourself:
 1. **Stop the server.**
 2. **Switch Valheim WebMap off** (remove its DLL, or disable it in your mod
    manager). Both serve a map on the same port, so only one should run.
-3. **Move your map**: move the `map_data` folder from Valheim WebMap's plugin
-   folder into `BepInEx/plugins/MuninMap/`. Copy `announce.token` too if you use one.
+3. **Move your map**: move everything inside the `map_data` folder from Valheim
+   WebMap's plugin folder into `BepInEx/config/MuninMap/`. Copy `announce.token`
+   there too if you use one.
 4. **Install Munin Map** as above and **start the server.** Your settings are
    taken over by themselves (`com.valheimwebmap.server.cfg` is copied to
    `com.cocopuff2u.muninmap.cfg`), and the log says:
@@ -234,7 +237,7 @@ touches the other mod's folder; you move things over yourself:
    ```
 
 Nothing is drawn again: explored area, tiles, 3D models, base names and
-`markers.json` are all in `map_data`. Bookmarks and `#x,z,zoom` links to the
+`markers.json` are all in that folder. Bookmarks and `#x,z,zoom` links to the
 old map keep working. If you start Munin Map before moving the folder, the log
 says where the old map is.
 

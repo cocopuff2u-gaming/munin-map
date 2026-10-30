@@ -35,14 +35,18 @@ namespace MuninMap.Tiles
         public const int T = TileMath.TILE_SIZE;
         public const int S = T + 2;                    // sampled size incl. 1px border
         private readonly float[] h = new float[S * S];
+        private readonly float[] hb = new float[S * S];      // the same without terraforming (the ground tiles; the terra overlay has it)
+        private readonly float[] steep = new float[S * S];   // mountain slope over a fixed 8 m, for the snow (the same at every zoom)
         private readonly ushort[] biome = new ushort[S * S];
         private readonly byte[] forest = new byte[S * S];   // 0..255 forest density
         private readonly byte[] lava = new byte[S * S];     // 0..255 Ashlands lava, the game's own map mask
         private byte[] rgb;                            // T*T*3
         private byte[] veg;                            // T*T*4, the vegetation overlay (zoom >= 5), straight alpha
+        private byte[] terra;                          // T*T*4, the changed ground (zoom >= 5), or null where there's none
 
         public byte[] ColorImage { get; private set; }   // PNG; TileStore swaps it for WebP afterwards
         public byte[] VegImage { get; private set; }     // same; null below zoom 5
+        public byte[] TerraImage { get; private set; }   // same; null where no ground was changed
         public byte[] HeightPng { get; private set; }
         public int SampledRows { get; private set; }   // progress for the sliced main-thread path
 
@@ -64,7 +68,7 @@ namespace MuninMap.Tiles
         {
             var wg = WorldGenerator.instance;
             if (wg == null) throw new InvalidOperationException("WorldGenerator not ready");
-            bool detail = zoom >= 4;                    // terraforming is invisible below 8 m/px
+            bool detail = zoom >= 5;                    // terraforming from the zoom the trees come in at (the 2D map's tree layer)
             for (int py = from; py < to; py++)
             {
                 float wz = maxZ - (py - 1 + 0.5f) * mpp;
@@ -75,15 +79,27 @@ namespace MuninMap.Tiles
                     float r2 = wx * wx + wz * wz;
                     if (r2 > 10500f * 10500f)
                     {
-                        h[i] = -100f; biome[i] = Palette.B_OCEAN; forest[i] = 0; lava[i] = 0;
+                        h[i] = hb[i] = -100f; biome[i] = Palette.B_OCEAN; forest[i] = 0; lava[i] = 0;
                         continue;
                     }
                     Heightmap.Biome b = wg.GetBiome(wx, wz);
                     float height = wg.GetBiomeHeight(b, wx, wz, out Color mask);
                     // the Ashlands height comes with its lava mask (alpha), the one Minimap.GetMaskColor paints
                     lava[i] = b == Heightmap.Biome.AshLands ? (byte)(Mathf.Clamp01(mask.a) * 255f) : (byte)0;
+                    hb[i] = height;
                     if (detail) height += TerrainPatches.DeltaAt(wx, wz);
                     h[i] = height;
+                    // where snow lies: the slope over the same 8 m whatever the zoom, so a zoomed-out tile
+                    // and the ones that replace it as you zoom in show the same snow (a slope between this
+                    // tile's own pixels came out gentler the further out, and the snow jumped)
+                    steep[i] = 0f;
+                    if (b == Heightmap.Biome.Mountain && height > 50f)
+                    {
+                        const float D = 4f;
+                        float ex = wg.GetBiomeHeight(b, wx + D, wz, out _) - wg.GetBiomeHeight(b, wx - D, wz, out _);
+                        float ez = wg.GetBiomeHeight(b, wx, wz + D, out _) - wg.GetBiomeHeight(b, wx, wz - D, out _);
+                        steep[i] = (float)Math.Sqrt(ex * ex + ez * ez) / (2f * D);
+                    }
                     biome[i] = (ushort)(int)b;
                     // forest density: the game's own definition (Meadows forests are where the factor is low)
                     float ff = 0f;
@@ -102,10 +118,9 @@ namespace MuninMap.Tiles
                             ff = ff < 0.8f ? Mathf.Clamp01((0.8f - ff) * 1.5f + 0.2f) : 0f;
                             break;
                         case Palette.B_MISTLANDS:
-                            ff = 0.5f;
-                            break;
-                        case Palette.B_SWAMP:
-                            ff = 0.4f;
+                            // the game's own map: forest where the factor is under 1.1, fading out by 1.3
+                            // (Minimap.GetMaskColor; the swamp has none)
+                            ff = 1f - Edge(1.1f, 1.3f, WorldGenerator.GetForestFactor(new Vector3(wx, 0f, wz)));
                             break;
                     }
                     if (height < waterLevel) ff = 0f;
@@ -124,91 +139,117 @@ namespace MuninMap.Tiles
         public void Compose()
         {
             rgb = new byte[T * T * 3];
-            float wl = waterLevel;
             for (int py = 0; py < T; py++)
-            {
                 for (int px = 0; px < T; px++)
                 {
-                    int i = (py + 1) * S + (px + 1);
-                    float hh = h[i];
-                    int b = biome[i];
-                    float wx = minX + (px + 0.5f) * mpp;
-                    float wz = maxZ - (py + 0.5f) * mpp;
-
-                    Palette.Rgb c = Ground(b, hh, i);
-
-                    // paint: roads, farmland, paved floors
-                    if (zoom >= 4 && hh >= wl - 0.5f && TerrainPatches.PaintAt(wx, wz, out float dirt, out float cult, out float paved))
-                    {
-                        c = Palette.Rgb.Lerp(c, Palette.PaintDirt, dirt * 0.85f);
-                        c = Palette.Rgb.Lerp(c, Palette.PaintCultivated, cult * 0.9f);
-                        c = Palette.Rgb.Lerp(c, Palette.PaintPaved, paved * 0.95f);
-                    }
-
-                    // forest tint at every zoom (the canopies below only exist at close zooms)
-                    float f = forest[i] / 255f;
-                    if (f > 0f)
-                    {
-                        Palette.Rgb dark = b == Palette.B_BLACKFOREST ? new Palette.Rgb(38, 54, 34)
-                                         : b == Palette.B_PLAINS ? new Palette.Rgb(120, 130, 60)
-                                         : b == Palette.B_MISTLANDS ? new Palette.Rgb(62, 78, 84)
-                                         : b == Palette.B_SWAMP ? new Palette.Rgb(50, 56, 34)
-                                         : new Palette.Rgb(60, 104, 46);
-                        float amount = zoom >= 5 ? 0.22f : 0.55f;
-                        c = Palette.Rgb.Lerp(c, dark, f * amount);
-                    }
-
-                    // shoreline & water
-                    if (hh < wl)
-                    {
-                        float depth = wl - hh;
-                        float t = Mathf.Clamp01(depth / 28f);
-                        t = (float)Math.Sqrt(t);
-                        Palette.Rgb water = Palette.Rgb.Lerp(Palette.WaterShallow, Palette.WaterDeep, t);
-                        // the sea turns dark and ashen toward the Ashlands, over the game's own gradient
-                        if (wx * wx + wz * wz < 10500f * 10500f)
-                        {
-                            float ash = Mathf.Clamp01(WorldGenerator.GetAshlandsOceanGradient(wx, wz));
-                            if (ash > 0f) water = Palette.Rgb.Lerp(water, Palette.Rgb.Lerp(Palette.AshSeaShallow, Palette.AshSeaDeep, t), ash);
-                        }
-                        // ground shows through in the shallows
-                        float see = Mathf.Clamp01(1f - depth / 3.5f) * 0.45f;
-                        c = Palette.Rgb.Lerp(water, c, see);
-                    }
-                    else if (hh < wl + 2.2f && b != Palette.B_MOUNTAIN && b != Palette.B_DEEPNORTH && b != Palette.B_ASHLANDS)
-                    {
-                        float t = Mathf.Clamp01((wl + 2.2f - hh) / 2.2f);
-                        c = Palette.Rgb.Lerp(c, Palette.Sand, t * 0.8f);
-                    }
-
-                    // hillshade from the height neighbourhood (border pixels make this exact at tile edges)
-                    float dx = (h[i + 1] - h[i - 1]) / (2f * mpp);
-                    float dz = (h[i - S] - h[i + S]) / (2f * mpp);       // row above is north (+z)
-                    if (hh < wl) { dx *= 0.35f; dz *= 0.35f; }
-                    // normal of the surface z = f(x, y): (-dx, 1, -dz)
-                    float nx = -dx, ny = 1f, nz = -dz;
-                    float inv = 1f / (float)Math.Sqrt(nx * nx + ny * ny + nz * nz);
-                    nx *= inv; ny *= inv; nz *= inv;
-                    float light = nx * sunDir.x + ny * sunDir.y + nz * sunDir.z;
-                    float shade = 0.55f + 0.55f * Mathf.Clamp01(light);
-                    // steep rock faces in the mountains lose their snow
-                    c = c.Scale(shade);
-
-                    // lava glows, so it goes on after the shading: a hot core, darker crusted edges
-                    if (lava[i] > 8 && hh >= wl)
-                    {
-                        float l = lava[i] / 255f;
-                        float a = Edge(0.03f, 0.45f, l);
-                        Palette.Rgb hot = Palette.Rgb.Lerp(Palette.AshlandsLava, Palette.LavaCore, Edge(0.35f, 0.9f, l));
-                        c = Palette.Rgb.Lerp(c, hot.Scale(0.85f + 0.2f * shade), a);
-                    }
-
+                    var c = Pixel(px, py, hb, false);
                     int o = (py * T + px) * 3;
                     rgb[o] = c.r; rgb[o + 1] = c.g; rgb[o + 2] = c.b;
                 }
+
+            if (zoom >= 5)
+            {
+                // the ground players (and the game round its locations) changed: dug, raised, levelled,
+                // painted. On an overlay of its own, the terra tiles, which the page shows from the zoom
+                // the trees come in at and fades in with them (on the ground tiles it came in a moment
+                // earlier, apart from the trees). Just the pixels it changes, opaque, the rest clear.
+                if (TerrainPatches.AnyIn(minX, maxZ - T * mpp, minX + T * mpp, maxZ))
+                {
+                    var t = new byte[T * T * 4];
+                    bool any = false;
+                    for (int py = 0; py < T; py++)
+                        for (int px = 0; px < T; px++)
+                        {
+                            var c = Pixel(px, py, h, true);
+                            int o = (py * T + px) * 3, q = (py * T + px) * 4;
+                            if (Math.Abs(c.r - rgb[o]) + Math.Abs(c.g - rgb[o + 1]) + Math.Abs(c.b - rgb[o + 2]) <= 3) continue;
+                            t[q] = c.r; t[q + 1] = c.g; t[q + 2] = c.b; t[q + 3] = 255; any = true;
+                        }
+                    if (any) terra = t;
+                }
+                veg = new byte[T * T * 4]; BakeVegetation();
+            }
+        }
+
+        // One pixel of the map: the ground's colour, paint (when asked), forest tint, water, hill shade, lava
+        private Palette.Rgb Pixel(int px, int py, float[] hs, bool paint)
+        {
+            float wl = waterLevel;
+            int i = (py + 1) * S + (px + 1);
+            float hh = hs[i];
+            int b = biome[i];
+            float wx = minX + (px + 0.5f) * mpp;
+            float wz = maxZ - (py + 0.5f) * mpp;
+
+            Palette.Rgb c = Ground(b, hh, i);
+
+            // paint: roads, farmland, paved floors
+            if (paint && hh >= wl - 0.5f && TerrainPatches.PaintAt(wx, wz, out float dirt, out float cult, out float paved))
+            {
+                c = Palette.Rgb.Lerp(c, Palette.PaintDirt, dirt * 0.85f);
+                c = Palette.Rgb.Lerp(c, Palette.PaintCultivated, cult * 0.9f);
+                c = Palette.Rgb.Lerp(c, Palette.PaintPaved, paved * 0.95f);
             }
 
-            if (zoom >= 5) { veg = new byte[T * T * 4]; BakeVegetation(); }
+            // forest tint at every zoom (the canopies below only exist at close zooms)
+            float f = forest[i] / 255f;
+            if (f > 0f)
+            {
+                Palette.Rgb dark = b == Palette.B_BLACKFOREST ? new Palette.Rgb(38, 54, 34)
+                                 : b == Palette.B_PLAINS ? new Palette.Rgb(120, 130, 60)
+                                 : b == Palette.B_MISTLANDS ? new Palette.Rgb(62, 78, 84)
+                                 : b == Palette.B_SWAMP ? new Palette.Rgb(50, 56, 34)
+                                 : new Palette.Rgb(60, 104, 46);
+                float amount = zoom >= 5 ? 0.22f : 0.55f;
+                c = Palette.Rgb.Lerp(c, dark, f * amount);
+            }
+
+            // shoreline & water
+            if (hh < wl)
+            {
+                float depth = wl - hh;
+                float t = Mathf.Clamp01(depth / 28f);
+                t = (float)Math.Sqrt(t);
+                Palette.Rgb water = Palette.Rgb.Lerp(Palette.WaterShallow, Palette.WaterDeep, t);
+                // the sea turns dark and ashen toward the Ashlands, over the game's own gradient
+                if (wx * wx + wz * wz < 10500f * 10500f)
+                {
+                    float ash = Mathf.Clamp01(WorldGenerator.GetAshlandsOceanGradient(wx, wz));
+                    if (ash > 0f) water = Palette.Rgb.Lerp(water, Palette.Rgb.Lerp(Palette.AshSeaShallow, Palette.AshSeaDeep, t), ash);
+                }
+                // ground shows through in the shallows
+                float see = Mathf.Clamp01(1f - depth / 3.5f) * 0.45f;
+                c = Palette.Rgb.Lerp(water, c, see);
+            }
+            else if (hh < wl + 2.2f && b != Palette.B_MOUNTAIN && b != Palette.B_DEEPNORTH && b != Palette.B_ASHLANDS)
+            {
+                float t = Mathf.Clamp01((wl + 2.2f - hh) / 2.2f);
+                c = Palette.Rgb.Lerp(c, Palette.Sand, t * 0.8f);
+            }
+
+            // hillshade from the height neighbourhood (border pixels make this exact at tile edges)
+            float dx = (hs[i + 1] - hs[i - 1]) / (2f * mpp);
+            float dz = (hs[i - S] - hs[i + S]) / (2f * mpp);       // row above is north (+z)
+            if (hh < wl) { dx *= 0.35f; dz *= 0.35f; }
+            // normal of the surface z = f(x, y): (-dx, 1, -dz)
+            float nx = -dx, ny = 1f, nz = -dz;
+            float inv = 1f / (float)Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            nx *= inv; ny *= inv; nz *= inv;
+            float light = nx * sunDir.x + ny * sunDir.y + nz * sunDir.z;
+            float shade = 0.55f + 0.55f * Mathf.Clamp01(light);
+            // steep rock faces in the mountains lose their snow
+            c = c.Scale(shade);
+
+            // lava glows, so it goes on after the shading: a hot core, darker crusted edges
+            if (lava[i] > 8 && hh >= wl)
+            {
+                float l = lava[i] / 255f;
+                float a = Edge(0.03f, 0.45f, l);
+                Palette.Rgb hot = Palette.Rgb.Lerp(Palette.AshlandsLava, Palette.LavaCore, Edge(0.35f, 0.9f, l));
+                c = Palette.Rgb.Lerp(c, hot.Scale(0.85f + 0.2f * shade), a);
+            }
+
+            return c;
         }
 
         // 0 below lo, 1 above hi, smooth between (Unity's Mathf.SmoothStep interpolates instead)
@@ -231,10 +272,7 @@ namespace MuninMap.Tiles
                 {
                     float snow = Mathf.Clamp01((hh - 50f) / 45f);
                     // steep faces show rock through the snow
-                    float dx = (h[i + 1] - h[i - 1]) / (2f * mpp);
-                    float dz = (h[i - S] - h[i + S]) / (2f * mpp);
-                    float slope = (float)Math.Sqrt(dx * dx + dz * dz);
-                    snow *= Mathf.Clamp01(1.25f - slope * 0.55f);
+                    snow *= Mathf.Clamp01(1.25f - steep[i] * 0.55f);
                     Palette.Rgb low = Palette.Rgb.Lerp(Palette.Meadows, Palette.MountainRock, Mathf.Clamp01((hh - 20f) / 40f));
                     return Palette.Rgb.Lerp(low, Palette.Snow, snow);
                 }
@@ -353,6 +391,7 @@ namespace MuninMap.Tiles
             // in the background for everyone after. The overlay compresses best unfiltered.
             ColorImage = Png.Encode(rgb, T, T, Png.Format.RGB);
             if (veg != null) { VegImage = Png.Encode(veg, T, T, Png.Format.RGBA, filter: false); veg = null; }
+            if (terra != null) { TerraImage = Png.Encode(terra, T, T, Png.Format.RGBA, filter: false); terra = null; }
             if (wantHeight)
             {
                 // Terrarium: h = (R * 256 + G + B / 256) - 32768

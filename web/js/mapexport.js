@@ -41,7 +41,7 @@ export async function mapImage(app, a, opts, report = () => {}) {
     for (let tx = Math.max(0, Math.floor((a.x0 + WORLD_HALF) / span)); tx <= Math.min(n - 1, Math.floor((a.x1 + WORLD_HALF) / span)); tx++) jobs.push([tx, ty]);
   let done = 0;
   const one = async ([tx, ty]) => {
-    for (const layer of opts.veg ? ['map', 'veg'] : ['map']) {   // the ground, then the trees and rocks on it
+    for (const layer of z >= 5 ? (opts.veg ? ['map', 'terra', 'veg'] : ['map', 'terra']) : ['map']) {   // the ground, the ground players changed, then the trees and rocks on it
       try {
         const r = await fetch(worldTile(`tiles/${layer}/${z}/${tx}/${ty}.png`), { headers: { Accept: 'image/webp,image/png' } });
         if (r.ok) g.drawImage(await createImageBitmap(await r.blob()), px(-WORLD_HALF + tx * span), py(WORLD_HALF - ty * span), TILE, TILE);

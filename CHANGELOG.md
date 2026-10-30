@@ -1,5 +1,51 @@
 # Changelog
 
+## 3.3.0
+
+**Your map survives updates** (#28)
+
+* The map's data (tiles, explored ground, stats, player cards, models) now lives in `BepInEx/config/MuninMap`, outside the plugin's folder, so updating the mod by replacing its folder, or with a mod manager (which always does), no longer takes the map with it. An existing `map_data` is moved there on the first start, by itself, and so is `announce.token`. The new `data_path` setting puts it somewhere else.
+
+**Player card: item effects as the game plays them**
+
+* **The game's own shaders.** The glow on Storm Fang, the Berserkir axes, Splitnir, Niedhogg, the Eldner maces, the Slayer swords, the Ashlands bows, the Rippers and some staffs is the game's own shader maths: a noise picture snapped to a pixel grid, swirled by the game's curl noise (read from the game files by the server) and scrolling, faded along the weapon. The colour-ramp effects (fire, frost, lightning) use the game's shader maths too, and every effect is drawn in linear light, as the game draws it.
+* **The game's own finish.** The 3D character gets the game's in-game post-processing: bloom (the soft halo round glowing things), contrast, white balance, tone mapping and exposure, with the game's own settings.
+
+* **Effects move as in the game.** The server runs each item's effects in the game's own particle engine and records every particle 30 times a second; the card plays that back at the game's speed, gliding between the recorded frames. Where the particles go, how they spin, flicker, grow and fade is the game's own, for every item.
+* **No restart in the effects.** The recording is a seamless loop: each particle lives out its whole life and new ones keep coming, so sparks, flames and lightning never all vanish and start over at once.
+* **Effects follow the game's own settings.** Flames, lightning, sparks, mist and the rest were played from a few of each effect's numbers. They now run from all of them: where the particles are born and which way they go, how they speed up, spin, grow and fade over their life, their orbit and pull, noise and forces, flipbook pictures, sparks stretched along their path, trails behind each particle and ribbons joining them, and each material's own blending.
+* **Lightning as in the game.** Storm Fang's and the other storm weapons' lightning is ribbons joining particles that each spin round the weapon at their own speed: jagged bolts that cross the weapon and change every frame, where the map drew short wavy trails.
+* **Fire staffs and torches** show their full flames (stretched flames came out faint).
+* **Held as in the game.** The character stands in the game's own stance for what's in their hands (spear, bow, atgeir, staff, sword and shield, torch...), so weapons sit where they do in the game, and the card steps back to keep a weapon held out in the picture.
+* **Lights flicker as in the game.** Torches, staffs and glowing weapons flicker and waver with the game's own settings for each light.
+* **Blood splats** on blood-lightning weapons are drawn as the game's own small splat meshes.
+* **Cards open faster.** A card's data is sent compressed (often under half the size) and isn't downloaded again when the same card is opened again.
+
+**Day and night**
+
+* **The time of day matches the game.** The game stretches its day so daylight runs most of the clock; the map now does the same, so the stats' "night" and the 3D view's sun no longer turn to night about three minutes early each evening (and stay dark three minutes too long each morning). The 3D sun also moves smoothly with the clock instead of jumping when the stats refresh.
+
+**The map**
+
+* **Snow doesn't jump when you zoom.** Where snow lies on the mountains is judged by the slope over the same few metres at every zoom; it used to be judged between the map's own pixels, so each zoom had different snow and it flashed as the tiles changed.
+* **Paths, clearings and paving come in with the trees.** They show from the zoom the trees appear at, and the ground fades from one zoom level to the next as the trees do, instead of snapping in a level earlier.
+* **The ground around locations is shaped as in the game.** Villages, camps, crypts, temples and altars flatten and smooth their ground and clear it to dirt, read from each location's own settings.
+* **Forests as the game's own map has them.** The swamp has no forest shading and the Mistlands' follows the game's forest edge.
+* **Buildings coloured by what they're made of in the game** (stone, iron, core wood, black marble, grausten), where a piece's name doesn't say.
+* **Trees at their own size.** The game sizes each tree it places; the map now draws each one at its size.
+* **Weather as the game picks it** during raids, in special biome areas and around world events.
+* **Travel times** use the game's own speeds: a player's jog, and a lox's run while its saddle's stamina lasts, then its trot.
+
+**3D view**
+
+* **The sun crosses the southern sky**, east to west, at the game's own angle for the weather; the map tiles' own shading is taken back out so there's one sun.
+* **Sky, fog and light from the game's weather** where you're looking: its sun, fog and ambient colours for night, morning, day and evening, and how thick its fog is. Storms, the Mistlands, the Ashlands and the Deep North look as they do in the game.
+* **Mistlands mist fills the valleys** up to 50 m over the ground around, as in the game, instead of a thin layer on the ground.
+
+**Player card: the last weapon held**
+
+* Put a weapon away in the bag (to run, say) and the card shows it on your back, as the game draws a sheathed weapon, until you've been online ten minutes without holding one. So a card, and the one kept for when you're offline, usually shows what you fight with. Tools and torches aren't counted.
+
 ## 3.2.6
 
 **Player card: the 3D character**

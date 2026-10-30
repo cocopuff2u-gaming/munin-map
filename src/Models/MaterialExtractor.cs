@@ -12,18 +12,19 @@ namespace MuninMap.Models
     // A material's saved colours, read from the game's own files. On a dedicated server the game's
     // shaders are stripped, and the engine then answers a material's colours (its glow colour among them)
     // with black: the values are still in the files, so they're read from there, on a background thread,
-    // like the textures (TextureExtractor). Kept in the model library (models/materials2.txt: one material
+    // like the textures (TextureExtractor). Kept in the model library (models/materials5.txt: one material
     // a line, "name<TAB>_Prop=r,g,b,a;_Prop2=..."), so each is looked up once. A few numbers are kept too
-    // (the cut-out level, a glow's scrolling), as "#_Prop=v,0,0,0" (materials.txt, before 3.2.6, had none).
+    // (the cut-out level, a glow's scrolling, how particles blend), as "#_Prop=v,0,0,0" (materials.txt to
+    // materials4.txt, from older versions, have fewer: a new name reads them all again).
     internal static class MaterialExtractor
     {
         public static bool Running { get; private set; }
-        private static readonly string[] Numbers = { "_Cutoff", "_ScrollSpeed", "_TexScale", "_VertPush", "_PixelSize" };
+        private static readonly string[] Numbers = { "_Cutoff", "_ScrollSpeed", "_TexScale", "_VertPush", "_PixelSize", "_Mode", "_SrcBlend", "_DstBlend", "_ScrollSpeedX", "_CurlSize", "_CurlStrength", "_DomainWarp", "_GradientAsAlpha", "_GradientChannel" };
         private static Thread thread;
         private static readonly object sync = new object();
         private static Dictionary<string, Dictionary<string, Color>> known;   // material name -> its colours
         private static readonly HashSet<string> gaveUp = new HashSet<string>();
-        private static string FilePath(string modelsDir) => Path.Combine(modelsDir, "materials2.txt");
+        private static string FilePath(string modelsDir) => Path.Combine(modelsDir, "materials5.txt");
 
         // The saved colour, when this material has been read (false: not read yet, or no such colour)
         public static bool TryColor(string modelsDir, string material, string prop, out Color c, out bool read)

@@ -142,21 +142,38 @@ namespace MuninMap.Tiles
         }
 
         // Renderer threads. Bilinear height delta at a world position; 0 where nothing was modified.
+        // (the ground the game shapes around its locations underneath: LocationTerrain)
         public static float DeltaAt(float wx, float wz)
         {
+            float loc = LocationTerrain.DeltaAt(wx, wz);
             int zx = TileMath.ZoneCoord(wx), zz = TileMath.ZoneCoord(wz);
-            if (!patches.TryGetValue(TileMath.ZoneKey(zx, zz), out var p) || !p.anyHeight) return 0f;
+            if (!patches.TryGetValue(TileMath.ZoneKey(zx, zz), out var p) || !p.anyHeight) return loc;
             float fx = wx - (zx * TileMath.ZONE_SIZE - 32);   // 0..64
             float fz = wz - (zz * TileMath.ZONE_SIZE - 32);
-            return Bilinear(p.delta, fx, fz);
+            return loc + Bilinear(p.delta, fx, fz);
         }
+
+        // any terraforming or location ground in a box (renderer threads; a dictionary look per zone)
+        public static bool AnyIn(float minX, float minZ, float maxX, float maxZ)
+        {
+            int x0 = TileMath.ZoneCoord(minX - 1f), x1 = TileMath.ZoneCoord(maxX + 1f), z0 = TileMath.ZoneCoord(minZ - 1f), z1 = TileMath.ZoneCoord(maxZ + 1f);
+            for (int zx = x0; zx <= x1; zx++)
+                for (int zz = z0; zz <= z1; zz++)
+                    if (patches.ContainsKey(TileMath.ZoneKey(zx, zz)) || LocationTerrain.Has(zx, zz)) return true;
+            return false;
+        }
+
+        public static System.Collections.Generic.ICollection<long> Zones() => patches.Keys;
+
+        internal static float BilinearAt(float[] g, float fx, float fz) => Bilinear(g, fx, fz);
 
         // Paint mask at a world position: r = dirt, g = cultivated, b = paved (0..1 each). Returns false when unpainted.
         public static bool PaintAt(float wx, float wz, out float dirt, out float cultivated, out float paved)
         {
             dirt = cultivated = paved = 0f;
+            float locDirt = LocationTerrain.DirtAt(wx, wz);   // (a location's cleared ground)
             int zx = TileMath.ZoneCoord(wx), zz = TileMath.ZoneCoord(wz);
-            if (!patches.TryGetValue(TileMath.ZoneKey(zx, zz), out var p) || !p.anyPaint) return false;
+            if (!patches.TryGetValue(TileMath.ZoneKey(zx, zz), out var p) || !p.anyPaint) { dirt = locDirt; return dirt > 0.02f; }
             float fx = wx - (zx * TileMath.ZONE_SIZE - 32);
             float fz = wz - (zz * TileMath.ZONE_SIZE - 32);
             int i0 = (int)fx, j0 = (int)fz;
@@ -169,6 +186,7 @@ namespace MuninMap.Tiles
             dirt      = Lerp(Lerp(pm[a], pm[b], tx), Lerp(pm[c], pm[d], tx), tz) / 255f;
             cultivated= Lerp(Lerp(pm[a + 1], pm[b + 1], tx), Lerp(pm[c + 1], pm[d + 1], tx), tz) / 255f;
             paved     = Lerp(Lerp(pm[a + 2], pm[b + 2], tx), Lerp(pm[c + 2], pm[d + 2], tx), tz) / 255f;
+            dirt = Math.Max(dirt, locDirt);
             return dirt > 0.02f || cultivated > 0.02f || paved > 0.02f;
         }
 

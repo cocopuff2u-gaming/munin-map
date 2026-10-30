@@ -82,17 +82,20 @@ export class Lighting {
     this.setTime(0.5);
   }
 
-  // sun direction for a day fraction: rises east, arcs over the north-west (the side the map
-  // tiles are shaded from), sets west
-  sunDir(frac) {
-    const a = (frac - 0.25) * Math.PI * 2;
-    const elev = Math.sin(a), along = Math.cos(a);
-    return new THREE.Vector3(along * 0.95, elev, -0.35 * Math.max(0, elev) - 0.12).normalize();
+  // sun direction for a day fraction, as the game turns its sun (EnvMan.SetEnv: Euler(-90 + sunAngle, 0, 0) x
+  // Euler(0, -90, 0) x Euler(-90 + 360 x fraction, 0, 0), sunAngle 60): rises in the east at a quarter, highest
+  // in the south at noon (60 degrees up), sets in the west. (Scene z is south.)
+  sunDir(frac, angle = 60) {
+    const a = (frac - 0.25) * Math.PI * 2, b = (angle - 90) * Math.PI / 180;
+    return new THREE.Vector3(Math.cos(a), Math.cos(b) * Math.sin(a), -Math.sin(b) * Math.sin(a)).normalize();
   }
+
+  // the weather here (data/environments.json: one of the game's EnvSetups), or null for the map's own look
+  setEnv(env) { if (env === this.env) return; this.env = env; this.setTime(this.frac); }
 
   setTime(frac) {
     this.frac = ((frac % 1) + 1) % 1;
-    const dir = this.sunDir(this.frac), e = dir.y;
+    const dir = this.sunDir(this.frac, this.env?.sunAngle ?? 60), e = dir.y;
     const day = smooth(-0.06, 0.22, e), dusk = 1 - smooth(0, 0.3, Math.abs(e)), night = 1 - smooth(-0.25, 0.02, e);
     const zenith = NIGHT.zenith.clone().lerp(DAY.zenith, day).lerp(DUSK.zenith, dusk * 0.7);
     const horizon = NIGHT.horizon.clone().lerp(DAY.horizon, day).lerp(DUSK.horizon, dusk * 0.85);
@@ -116,7 +119,43 @@ export class Lighting {
 
     this.scene.fog.color.copy(horizon);
     this.scene.background.copy(horizon);
+    this.scene.fog.near = 2500; this.scene.fog.far = 9500;
+    if (this.env) this.gameLight(this.env, dir);
     this.envDirty = true;
+  }
+
+  // The game's own light for this weather and time (EnvMan.SetEnv): its night, morning, day and evening
+  // weights (EnvMan.Update), the sun's colour and strength, the fog's colour (toward the sun's own fog
+  // colour by day), the ambient between its night and day colours. Fog density sets how far the fog
+  // starts, scaled up for a view from far above (the game's own would white out the map).
+  gameLight(env, dir) {
+    const f = this.frac, c01 = (x) => Math.min(1, Math.max(0, x));
+    let n = Math.pow(Math.max(1 - c01(f / 0.25), c01((f - 0.75) / 0.25)), 0.5), d = Math.pow(c01(1 - Math.abs(f - 0.5) / 0.25), 0.5);
+    let m = Math.min(c01(1 - (f - 0.26) / -0.02), c01(1 - (f - 0.26) / 0.08)), ev = Math.min(c01(1 - (f - 0.74) / -0.08), c01(1 - (f - 0.74) / 0.02));
+    const k = 1 / (n + d + m + ev); n *= k; d *= k; m *= k; ev *= k;
+    if (env.dark) { n = 1; d = m = ev = 0; }
+    const col = (q, day) => {
+      const w = [n, day ? m : 0, day ? d : 0, day ? ev : 0], o = [0, 0, 0];
+      for (let i = 0; i < 4; i++) for (let a = 0; a < 3; a++) o[a] += (q && q[i] ? q[i][a] : 0) * w[i];
+      return new THREE.Color().setRGB(o[0], o[1], o[2], THREE.SRGBColorSpace);
+    };
+    const sunCol = col(env.sun, d > 0), fog = col(env.fog, true), fogSun = col(env.fogSun, d > 0);
+    fog.lerp(fogSun, c01(Math.max(n, d) * 3));
+    const amb = new THREE.Color().setRGB(lerp(env.ambNight[0], env.ambDay[0], d), lerp(env.ambNight[1], env.ambDay[1], d), lerp(env.ambNight[2], env.ambDay[2], d), THREE.SRGBColorSpace);
+    const K = 2.6 / 1.2;   // (the map's sun at the game's usual 1.2)
+    this.sun.color.copy(sunCol); this.sun.intensity = K * env.lightDay * d * (dir.y > -0.02 ? 1 : 0);
+    this.moon.color.copy(sunCol); this.moon.intensity = K * env.lightNight * n;
+    this.hemi.color.copy(amb); this.hemi.groundColor.copy(amb).multiplyScalar(0.45); this.hemi.intensity = 1.0;
+    const zenith = this.uniforms.uZenith.value.clone().lerp(fog, 0.35);
+    this.uniforms.uHorizon.value.copy(fog); this.uniforms.uZenith.value.copy(zenith);
+    this.uniforms.uSunTint.value.copy(sunCol).multiplyScalar(c01(dir.y * 8 + 0.2));
+    this.scene.fog.color.copy(fog); this.scene.background.copy(fog);
+    const fd = env.fogDensity || [0.01, 0.01, 0.01, 0.01];
+    const dens = Math.max(1e-4, fd[0] * n + fd[1] * m + fd[2] * d + fd[3] * ev);
+    const far = Math.min(14000, Math.max(1500, 9500 * Math.sqrt(0.01 / dens)));
+    this.scene.fog.far = far; this.scene.fog.near = far * 0.26;
+    this.sun.castShadow = this.shadows && this.sun.intensity > 0.05;
+    this.moon.castShadow = this.shadows && this.sun.intensity <= 0.05;
   }
 
   // Bake the sky into an environment map (reflections on water, sheen on metal). Cheap; done

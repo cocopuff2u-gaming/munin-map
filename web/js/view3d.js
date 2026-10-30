@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { chunks, objects, prefabs, objectFilter, markers as markerStore, stats as statsStore } from './data.js';
+import { BiomeHover } from './biomehover.js';
 import { Lighting } from './sky.js';
 import { materialColors, colors as iconColors } from './icons.js';
 import { layerState } from './layerstate.js';
@@ -67,8 +68,9 @@ function tinyLoose(info) {
   return Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) < 0.8;
 }
 
-// Mistlands mist (View3D.mistMaterial): layers over the ground, this many metres apart
-const MIST_LIFT = 4.5, MIST_LAYERS = 3, MIST_SEGS = 32;
+// Mistlands mist (View3D.mistMaterial): layers from the ground up to the mist's top, which is, as in the game
+// (ParticleMist.FindMaxMistAlltitude), the average ground around plus 50 m: valleys fill, peaks stand out
+const MIST_TOP = 50, MIST_AROUND = 50, MIST_LAYERS = 6, MIST_SEGS = 32;
 
 export class View3D {
   constructor(canvas, config) {
@@ -324,24 +326,27 @@ export class View3D {
         uColor: { value: new THREE.Color(0.8, 0.82, 0.86) }, uWisp: { value: wisps }, uNWisp: { value: 0 },
       },
       vertexShader: `
-varying vec3 vW; varying float vLayer;
+attribute float top;
+varying vec3 vW; varying float vLayer; varying float vDepth;
 void main() {
   vec4 w = modelMatrix * vec4(position, 1.0);
   vLayer = float(gl_InstanceID);
-  w.y += ${MIST_LIFT.toFixed(1)} * (vLayer + 0.6);
+  float ground = w.y;
+  w.y = mix(ground + 1.5, max(top, ground + 1.5), (vLayer + 0.5) / ${MIST_LAYERS.toFixed(1)});
+  vDepth = top - ground;   // (none where the ground stands above the mist's top)
   vW = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`,
       fragmentShader: `
 uniform sampler2D uMask, uNoise; uniform float uHalf; uniform vec3 uColor; uniform vec4 uWisp[16]; uniform int uNWisp;
-varying vec3 vW; varying float vLayer;
+varying vec3 vW; varying float vLayer; varying float vDepth;
 void main() {
   vec2 w = vec2(vW.x, -vW.z);   // world x, z (scene Z is -z)
   float m = texture2D(uMask, vec2(w.x / (2.0 * uHalf) + 0.5, 0.5 - w.y / (2.0 * uHalf))).r;
   if (m < 0.004) discard;
   vec2 nn = texture2D(uNoise, w / 150.0 + vLayer * 0.31).rg;   // blotches and finer mottling, one read
   float n = nn.r * 0.7 + nn.g * 0.3;
-  float a = smoothstep(0.0, 0.6, m) * smoothstep(0.2, 0.75, n) * (0.6 - vLayer * 0.1);
+  float a = smoothstep(0.0, 0.6, m) * smoothstep(0.2, 0.75, n) * (0.36 - vLayer * 0.04) * smoothstep(2.0, 12.0, vDepth);
   for (int i = 0; i < 16; i++) {
     if (i >= uNWisp) break;
     float r = uWisp[i].w;
@@ -398,12 +403,26 @@ void main() {
     const geo = new THREE.PlaneGeometry(span, span, n, n);
     geo.rotateX(-Math.PI / 2);
     const p = geo.attributes.position, r = Math.ceil(k / 2);
+    const g = new Float32Array(p.count);
     for (let i = 0; i < p.count; i++) {
       const ix = i % (n + 1), iy = Math.floor(i / (n + 1)), cx = Math.round(ix * k), cy = Math.round(iy * k);
       let h = -Infinity;
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) h = Math.max(h, hAt(cx + dx, cy + dy));
-      p.setY(i, h);
+      p.setY(i, h); g[i] = h;
     }
+    // the mist's top at each point: the average ground within MIST_AROUND metres, plus MIST_TOP
+    const top = new Float32Array(p.count), R = Math.round(MIST_AROUND / (span / n));
+    for (let i = 0; i < p.count; i++) {
+      const ix = i % (n + 1), iy = Math.floor(i / (n + 1));
+      let sum = 0, cnt = 0;
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+        const x = ix + dx, y = iy + dy;
+        if (x < 0 || y < 0 || x > n || y > n || dx * dx + dy * dy > R * R) continue;
+        sum += g[y * (n + 1) + x]; cnt++;
+      }
+      top[i] = sum / Math.max(1, cnt) + MIST_TOP;
+    }
+    geo.setAttribute('top', new THREE.BufferAttribute(top, 1));
     geo.deleteAttribute('normal'); geo.deleteAttribute('uv');
     return geo;
   }
@@ -439,14 +458,23 @@ void main() {
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, u);
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vGroundPos;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vGroundPos; varying vec3 vGroundN;')
+        .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvGroundN = normalize(mat3(modelMatrix) * objectNormal);')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
-varying vec3 vGroundPos;
+varying vec3 vGroundPos; varying vec3 vGroundN;
 uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform vec2 uFogScale; uniform float uFogOffset; uniform sampler2D uDetail;`)
         // the map tile is 1 m per texel; up close, tiled fine grain keeps the ground from turning into a blur
+        // the map tiles come with hill shading for a sun in the north-west (TileRenderer: 0.55 + 0.55 x light,
+        // on the screen colour); here the sun is the game's own and lights the ground itself, so that shading
+        // is taken back out, from the ground's own slope
         .replace('#include <map_fragment>', detail ? `#include <map_fragment>
+{
+  vec3 n = normalize(vec3(vGroundN.x, vGroundN.y, -vGroundN.z));   // (world: z is north)
+  float baked = 0.55 + 0.55 * clamp(dot(n, normalize(vec3(-0.45, 0.72, 0.53))), 0.0, 1.0);
+  diffuseColor.rgb /= pow(baked, 2.2);
+}
 {
   vec2 dp = vec2(vGroundPos.x, -vGroundPos.z);
   float d1 = texture2D(uDetail, dp / 24.0).r, d2 = texture2D(uDetail, dp / 7.0).g;
@@ -583,8 +611,38 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
   checkLighting() {
     const pick = layerState.time3d;
     let frac = { noon: 0.5, morning: 0.3, evening: 0.72, night: 0.02 }[pick];
-    if (frac === undefined) frac = statsStore.data?.server?.dayFraction ?? 0.5;
+    if (frac === undefined) {
+      // the server's clock, kept going here between its updates, stretched as the game stretches it
+      // (EnvMan.RescaleDayFraction: the day runs 0.15 to 0.85 of the clock)
+      const sv = statsStore.data?.server;
+      if (sv && sv.worldTime !== undefined && sv.dayLength) {
+        if (this.clockFrom !== sv) { this.clockFrom = sv; this.clockAt = performance.now(); }
+        const raw = (((sv.worldTime + (performance.now() - this.clockAt) / 1000) / sv.dayLength) % 1 + 1) % 1;
+        frac = raw >= 0.15 && raw <= 0.85 ? 0.25 + (raw - 0.15) / 0.7 * 0.5 : raw < 0.5 ? raw / 0.15 * 0.25 : 0.75 + (raw - 0.85) / 0.15 * 0.25;
+      } else frac = sv?.dayFraction ?? 0.5;
+    }
     if (this.lastDayFraction === null || Math.abs(frac - this.lastDayFraction) > 0.002) { this.lastDayFraction = frac; this.lighting.setTime(frac); this.invalidate(true); }
+    this.pickWeather();
+  }
+
+  // the game's weather where the view looks (its biome's draw for this period, from the server's forecast),
+  // lit as the game lights it (sky.js gameLight); checked once a second
+  pickWeather() {
+    const now = performance.now();
+    if (now - (this.weatherAt || 0) < 1000) return;
+    this.weatherAt = now;
+    if (!this.envs && !this.envsLoading) {
+      this.envsLoading = true;
+      fetch('data/environments.json').then((r) => r.json()).then((d) => { this.envs = d; }).catch(() => {}).finally(() => { this.envsLoading = false; });
+    }
+    const sv = statsStore.data?.server, fc = statsStore.data?.forecast;
+    if (!this.envs || !fc?.biomes?.length || sv.worldTime === undefined) return;
+    const t = this.controls.target, here = (this.biomes ??= new BiomeHover()).at(t.x, -t.z) || 'Meadows';
+    const entry = fc.biomes.find((b) => b.biome.slice(0, 5) === here.slice(0, 5)) || fc.biomes[0];
+    const clock = sv.worldTime + (this.clockFrom === sv ? (now - this.clockAt) / 1000 : 0);
+    const k = Math.max(0, Math.min((entry.env?.length || 1) - 1, Math.floor((clock - fc.start) / fc.period)));
+    const env = this.envs[entry.env?.[k]] || null;
+    if (env !== this.lighting.env) { this.lighting.setEnv(env); this.invalidate(true); }
   }
 
   // tell the app when the camera has come to rest somewhere new (URL hash). Waits for a pause
@@ -748,7 +806,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     this.terrain.set(key, entry);
     let heights, tex;
     try {
-      [heights, tex] = await Promise.all([loadHeights(worldTile(`tiles/height/${z}/${x}/${y}.png`)), this.loadTexture(worldTile(`tiles/map/${z}/${x}/${y}.png`))]);
+      [heights, tex] = await Promise.all([loadHeights(worldTile(`tiles/height/${z}/${x}/${y}.png`)), this.groundTexture(z, x, y)]);
     } catch { return; }                       // not rendered (yet): the coarser ring covers it
     if (!this.terrain.has(key)) return;        // dropped while loading
     entry.heights = heights;
@@ -801,6 +859,21 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     this.terrain.delete(key);
     if (t.mistMesh) t.mistMesh.geometry.dispose();
     if (t.mesh) { this.scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mesh.material.map?.dispose(); t.mesh.material.dispose(); }
+  }
+
+  // a tile's ground: the map tile with, from zoom 5, the ground players changed laid over it (tiles/terra:
+  // a clear tile where nothing changed)
+  async groundTexture(z, x, y) {
+    if (z < 5) return this.loadTexture(worldTile(`tiles/map/${z}/${x}/${y}.png`));
+    const get = async (layer) => { const r = await fetch(worldTile(`tiles/${layer}/${z}/${x}/${y}.png`)); if (!r.ok) throw new Error(layer); return createImageBitmap(await r.blob()); };
+    const [ground, terra] = await Promise.all([get('map'), get('terra').catch(() => null)]);
+    const c = document.createElement('canvas'); c.width = ground.width; c.height = ground.height;   // (a canvas: flipped like the loader's images)
+    const g = c.getContext('2d'); g.drawImage(ground, 0, 0);
+    if (terra && terra.width > 1) g.drawImage(terra, 0, 0, c.width, c.height);
+    ground.close(); terra?.close();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = this.maxAniso; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
+    return t;
   }
 
   loadTexture(url) {

@@ -9,7 +9,7 @@ import { PlayerCard } from './playercard.js';
 import { FogLayer } from './layers/fog.js';
 import { StructuresLayer } from './layers/structures.js';
 import { RuinsLayer } from './layers/ruins.js';
-import { webgl2Available, TreesGL, RuinsGL, BuildingsGL } from './layers/shapes.js';
+import { webgl2Available, TreesGL, RuinsGL, BuildingsGL, TREES_MIN } from './layers/shapes.js';
 import { GroundGL, FogGL, WorldEdgeGL, GuideGL, BiomeGL, AltBiomeGL, MistGL } from './layers/ground.js';
 import { SmoothZoom, SmoothZoomControl } from './smoothzoom.js';
 import { MarkerLayers, escape, byName } from './layers/markers.js';
@@ -17,7 +17,7 @@ import { PlayersLayer } from './layers/players.js';
 import { RaidLayer } from './layers/raid.js';
 import { ActivityLayers } from './layers/activity.js';
 import { ContourGL } from './layers/contours.js';
-import { MeasureTool } from './measure.js';
+import { MeasureTool, setSpeeds } from './measure.js';
 import { chunks, objects, prefabs, markers, stats } from './data.js';
 import { Sidebar, newerVersion } from './ui.js';
 import { BiomeHover } from './biomehover.js';
@@ -62,6 +62,10 @@ class App {
     // the map tiles: in the WebGL canvas with everything else when the browser can (layers/ground.js)
     this.layers.tiles = (this.gl ? new GroundGL('tiles/map/{z}/{x}/{y}.png')
       : new FallbackTileLayer('tiles/map/{z}/{x}/{y}.png', { zIndex: 100, edgeBufferTiles: 1, prefetchZoomOut: 1, updateWhenZooming: false })).addTo(this.map);
+    // the ground players (and the game round its locations) changed, dug, levelled and painted, over the
+    // map tiles from the zoom the trees come in at, fading in exactly as they do (TreesGL.visibleAt)
+    this.layers.terra = (this.gl ? new GroundGL('tiles/terra/{z}/{x}/{y}.png', { minZoom: 5, order: 0.05, alpha: (z) => Math.min(1, Math.max(0, (z - TREES_MIN) / 0.75)) })
+      : new FallbackTileLayer('tiles/terra/{z}/{x}/{y}.png', { zIndex: 100.5, minNative: 5, className: 'maptiles' })).addTo(this.map);
     // Tree crowns and rocks over the ground (the 3D view uses the clean ground tiles). Trees, buildings and world structures on the GPU when the browser can (see shapes.js): there
     // the trees at every zoom come from the vegetation data and no tree tiles are loaded at all.
     if (this.gl) this.layers.veg = L.layerGroup([new TreesGL()]).addTo(this.map);
@@ -177,6 +181,7 @@ class App {
     this.map.on('contextmenu', (e) => { if (this.measure?.active) { this.measure.undo(); return; } if (this.config?.web_pins !== false) this.layers.markers.openPinEditor(e.latlng); });
     // the ruler: distances, travel times and reach (drawn in the WebGL map)
     if (this.gl) {
+      setSpeeds(this.config);
       this.measure = new MeasureTool(this);
       const mb = $('#btn-measure');
       mb.hidden = false;

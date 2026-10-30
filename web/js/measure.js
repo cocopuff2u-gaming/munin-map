@@ -6,16 +6,31 @@ import { ShapesCanvas } from './layers/shapes.js';
 import { fromLatLng, toLatLng, worldTile } from './crs.js';
 import { escape } from './layers/markers.js';
 
-// travel speeds in metres a second: rough, for a sense of the trip (boats with a fair wind; on foot
-// running with stops for stamina)
+// travel speeds in metres a second (boats: rough, with a fair wind, they're pushed by the physics). On foot
+// and by lox the server sends the game's own (setSpeeds): a player's jog, and a lox's run and trot by its
+// saddle's stamina
 export const TRAVEL = [
-  { id: 'foot', label: 'On foot', speed: 5, kind: 'land' },
+  { id: 'foot', label: 'On foot (jog)', speed: 4, kind: 'land' },
   { id: 'lox', label: 'Lox', speed: 7, kind: 'land' },
   { id: 'raft', label: 'Raft', speed: 3.5, kind: 'water' },
   { id: 'karve', label: 'Karve', speed: 8, kind: 'water' },
   { id: 'longship', label: 'Longship', speed: 10, kind: 'water' },
   { id: 'drakkar', label: 'Drakkar', speed: 11, kind: 'water' },
 ];
+export function setSpeeds(cfg) {
+  for (const [id, key] of [['foot', 'speed_foot'], ['lox', 'speed_lox']]) {
+    const v = Number(cfg?.[key]);
+    if (v > 0.5 && v < 30) TRAVEL.find((t) => t.id === id).speed = Math.round(v * 10) / 10;
+  }
+  // a lox runs while its saddle's stamina lasts, then trots
+  const trot = Number(cfg?.speed_lox_trot), runFor = Number(cfg?.lox_run_seconds), lox = TRAVEL.find((t) => t.id === 'lox');
+  if (trot > 0.5 && runFor > 0) { lox.trot = trot; lox.runFor = runFor; }
+}
+// seconds for a trip of d metres
+export function tripTime(t, d) {
+  if (!t.trot || !t.runFor || d <= t.speed * t.runFor) return d / t.speed;
+  return t.runFor + (d - t.speed * t.runFor) / t.trot;
+}
 const MINUTES = [2, 5, 10, 15, 30];
 // Reach in bands, each its own colour from green (close) to red (the limit), five or so whatever
 // the minutes: one colour fading out was hard to read
@@ -91,7 +106,7 @@ export class MeasureTool {
       if (this.points.length < 2) body = '<div class="mp-hint">Click the map to add points (they snap to markers). Right-click takes the last one back.</div>';
       else {
         body = `<div class="mp-total">${fmtDist(d)}${this.points.length > 2 ? ` <small>${this.points.length - 1} legs</small>` : ''}</div>
-          <table class="mp-times">${TRAVEL.map((t) => `<tr><td>${t.label}</td><td>${fmtTime(d / t.speed)}</td></tr>`).join('')}</table>
+          <table class="mp-times">${TRAVEL.map((t) => `<tr><td>${t.label}</td><td>${fmtTime(tripTime(t, d))}</td></tr>`).join('')}</table>
           <div class="mp-hint">Straight lines: around hills and coasts takes longer. Boats with a fair wind.</div>`;
       }
       body += `<div class="mp-row"><button class="btn small" data-act="clear"${this.points.length ? '' : ' disabled'}>Clear</button></div>`;

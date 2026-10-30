@@ -7,6 +7,7 @@
 
 import { getJSON } from './net.js';
 
+import { makeEffects } from './particles.js';
 let three = null;     // { THREE, GLTFLoader, OrbitControls }, once loaded
 let view = null;      // the one renderer, scene and camera
 const models = new Map();   // portrait id -> Promise<THREE.Object3D> (made once)
@@ -52,171 +53,78 @@ async function bodyTexture(THREE, d) {
   return t;
 }
 
-// The effects the game plays on what they carry (a fire staff's flames, sparks, mist) and the lights
-// some items give, played here from the game's own settings (the server reads them: Portraits.Effects).
-// A simple particle player: born in the effect's shape at its rate, moving at its speed with its gravity,
-// growing and fading over their life as the game's curves say; fire adds light, smoke covers.
-const MAX_PARTICLES = 200;
-const softDot = (() => { let t = null; return (THREE) => {
-  if (t) return t;
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.4, 'rgba(255,255,255,0.5)'); r.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
-  t = new THREE.CanvasTexture(c); return t;
-}; })();
-const lerp3 = (a, t) => t < 0.5 ? a[0] + (a[1] - a[0]) * t * 2 : a[1] + (a[2] - a[1]) * (t - 0.5) * 2;
-async function makeEffects(THREE, list) {
-  const out = [];
-  for (const e of list) {
-    if (e.kind === 'light') {
-      // the light it gives: lighting the model, and a soft glow where it is
-      const c = new THREE.Color(e.color[0], e.color[1], e.color[2]);
-      const g = new THREE.Group();
-      // (softer than the game's: in the portrait's soft studio light, a staff's or the void knife's light at full
-      // strength washed the whole outfit in its colour)
-      const pl = new THREE.PointLight(c, Math.min(4, e.intensity) * 0.3, Math.max(0.5, Math.min(1.5, e.range)), 2);
-      pl.position.set(...e.pos); g.add(pl);
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: softDot(THREE), color: c, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
-      sp.position.set(...e.pos); sp.scale.setScalar(0.18); g.add(sp);
-      out.push({ object: g, step() {} });
-      continue;
-    }
-    const n = Math.max(4, Math.min(MAX_PARTICLES, e.max || MAX_PARTICLES, Math.ceil(e.rate * Math.max(0.1, e.life) * 1.2)));
-    const geo = new THREE.BufferGeometry();
-    const pos = new Float32Array(n * 3), col = new Float32Array(n * 4), size = new Float32Array(n), age = new Float32Array(n);
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('age', new THREE.BufferAttribute(age, 1));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
-    geo.setAttribute('psize', new THREE.BufferAttribute(size, 1));
-    let map = softDot(THREE);
-    if (e.tex) { try { const t = await new THREE.TextureLoader().loadAsync(`models/${e.tex}`); t.colorSpace = THREE.SRGBColorSpace; map = t; } catch {} }
-    // gradient-mapped (fire, frost, lightning): the picture's light picks the colour along a ramp from dark
-    // to bright, the ramp changing over the particle's life, and is its see-through too
-    const R = e.ramp, v4 = (c) => new THREE.Vector4(...(c || [1, 1, 1, 1]));
-    const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: map }, scale: { value: 400 }, tiles: { value: e.tiles || 1 }, cover: { value: e.additive ? 0 : 1 },
-        ramped: { value: R ? 1 : 0 }, hi0: { value: v4(R?.[0]) }, hi1: { value: v4(R?.[1]) }, lo0: { value: v4(R?.[2]) }, lo1: { value: v4(R?.[3]) } },
-      vertexShader: `attribute vec4 color; attribute float psize; attribute float age; varying vec4 vC; varying float vT; uniform float scale;
-        void main() { vC = color; vT = age; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * scale / -mv.z; gl_Position = projectionMatrix * mv; }`,
-      fragmentShader: `uniform sampler2D map; uniform float tiles; uniform float cover; uniform float ramped; uniform vec4 hi0, hi1, lo0, lo1; varying vec4 vC; varying float vT;
-        void main() { vec2 uv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y) / tiles + vec2(0.0, 1.0 - 1.0 / tiles); vec4 t = texture2D(map, uv);
-          float a = t.a; if (cover > 0.5 && a > 0.99) a = smoothstep(0.03, 0.35, max(t.r, max(t.g, t.b)));   // (a covering picture with no see-through: its black is the background)
-          vec3 rgb = t.rgb;
-          if (ramped > 0.5) { vec4 c = mix(mix(lo0, lo1, vT), mix(hi0, hi1, vT), t.r); rgb = c.rgb; a = t.r * c.a; }
-          gl_FragColor = vec4(min(rgb * vC.rgb, vec3(1.0)), a * vC.a); if (gl_FragColor.a < 0.01) discard; }`,
-      transparent: true, depthWrite: false,
-      // light-adding: adds colour only, never makes the see-through background solid (its dark would show as black squares)
-      ...(e.additive ? { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor,
-        blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor } : { blending: THREE.NormalBlending }),
-    });
-    const points = new THREE.Points(geo, mat);
-    points.frustumCulled = false;
-    // trails: where each particle has been, drawn as a line of soft dots behind it that fades (a lightning
-    // arc, a swirl); some effects draw only these
-    const PER = 3, TS = e.trail ? 16 * PER : 0, tN = n * TS;   // (16 points of its path, 3 dots between each)
-    let tgeo = null;
-    const tpos = new Float32Array(tN * 3), tcol = new Float32Array(tN * 4), tsize = new Float32Array(tN), tage = new Float32Array(tN);
-    if (TS) {
-      tgeo = new THREE.BufferGeometry();
-      tgeo.setAttribute('position', new THREE.BufferAttribute(tpos, 3)); tgeo.setAttribute('color', new THREE.BufferAttribute(tcol, 4));
-      tgeo.setAttribute('psize', new THREE.BufferAttribute(tsize, 1)); tgeo.setAttribute('age', new THREE.BufferAttribute(tage, 1));
-      const tp = new THREE.Points(tgeo, mat); tp.frustumCulled = false; points.add(tp);
-    }
-    const P = Array.from({ length: n }, () => ({ age: 1e9, life: 1, p: new THREE.Vector3(), v: new THREE.Vector3(), w: new THREE.Vector3(), h: [], ht: 0 }));
-    const rnd = new THREE.Vector3();
-    const origin = new THREE.Vector3(...e.pos), dir = new THREE.Vector3(...e.dir).normalize();
-    const side = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
-    const up2 = new THREE.Vector3().crossVectors(dir, side);
-    let owed = 0, next = 0;
-    const spawn = (q) => {
-      q.age = 0; q.life = Math.max(0.05, e.life * (0.8 + Math.random() * 0.4)); q.h.length = 0; q.ht = 0; q.w.set(0, 0, 0);
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * e.radius;
-      if (e.shape.startsWith('Cone') || e.shape === 'Circle' || e.shape === 'Donut') {
-        q.p.copy(origin).addScaledVector(side, Math.cos(a) * r).addScaledVector(up2, Math.sin(a) * r);
-        const spread = Math.tan((e.angle || 0) * Math.PI / 180) * Math.sqrt(Math.random());
-        q.v.copy(dir).addScaledVector(side, Math.cos(a) * spread).addScaledVector(up2, Math.sin(a) * spread).normalize().multiplyScalar(e.speed);
-      } else {
-        const u = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
-        q.p.copy(origin).addScaledVector(u, e.shape.startsWith('Sphere') || e.shape.startsWith('Hemisphere') ? r : 0);
-        q.v.copy(u).multiplyScalar(e.speed);
+// The glow on some weapons (storm, blood and nature ones, some staffs): the game's Unlit/WeaponGlow shader, its
+// maths as the game has it. A copy of the weapon pushed out along its normals; a noise picture, its texture
+// coordinates snapped to a pixel grid and swirled by a scrolling 3D curl noise, taken away from a fade along
+// the weapon's length; that times the glow colour, blended over what is behind. (The game draws in linear
+// light: the result is turned to screen colours, like everything else here.)
+let curl = null;
+function curlNoise(THREE, file) {   // the game's curl noise, 64 x 64 x 64, from the 8 x 8 slices the server saved
+  if (!curl) curl = new Promise((ok) => {
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+      const px = g.getImageData(0, 0, c.width, c.height).data, N = 64, data = new Uint8Array(N * N * N * 4);
+      for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const sx = (z % 8) * N + x, sy = Math.floor(z / 8) * N + y, i = (sy * c.width + sx) * 4, o = ((z * N + y) * N + x) * 4;
+        data[o] = px[i]; data[o + 1] = px[i + 1]; data[o + 2] = 0; data[o + 3] = 255;
       }
+      const t = new THREE.Data3DTexture(data, N, N, N);
+      t.format = THREE.RGBAFormat; t.minFilter = t.magFilter = THREE.LinearFilter;
+      t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping; t.needsUpdate = true;
+      ok(t);
     };
-    const step = (dt) => {
-      owed += e.rate * dt;
-      while (owed >= 1) { owed -= 1; let k = 0; while (k < n && P[next].age < P[next].life) { next = (next + 1) % n; k++; } if (k < n) spawn(P[next]); else { owed = 0; break; } }
-      for (let i = 0; i < n; i++) {
-        const q = P[i];
-        q.age += dt;
-        if (q.age >= q.life) { size[i] = 0; col[i * 4 + 3] = 0; for (let k = i * TS; k < (i + 1) * TS; k++) { tsize[k] = 0; tcol[k * 4 + 3] = 0; } continue; }
-        q.v.y -= 9.81 * e.gravity * dt;
-        q.p.addScaledVector(q.v, dt);
-        if (e.noise) {   // (the game's noise: a wander that changes its mind about freq times a second)
-          // (a fast one swings harder: lightning at frequency 10 zigzags across its short trail)
-          rnd.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize().multiplyScalar(e.noise.strength * Math.max(1, e.noise.freq * 0.6));
-          q.w.lerp(rnd, Math.min(1, dt * Math.max(1, e.noise.freq) * 4));
-          q.p.addScaledVector(q.w, dt);
-        }
-        const t = q.age / q.life;
-        pos[i * 3] = q.p.x; pos[i * 3 + 1] = q.p.y; pos[i * 3 + 2] = q.p.z;
-        for (let k = 0; k < 4; k++) col[i * 4 + k] = e.color[k] * lerp3([e.fade[0][k], e.fade[1][k], e.fade[2][k]], t);
-        size[i] = e.trail?.only ? 0 : e.size * lerp3(e.grow, t); age[i] = t;
-        if (TS) {
-          // a point of the trail every so often; the line drawn through them, fading to its end
-          const keep = TS / PER, every = Math.max(0.005, e.trail.life * q.life / keep);
-          q.ht += dt;
-          if (q.ht >= every || !q.h.length) { q.ht = 0; q.h.unshift(q.p.clone()); if (q.h.length > keep) q.h.pop(); }
-          for (let k = 0; k < TS; k++) {
-            const o = i * TS + k, seg = Math.floor(k / PER), a = seg === 0 ? q.p : q.h[seg - 1], b = q.h[seg];
-            if (!a || !b) { tsize[o] = 0; tcol[o * 4 + 3] = 0; continue; }
-            const f = (k % PER) / PER, fade = 1 - k / TS;
-            tpos[o * 3] = a.x + (b.x - a.x) * f; tpos[o * 3 + 1] = a.y + (b.y - a.y) * f; tpos[o * 3 + 2] = a.z + (b.z - a.z) * f;
-            for (let c = 0; c < 3; c++) tcol[o * 4 + c] = col[i * 4 + c];
-            tcol[o * 4 + 3] = col[i * 4 + 3] * fade; tsize[o] = Math.max(0.012, e.trail.width) * (0.5 + 0.7 * fade); tage[o] = t;
-          }
-        }
-      }
-      geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.attributes.psize.needsUpdate = true; geo.attributes.age.needsUpdate = true;
-      if (tgeo) for (const k of ['position', 'color', 'psize', 'age']) tgeo.attributes[k].needsUpdate = true;
-    };
-    for (let i = 0; i < 40; i++) step(0.05);   // (already going when first seen)
-    out.push({ object: points, step, mat });
-  }
-  return out;
+    im.onerror = () => ok(null);
+    im.src = `models/${file}`;
+  });
+  return curl;
 }
-
-// The glow on some weapons (storm, blood and nature ones, some staffs): the game draws a copy of the weapon a
-// little bigger as noise drifting along it in a bright colour, adding light, faded where it turns edge-on.
-function weaponGlow(THREE, root, list) {
+async function weaponGlow(THREE, root, list) {
   const out = [], byName = new Map(list.map((g) => [g.name, g]));
-  root.traverse((o) => {
-    const g = o.isMesh && byName.get(o.material?.name);
-    if (!g) return;
-    const map = o.material.map;
-    const top = Math.max(1, g.color[0], g.color[1], g.color[2]);   // (the game's colour goes past white: kept in its hue)
+  const meshes = [];
+  root.traverse((o) => { if (o.isMesh && byName.get(o.material?.name)) meshes.push(o); });
+  if (!meshes.length) return out;
+  const noise = await curlNoise(THREE, list[0].noise || 'hd/curlnoise.png');
+  for (const o of meshes) {
+    const g = byName.get(o.material.name), map = o.material.map;
+    if (map) { map.wrapS = map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; }
+    const e = g.edge || [0, 1, 0, 1];
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: map }, tint: { value: new THREE.Vector3(g.color[0] / top, g.color[1] / top, g.color[2] / top) }, strength: { value: Math.min(2, top) * (g.color[3] ?? 1) }, time: { value: Math.random() * 10 }, hasMap: { value: map ? 1 : 0 },
-        scroll: { value: g.scroll ?? 0.13 }, scale: { value: g.scale || 1 }, push: { value: Math.min(0.02, g.push ?? 0.004) }, pixel: { value: g.pixel || 64 } },
-      vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV; uniform float push;
-        void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position + normal * push, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
-      // (the game pixelates the noise on purpose: its blocks are part of the look)
-      fragmentShader: `uniform sampler2D map; uniform vec3 tint; uniform float strength; uniform float time; uniform float hasMap; uniform float scroll; uniform float scale; uniform float pixel; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      uniforms: { map: { value: map }, curl: { value: noise }, hasCurl: { value: noise ? 1 : 0 }, color: { value: new THREE.Vector4(...g.color) },
+        time: { value: Math.random() * 10 }, scroll: { value: g.scroll ?? 0.25 }, scrollX: { value: g.scrollX ?? 0.05 }, texScale: { value: g.scale || 1 },
+        pixel: { value: g.pixel || 64 }, curlSize: { value: g.curlSize || 1 }, curlStrength: { value: g.curlStrength ?? 0.05 },
+        warp: { value: g.warp ? 1 : 0 }, edge: { value: new THREE.Vector4(...e) }, push: { value: g.push ?? 0.05 } },
+      vertexShader: `uniform float push; varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * push, 1.0); }`,
+      fragmentShader: `precision highp sampler3D;
+        uniform sampler2D map; uniform sampler3D curl; uniform float hasCurl; uniform vec4 color; uniform float time, scroll, scrollX, texScale, pixel, curlSize, curlStrength, warp; uniform vec4 edge;
+        varying vec2 vUv;
         void main() {
-          vec2 uv = floor(vUv * pixel) / pixel;
-          float n1 = hasMap > 0.5 ? texture2D(map, uv * scale + vec2(0.0, time * scroll)).r : 0.6;
-          float n2 = hasMap > 0.5 ? texture2D(map, uv * scale * 0.7 - vec2(time * scroll * 0.4, time * scroll * 0.7)).r : 0.6;
-          float n = smoothstep(0.25, 0.9, n1 * n2 * 1.8);
-          float face = abs(dot(normalize(vN), vV));   // (edge-on: faded, so its sheets don't show as sheets)
-          float a = n * smoothstep(0.05, 0.6, face) * strength;
-          gl_FragColor = vec4(tint * a, 1.0); if (a < 0.01) discard; }`,
-      transparent: true, depthWrite: false, side: THREE.DoubleSide,
-      // adds light only: the see-through background stays see-through
-      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+          vec2 uv = vec2(vUv.x, 1.0 - vUv.y);   // (the game's texture coordinates: glTF's are upside down)
+          // the fade along it: from its v (folded to a back and forth with domain warp), soft at both ends
+          float v = uv.y;
+          if (warp > 0.5) { vec2 k = (2.0 * v >= -2.0 * v) ? vec2(2.0, 0.5) : vec2(-2.0, -0.5); v = 1.0 - abs(k.x * fract(k.y * v) - 1.0); }
+          vec2 f = clamp((vec2(v, 1.0 - v) - edge.zx) / vec2(edge.w - edge.z, edge.y - edge.x), 0.0, 1.0);
+          f = f * f * (3.0 - 2.0 * f);
+          float fade = min(f.x, f.y);
+          // the noise: snapped to the pixel grid, swirled by the curl noise, scrolling
+          vec2 p = floor(uv * texScale * pixel) / pixel;
+          vec3 q = (vec3(p.x, p.y, p.y) - 0.33 * time * scroll) / curlSize;
+          vec2 c = hasCurl > 0.5 ? texture(curl, q).rg * 4.0 - 1.0 : vec2(0.5);   // (stored as (v + 1) / 4)
+          p += (c * 2.0 - 1.0) * curlSize * curlStrength;
+          vec2 s = vec2(p.x + time * scrollX, p.y - time * scroll);
+          float n = texture2D(map, vec2(s.x, 1.0 - s.y)).r;
+          float a = clamp(fade - n, 0.0, 1.0);
+          gl_FragColor = a * color;
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, depthWrite: true, side: THREE.FrontSide, blending: THREE.NormalBlending,
     });
     o.material = mat; o.renderOrder = 2;
     out.push({ object: null, anim: true, step: (dt) => { mat.uniforms.time.value += dt; } });
-  });
+  }
   return out;
 }
 
@@ -239,7 +147,7 @@ async function model(id, again = 0) {
       });
       root.userData.effects = await makeEffects(THREE, d.effects || []);
       for (const e of root.userData.effects) if (e.object) root.add(e.object);
-      root.userData.effects.push(...weaponGlow(THREE, root, d.weaponGlow || []));
+      root.userData.effects.push(...await weaponGlow(THREE, root, d.weaponGlow || []));
       root.userData.partial = d.textures === false;   // made while some of its textures were still being read: made again soon
       return root;
     })();
@@ -247,6 +155,87 @@ async function model(id, again = 0) {
     models.set(id, p);
   }
   return models.get(id);
+}
+
+// The game's own finish, from its in-game post-processing profile ("ingame"): bloom (intensity 0.3, threshold 0.7 with a
+// 0.7 soft knee, radius 5), contrast 1.2, a slightly cool white balance (temperature -8) and ACES tone mapping.
+// The scene is drawn in linear light to a buffer; the bright parts are cut out, blurred down a chain of half
+// sizes and back up (Unity's post-processing stack v1 bloom), added back, graded and turned to screen colours.
+// Exposure +1 stop (x2), as the profile has it.
+function finish(THREE, renderer, scene, camera) {
+  const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), quadScene = new THREE.Scene();
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)); quad.frustumCulled = false; quadScene.add(quad);
+  const vs = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+  const pass = (fs, uniforms) => new THREE.ShaderMaterial({ uniforms, vertexShader: vs, fragmentShader: fs, depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: false });
+  const threshold = Math.pow(0.7, 2.2), knee = threshold * 0.7 + 1e-5;   // (the profile's threshold is in screen colours)
+  const prefilter = pass(`uniform sampler2D src; uniform vec2 texel; uniform vec3 curve; uniform float threshold; varying vec2 vUv;
+    void main() {
+      vec4 d = texel.xyxy * vec4(-1.0, -1.0, 1.0, 1.0);   // (a 4-tap box down to half size)
+      vec3 c = (texture2D(src, vUv + d.xy).rgb + texture2D(src, vUv + d.zy).rgb + texture2D(src, vUv + d.xw).rgb + texture2D(src, vUv + d.zw).rgb) * 0.25;
+      float br = max(c.r, max(c.g, c.b)), rq = clamp(br - curve.x, 0.0, curve.y); rq = curve.z * rq * rq;
+      gl_FragColor = vec4(c * max(rq, br - threshold) / max(br, 1e-5), 1.0);
+    }`, { src: { value: null }, texel: { value: new THREE.Vector2() }, curve: { value: new THREE.Vector3(threshold - knee, knee * 2, 0.25 / knee) }, threshold: { value: threshold } });
+  const down = pass(`uniform sampler2D src; uniform vec2 texel; varying vec2 vUv;
+    void main() { vec4 d = texel.xyxy * vec4(-1.0, -1.0, 1.0, 1.0);
+      gl_FragColor = vec4((texture2D(src, vUv + d.xy).rgb + texture2D(src, vUv + d.zy).rgb + texture2D(src, vUv + d.xw).rgb + texture2D(src, vUv + d.zw).rgb) * 0.25, 1.0); }`,
+    { src: { value: null }, texel: { value: new THREE.Vector2() } });
+  const up = pass(`uniform sampler2D src; uniform sampler2D base; uniform vec2 texel; uniform float scale; varying vec2 vUv;
+    void main() {   // (a 9-tap tent up to the next size, added to that size's own)
+      vec4 d = texel.xyxy * vec4(1.0, 1.0, -1.0, 0.0) * scale;
+      vec3 s = texture2D(src, vUv - d.xy).rgb + texture2D(src, vUv - d.wy).rgb * 2.0 + texture2D(src, vUv - d.zy).rgb
+        + texture2D(src, vUv + d.zw).rgb * 2.0 + texture2D(src, vUv).rgb * 4.0 + texture2D(src, vUv + d.xw).rgb * 2.0
+        + texture2D(src, vUv + d.zy).rgb + texture2D(src, vUv + d.wy).rgb * 2.0 + texture2D(src, vUv + d.xy).rgb;
+      gl_FragColor = vec4(texture2D(base, vUv).rgb + s / 16.0, 1.0); }`,
+    { src: { value: null }, base: { value: null }, texel: { value: new THREE.Vector2() }, scale: { value: 1 } });
+  const out = pass(`uniform sampler2D scene; uniform sampler2D bloom; uniform vec2 texel; uniform float scale; uniform float intensity; uniform float exposure; varying vec2 vUv;
+    vec3 aces(vec3 c) {   // (three.js's ACES fit, the game's tone mapper)
+      const mat3 i = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+      const mat3 o = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+      c = i * c; vec3 a = c * (c + 0.0245786) - 0.000090537, b = c * (0.983729 * c + 0.4329510) + 0.238081; return clamp(o * (a / b), 0.0, 1.0);
+    }
+    vec3 logc(vec3 x) { return 0.244161 * log2(5.555556 * x + 0.047996) / 3.321928 + 0.386036; }   // (Unity's LogC, for grading contrast)
+    vec3 unlogc(vec3 x) { return (pow(vec3(10.0), (x - 0.386036) / 0.244161) - 0.047996) / 5.555556; }
+    vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+    void main() {
+      vec4 sc = texture2D(scene, vUv);
+      vec4 d = texel.xyxy * vec4(1.0, 1.0, -1.0, 0.0) * scale;
+      vec3 b = (texture2D(bloom, vUv - d.xy).rgb + texture2D(bloom, vUv - d.wy).rgb * 2.0 + texture2D(bloom, vUv - d.zy).rgb
+        + texture2D(bloom, vUv + d.zw).rgb * 2.0 + texture2D(bloom, vUv).rgb * 4.0 + texture2D(bloom, vUv + d.xw).rgb * 2.0
+        + texture2D(bloom, vUv + d.zy).rgb + texture2D(bloom, vUv + d.wy).rgb * 2.0 + texture2D(bloom, vUv + d.xy).rgb) / 16.0 * intensity;
+      vec3 c = (sc.rgb + b) * exposure;
+      c *= vec3(0.985, 1.0, 1.025);                                           // white balance: temperature -8
+      c = max(unlogc((logc(max(c, vec3(0.0))) - 0.4135884) * 1.2 + 0.4135884), vec3(0.0));   // contrast 1.2
+      c = srgb(aces(c));
+      gl_FragColor = vec4(c, clamp(max(sc.a, max(b.r, max(b.g, b.b))), 0.0, 1.0));   // (the halo shows over the see-through background too)
+    }`, { scene: { value: null }, bloom: { value: null }, texel: { value: new THREE.Vector2() }, scale: { value: 1 }, intensity: { value: 0.3 }, exposure: { value: 2.0 } });
+  let w = 0, h = 0, sceneRT = null, levels = [], ups = [];
+  const target = (W, H, samples = 0) => new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, depthBuffer: samples > 0, samples });
+  const blit = (mat, to) => { quad.material = mat; renderer.setRenderTarget(to); renderer.render(quadScene, quadCam); };
+  return () => {
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (size.x !== w || size.y !== h) {
+      w = size.x; h = size.y;
+      sceneRT?.dispose(); levels.forEach((l) => l.dispose()); ups.forEach((l) => l.dispose()); levels = [];
+      sceneRT = target(w, h, 4);
+      const logh = Math.log2(Math.min(w, h)) + 5 - 8, n = Math.max(1, Math.min(16, Math.floor(logh)));
+      for (let i = 0, lw = w, lh = h; i < n; i++) { lw = Math.max(1, lw >> 1); lh = Math.max(1, lh >> 1); levels.push(target(lw, lh)); }
+      ups = levels.slice(0, -1).map((l) => target(l.width, l.height));
+      up.uniforms.scale.value = out.uniforms.scale.value = 0.5 + logh - Math.floor(logh);
+    }
+    const tm = renderer.toneMapping; renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setRenderTarget(sceneRT); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, camera);
+    // the bright parts, down the chain of half sizes and back up
+    prefilter.uniforms.src.value = sceneRT.texture; prefilter.uniforms.texel.value.set(1 / w, 1 / h); blit(prefilter, levels[0]);
+    for (let i = 1; i < levels.length; i++) { down.uniforms.src.value = levels[i - 1].texture; down.uniforms.texel.value.set(1 / levels[i - 1].width, 1 / levels[i - 1].height); blit(down, levels[i]); }
+    let last = levels[levels.length - 1];
+    for (let i = levels.length - 2; i >= 0; i--) {
+      up.uniforms.src.value = last.texture; up.uniforms.base.value = levels[i].texture; up.uniforms.texel.value.set(1 / last.width, 1 / last.height);
+      blit(up, ups[i]); last = ups[i];
+    }
+    out.uniforms.scene.value = sceneRT.texture; out.uniforms.bloom.value = last.texture; out.uniforms.texel.value.set(1 / last.width, 1 / last.height);
+    blit(out, null);
+    renderer.toneMapping = tm;
+  };
 }
 
 // Show portrait `id` in element `box` (sized by CSS). Resolves true when drawn, false if it couldn't be.
@@ -280,7 +269,8 @@ export async function showPortrait(box, id, keepView = false, again = 0) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = false; controls.enableZoom = false; controls.enableDamping = false;
     controls.minPolarAngle = Math.PI * 0.3; controls.maxPolarAngle = Math.PI * 0.62;
-    view = { THREE, renderer, scene, camera, controls, current: null, draw: () => renderer.render(scene, camera) };
+    view = { THREE, renderer, scene, camera, controls, current: null };
+    view.draw = finish(THREE, renderer, scene, camera);
     controls.addEventListener('change', view.draw);
     renderer.domElement.className = 'pc-3d';
     renderer.domElement.title = 'Drag to turn';
@@ -299,7 +289,14 @@ export async function showPortrait(box, id, keepView = false, again = 0) {
     const c = b.getCenter(new THREE.Vector3());
     c.y = b.min.y + 0.95;   // (the middle of a 1.9 m figure standing on its feet)
     const half = Math.tan(THREE.MathUtils.degToRad(v.camera.fov / 2));
-    const dist = (2.05 * 0.5) / half;
+    // further back when what's held reaches out past the card's sides (a sword held out, a spear across), up
+    // to a third further, so the weapon stays in the picture
+    // (held items are the rigid parts; skinned clothing's bounds are its rest pose, wider than it hangs)
+    const all = b.clone();
+    root.traverse((o) => { if (o.isMesh && !o.isSkinnedMesh && !o.material?.name?.startsWith('munin_weaponglow')) all.expandByObject(o); });
+    const aspect = (box.clientWidth || 140) / (box.clientHeight || 210);
+    const reach = all.isEmpty() ? 0 : Math.max(c.x - all.min.x, all.max.x - c.x) + 0.08;
+    const dist = Math.min(1.35, Math.max(1, reach / (1.025 * aspect))) * (2.05 * 0.5) / half;
     const s = { y: 2.05 };
     v.controls.target.copy(c);
     if (turned) v.camera.position.copy(c).add(turned);
@@ -313,14 +310,16 @@ export async function showPortrait(box, id, keepView = false, again = 0) {
   if (v.renderer.domElement.parentNode !== box) box.appendChild(v.renderer.domElement);
   // effects: played while the portrait is on screen
   const fx = root.userData.effects || [];
-  for (const f of fx) if (f.mat) f.mat.uniforms.scale.value = h * v.renderer.getPixelRatio() / (2 * Math.tan(THREE.MathUtils.degToRad(v.camera.fov / 2)));
   if (v.raf) cancelAnimationFrame(v.raf), v.raf = 0;
-  if (fx.some((f) => f.mat || f.anim)) {
+  if (fx.some((f) => f.anim)) {
+    const cam = new THREE.Vector3();
     let last = performance.now();
     const tick = (now) => {
       if (!v.renderer.domElement.isConnected || v.current !== root) { v.raf = 0; return; }
-      const dt = Math.min(0.1, (now - last) / 1000); last = now;
-      for (const f of fx) f.step(dt);
+      const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));   // (the first frame's time can come a moment before the clock was read)
+      last = now;
+      root.worldToLocal(cam.copy(v.camera.position));   // (trails and ribbons face the camera)
+      for (const f of fx) f.step(dt, cam);
       v.draw();
       v.raf = requestAnimationFrame(tick);
     };
