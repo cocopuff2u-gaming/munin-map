@@ -18,9 +18,16 @@ namespace MuninMap.Models.Unity
         public string UnityVersion = "";
         private int cacheIndex = -1; private byte[] cacheBuf;
 
-        public BundleFile(string path)
+        // baseOffset: where the bundle starts in the file (mods embed theirs inside their DLLs)
+        public BundleFile(string path, long baseOffset = 0)
         {
             fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
+            try { Open(baseOffset); } catch { fs.Dispose(); throw; }
+        }
+
+        private void Open(long baseOffset)
+        {
+            fs.Seek(baseOffset, SeekOrigin.Begin);
             var r = new BigEndianReader(fs);
             string sig = r.CString();
             if (sig != "UnityFS") throw new InvalidDataException("not a UnityFS bundle");
@@ -29,17 +36,17 @@ namespace MuninMap.Models.Unity
             long size = r.I64();
             int cbi = (int)r.U32(), ubi = (int)r.U32();
             uint flags = r.U32();
-            if (version >= 7) r.Align(16);
+            if (version >= 7) { long rel = fs.Position - baseOffset; if (rel % 16 != 0) fs.Seek(16 - rel % 16, SeekOrigin.Current); }
             byte[] bi = new byte[cbi];
             long afterHeader = fs.Position;
-            if ((flags & 0x80) != 0) { fs.Seek(fs.Length - cbi, SeekOrigin.Begin); ReadFull(bi, cbi); }
+            if ((flags & 0x80) != 0) { fs.Seek((baseOffset == 0 ? fs.Length : baseOffset + size) - cbi, SeekOrigin.Begin); ReadFull(bi, cbi); }
             else { ReadFull(bi, cbi); afterHeader = fs.Position; }
             byte[] info = Decompress(bi, cbi, (int)(flags & 0x3F), ubi);
             var ir = new BigEndianReader(new MemoryStream(info));
             ir.Skip(16);
             int nb = (int)ir.U32();
             long fileOff = afterHeader;
-            if ((flags & 0x200) != 0) fileOff = (fileOff + 15) / 16 * 16;
+            if ((flags & 0x200) != 0) fileOff = baseOffset + (fileOff - baseOffset + 15) / 16 * 16;
             long dataOff = 0;
             for (int i = 0; i < nb; i++)
             {

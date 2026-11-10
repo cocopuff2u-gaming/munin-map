@@ -149,12 +149,13 @@ namespace MuninMap.World
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int done = 0;
-            foreach (var kv in byAtlas)
+            // every atlas in one pass over the game's and the mods' files (#30: one pass per atlas
+            // read ~2 GB each, and a modded server has hundreds of them)
+            var missing = TextureExtractor.FindTextures(dataDir, byAtlas.Keys, (atlas, rgba, w, h) =>
             {
+                var kv = new KeyValuePair<string, List<Entry>>(atlas, byAtlas[atlas]);
                 try
                 {
-                    byte[] rgba = TextureExtractor.FindTexture(dataDir, kv.Key, out int w, out int h);
-                    if (rgba == null) { log.LogInfo($"item icons: atlas {kv.Key} not found ({kv.Value.Count} items without an icon)"); continue; }
                     foreach (var e in kv.Value)
                     {
                         int x0 = Mathf.Clamp(Mathf.RoundToInt(e.rect.x), 0, w), y0 = Mathf.Clamp(Mathf.RoundToInt(e.rect.y), 0, h);
@@ -181,9 +182,11 @@ namespace MuninMap.World
                     }
                 }
                 catch (Exception ex) { log.LogWarning($"item icons: atlas {kv.Key}: {ex.Message}"); }
-            }
+            });
+            int without = missing.Sum(a => byAtlas[a].Count);
             try { File.WriteAllText(mf, manifest); } catch { }
-            log.LogInfo($"{done} item icons extracted from {byAtlas.Count} atlases in {sw.Elapsed.TotalSeconds:F0} s");
+            log.LogInfo($"{done} item icons extracted from {byAtlas.Count - missing.Count} of {byAtlas.Count} atlases in {sw.Elapsed.TotalSeconds:F0} s"
+                + (missing.Count > 0 ? $"; {without} items without an icon (their textures are not in the game's or the mods' files, or in a format not read here)" : ""));
         }
     }
 }

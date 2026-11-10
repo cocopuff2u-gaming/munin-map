@@ -45,6 +45,14 @@ namespace MuninMap.Models
             // names alone decide whether an object is worth decoding; the full key is checked after
             var names = new HashSet<string>();
             foreach (var k in wanted) names.Add(k.Substring(0, k.IndexOf('|')));
+            // names the game's files don't have (a mod's meshes) are given up at once: no pass over ~2 GB for them (#30)
+            var have = TextureExtractor.InGameFiles(dataDir, 43, names);
+            if (have != null)
+            {
+                wanted.RemoveWhere(k => { string n = k.Substring(0, k.IndexOf('|')); if (have.Contains(n)) return false; lock (gaveUp) gaveUp.Add(k); return true; });
+                names = have;
+                if (wanted.Count == 0) { LastReport = $"0 of {total} meshes: none are in the game's files"; ZLog.Log("MuninMap: " + LastReport); return; }
+            }
             ZLog.Log($"MuninMap: extracting {total} meshes from the game files in {dataDir}");
             foreach (string path in TextureExtractor.AssetFiles(dataDir))
             {

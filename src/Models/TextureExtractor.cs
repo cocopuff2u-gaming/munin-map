@@ -46,22 +46,16 @@ namespace MuninMap.Models
         private static void Run(HashSet<string> wanted, string dataDir, string modelsDir, int maxSize)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            int total = wanted.Count, found = 0, unsupported = 0, files = 0;
-            ZLog.Log($"MuninMap: extracting {total} textures from the game files in {dataDir}");
-            foreach (string path in AssetFiles(dataDir))
+            int total = wanted.Count, found = 0;
+            var missing = FindTextures(dataDir, wanted, (name, rgba, w, h) =>
             {
-                if (wanted.Count == 0) break;
-                files++;
-                try
-                {
-                    if (IsBundle(path)) found += FromBundle(path, wanted, modelsDir, maxSize, ref unsupported);
-                    else found += FromSerialized(path, null, File.ReadAllBytes(path), wanted, modelsDir, maxSize, ref unsupported);
-                }
-                catch (Exception e) { if (MuninConfig.DEBUG) ZLog.LogWarning($"MuninMap: {Path.GetFileName(path)} skipped: {e.Message}"); }
-            }
-            lock (gaveUp) foreach (var w in wanted) gaveUp.Add(w);
+                try { WritePng(rgba, w, h, maxSize, Path.Combine(modelsDir, PrefabExporter.TextureFileName(name))); found++; }
+                catch (Exception e) { ZLog.LogWarning($"MuninMap: could not write texture {name}: {e.Message}"); }
+            }, bundlesFirst: true);
+            lock (gaveUp) foreach (var w in wanted) if (missing.Contains(w)) gaveUp.Add(w);
+            int unsupported = 0; lock (index) foreach (var m in missing) if (indexBundles.TryGetValue(m, out var at) && !TextureDecoder.Supported(at.Format)) unsupported++;
             LastFound = found;
-            LastReport = $"{found} of {total} textures extracted from {files} files in {sw.Elapsed.TotalSeconds:F0}s" + (unsupported > 0 ? $", {unsupported} in unsupported formats" : "") + (wanted.Count > 0 ? $", {wanted.Count} not found" : "");
+            LastReport = $"{found} of {total} textures extracted in {sw.Elapsed.TotalSeconds:F0}s" + (unsupported > 0 ? $", {unsupported} in formats not read here (e.g. crunched)" : "") + (missing.Count - unsupported > 0 ? $", {missing.Count - unsupported} not found" : "");
             ZLog.Log("MuninMap: " + LastReport);
         }
 
@@ -95,99 +89,254 @@ namespace MuninMap.Models
             catch { return false; }
         }
 
-        private static int FromBundle(string path, HashSet<string> wanted, string modelsDir, int maxSize, ref int unsupported)
-        {
-            int found = 0;
-            using (var bundle = new BundleFile(path))
-            {
-                foreach (var node in bundle.Nodes)
-                {
-                    if (wanted.Count == 0) break;
-                    if (node.Name.EndsWith(".resS", StringComparison.Ordinal) || node.Name.EndsWith(".resource", StringComparison.Ordinal) || node.Size < 48 || node.Size > 512L * 1024 * 1024) continue;
-                    byte[] data;
-                    try { data = bundle.ReadNode(node); } catch { continue; }
-                    if (!SerializedFile.Looks(data)) continue;
-                    found += FromSerialized(path, bundle, data, wanted, modelsDir, maxSize, ref unsupported);
-                }
-            }
-            return found;
-        }
-
-        private static int FromSerialized(string path, BundleFile bundle, byte[] data, HashSet<string> wanted, string modelsDir, int maxSize, ref int unsupported)
-        {
-            SerializedFile sf;
-            try { sf = new SerializedFile(data); } catch { return 0; }
-            int found = 0;
-            foreach (var o in sf.Objects)
-            {
-                if (sf.ClassOf(o) != 28) continue;
-                SerializedFile.Texture2D tex;
-                try { tex = sf.ReadTexture2D(o); } catch { continue; }
-                if (tex == null || tex.Name == null || !wanted.Contains(tex.Name)) continue;
-                if (tex.Width <= 0 || tex.Height <= 0) continue;
-                if (!TextureDecoder.Supported(tex.Format)) { unsupported++; wanted.Remove(tex.Name); lock (gaveUp) gaveUp.Add(tex.Name); ZLog.LogWarning($"MuninMap: texture {tex.Name} is in format {tex.Format}, not supported"); continue; }
-                byte[] rgba = DecodeTexture(path, bundle, tex);
-                if (rgba == null) continue;
-                try
-                {
-                    WritePng(rgba, tex.Width, tex.Height, maxSize, Path.Combine(modelsDir, PrefabExporter.TextureFileName(tex.Name)));
-                    wanted.Remove(tex.Name); found++;
-                }
-                catch (Exception e) { ZLog.LogWarning($"MuninMap: could not write texture {tex.Name}: {e.Message}"); }
-            }
-            return found;
-        }
-
-        // One texture by name, decoded to RGBA32 (rows bottom-up), from wherever it is in the game's
-        // files: the plain .assets files first (the UI atlases live there), then the bundles.
+        // One texture by name, decoded to RGBA32 (rows bottom-up); null when it isn't anywhere.
         internal static byte[] FindTexture(string dataDir, string name, out int w, out int h)
         {
-            w = h = 0;
-            var files = AssetFiles(dataDir).ToList();
-            files.Sort((a, b) => IsBundle(a).CompareTo(IsBundle(b)));
-            foreach (string path in files)
+            byte[] got = null; int gw = 0, gh = 0;
+            FindTextures(dataDir, new[] { name }, (n, rgba, tw, th) => { got = rgba; gw = tw; gh = th; });
+            w = gw; h = gh;
+            return got;
+        }
+
+        // Where every texture is (#30). Built in ONE pass over the game's files and the mods' bundles
+        // the first time anything is looked up; after that a lookup opens only the file it needs, and a
+        // name that is nowhere costs nothing. Before, every lookup that missed read all ~2 GB again,
+        // and a modded server misses a lot (its items, pieces and gear are in the mods' files, often in
+        // formats not read here), so the scans ran back to back for hours and the memory kept climbing.
+        private sealed class At { public Source Src; public string Node; public int Format; }
+        private static readonly Dictionary<string, At> index = new Dictionary<string, At>(StringComparer.Ordinal);          // .assets first (UI atlases)
+        private static readonly Dictionary<string, At> indexBundles = new Dictionary<string, At>(StringComparer.Ordinal);   // the game's bundles first (world models)
+        private static readonly object indexLock = new object();
+        private static bool indexed;
+        // the names of the game's own meshes (43) and materials (21), so their extractors can skip
+        // names that are nowhere in the game's files (a mod's) instead of reading everything for them
+        private static readonly HashSet<string> gameMeshes = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> gameMaterials = new HashSet<string>(StringComparer.Ordinal);
+        private static bool meshNameMissed, materialNameMissed;   // a name that couldn't be read: don't filter that kind
+
+        // the wanted names the game's files have (by kind: 43 mesh, 21 material); null when the index can't tell
+        internal static HashSet<string> InGameFiles(string dataDir, int classId, IEnumerable<string> names)
+        {
+            try { EnsureIndex(dataDir); } catch { return null; }
+            var set = classId == 43 ? gameMeshes : classId == 21 ? gameMaterials : null;
+            if (set == null || (classId == 43 ? meshNameMissed : materialNameMissed)) return null;
+            var r = new HashSet<string>();
+            lock (index) foreach (var n in names) if (set.Contains(n)) r.Add(n);
+            return r;
+        }
+
+        private static void EnsureIndex(string dataDir)
+        {
+            lock (indexLock)
             {
+                if (indexed) return;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int files = 0, mods = 0;
+                foreach (var src in Sources(dataDir, bundlesFirst: false))
+                {
+                    files++;
+                    if (src.Mod) mods++;
+                    try
+                    {
+                        if (src.Bundle)
+                        {
+                            using (var bundle = new BundleFile(src.Path, src.Offset))
+                                foreach (var node in bundle.Nodes)
+                                {
+                                    if (!Wanted(node)) continue;
+                                    byte[] data;
+                                    try { data = bundle.ReadNode(node); } catch { continue; }   // (LZMA-packed mod bundles land here)
+                                    if (SerializedFile.Looks(data)) Note(data, src, node.Name);
+                                }
+                        }
+                        else Note(File.ReadAllBytes(src.Path), src, null);
+                    }
+                    catch { }
+                }
+                indexed = true;
+                ZLog.Log($"MuninMap: {index.Count} textures, {gameMeshes.Count} meshes and {gameMaterials.Count} materials indexed in {files} files ({mods} from mods) in {sw.Elapsed.TotalSeconds:F0}s"
+                    + (meshNameMissed || materialNameMissed ? " (some names unreadable: those kinds are searched in full)" : ""));
+            }
+        }
+
+        // a named object's name, the first field, without decoding the rest
+        internal static string PeekName(byte[] data, SerializedFile.ObjectInfo o)
+        {
+            try
+            {
+                int p = (int)o.Start;
+                int len = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
+                if (len < 0 || len > 512 || p + 4 + len > data.Length) return null;
+                return System.Text.Encoding.UTF8.GetString(data, p + 4, len);
+            }
+            catch { return null; }
+        }
+
+        private static bool GameBundle(Source s) => s.Bundle && s.Offset == 0 && !s.Mod;
+
+        private static bool Wanted(BundleFile.Node node) =>
+            !node.Name.EndsWith(".resS", StringComparison.Ordinal) && !node.Name.EndsWith(".resource", StringComparison.Ordinal) && node.Size >= 48 && node.Size <= 512L * 1024 * 1024;
+
+        // the first copy of a name wins (the game's files are listed before the mods'), except that for
+        // the models a copy in one of the game's bundles beats one in a plain .assets file
+        private static void Note(byte[] data, Source src, string node)
+        {
+            SerializedFile sf;
+            try { sf = new SerializedFile(data); } catch { return; }
+            foreach (var o in sf.Objects)
+            {
+                int cls = sf.ClassOf(o);
+                if ((cls == 43 || cls == 21) && !src.Mod)
+                {
+                    string nm = PeekName(data, o);
+                    lock (index)
+                    {
+                        if (nm != null) (cls == 43 ? gameMeshes : gameMaterials).Add(nm);
+                        else if (cls == 43) meshNameMissed = true; else materialNameMissed = true;
+                    }
+                    continue;
+                }
+                if (cls != 28) continue;
+                SerializedFile.Texture2D tex;
+                try { tex = sf.ReadTexture2D(o); } catch { continue; }
+                if (tex == null || string.IsNullOrEmpty(tex.Name) || tex.Width <= 0 || tex.Height <= 0) continue;
+                var at = new At { Src = src, Node = node, Format = tex.Format };
+                lock (index)
+                {
+                    if (!index.ContainsKey(tex.Name)) index[tex.Name] = at;
+                    if (!indexBundles.TryGetValue(tex.Name, out var had) || (GameBundle(at.Src) && !had.Src.Bundle)) indexBundles[tex.Name] = at;
+                }
+            }
+        }
+
+        // Several textures by name: found(name, rgba, w, h) runs once per name decoded. Returns the
+        // names that were nowhere or could not be decoded.
+        internal static HashSet<string> FindTextures(string dataDir, IEnumerable<string> names, Action<string, byte[], int, int> found, bool bundlesFirst = false)
+        {
+            EnsureIndex(dataDir);
+            var idx = bundlesFirst ? indexBundles : index;
+            var left = new HashSet<string>(names);
+            // group by file and node, so each is opened once
+            var groups = new Dictionary<string, List<string>>();
+            var where = new Dictionary<string, At>();
+            lock (index)
+                foreach (var n in left)
+                {
+                    if (!idx.TryGetValue(n, out var at) || !TextureDecoder.Supported(at.Format)) continue;
+                    string key = at.Src.Path + "|" + at.Src.Offset + "|" + at.Node;
+                    if (!groups.TryGetValue(key, out var g)) { groups[key] = g = new List<string>(); where[key] = at; }
+                    g.Add(n);
+                }
+            foreach (var kv in groups)
+            {
+                var at = where[kv.Key];
+                var want = new HashSet<string>(kv.Value);
                 try
                 {
-                    if (IsBundle(path))
+                    if (at.Src.Bundle)
                     {
-                        using (var bundle = new BundleFile(path))
-                            foreach (var node in bundle.Nodes)
-                            {
-                                if (node.Name.EndsWith(".resS", StringComparison.Ordinal) || node.Name.EndsWith(".resource", StringComparison.Ordinal) || node.Size < 48 || node.Size > 512L * 1024 * 1024) continue;
-                                byte[] data;
-                                try { data = bundle.ReadNode(node); } catch { continue; }
-                                if (!SerializedFile.Looks(data)) continue;
-                                var r = FindIn(path, bundle, data, name, out w, out h);
-                                if (r != null) return r;
-                            }
+                        using (var bundle = new BundleFile(at.Src.Path, at.Src.Offset))
+                        {
+                            var node = bundle.Find(at.Node);
+                            if (node != null) Decode(at.Src.Path, bundle, bundle.ReadNode(node), want, left, found);
+                        }
                     }
-                    else
-                    {
-                        var r = FindIn(path, null, File.ReadAllBytes(path), name, out w, out h);
-                        if (r != null) return r;
-                    }
+                    else Decode(at.Src.Path, null, File.ReadAllBytes(at.Src.Path), want, left, found);
                 }
                 catch { }
             }
-            return null;
+            return left;
         }
 
-        private static byte[] FindIn(string path, BundleFile bundle, byte[] data, string name, out int w, out int h)
+        private static void Decode(string path, BundleFile bundle, byte[] data, HashSet<string> want, HashSet<string> left, Action<string, byte[], int, int> found)
         {
-            w = h = 0;
             SerializedFile sf;
-            try { sf = new SerializedFile(data); } catch { return null; }
+            try { sf = new SerializedFile(data); } catch { return; }
             foreach (var o in sf.Objects)
             {
+                if (want.Count == 0) return;
                 if (sf.ClassOf(o) != 28) continue;
                 SerializedFile.Texture2D tex;
                 try { tex = sf.ReadTexture2D(o); } catch { continue; }
-                if (tex == null || tex.Name != name || !TextureDecoder.Supported(tex.Format)) continue;
-                w = tex.Width; h = tex.Height;
-                return DecodeTexture(path, bundle, tex);
+                if (tex == null || tex.Name == null || !want.Remove(tex.Name)) continue;
+                byte[] rgba = DecodeTexture(path, bundle, tex);
+                if (rgba == null) continue;
+                left.Remove(tex.Name);
+                try { found(tex.Name, rgba, tex.Width, tex.Height); } catch { }
             }
-            return null;
+        }
+
+        // ---------------------------------------------------------------- where to look
+
+        internal struct Source { public string Path; public long Offset; public bool Bundle; public bool Mod; }
+
+        // The game's files (AssetFiles), then every asset bundle the installed mods carry: loose UnityFS
+        // files anywhere under BepInEx/plugins, and bundles embedded in a mod's DLL (found by their
+        // signature, once per DLL version).
+        internal static IEnumerable<Source> Sources(string dataDir, bool bundlesFirst)
+        {
+            var game = AssetFiles(dataDir).ToList();
+            if (!bundlesFirst) game.Sort((a, b) => IsBundle(a).CompareTo(IsBundle(b)));   // stable enough: .assets first
+            foreach (var f in game) yield return new Source { Path = f, Offset = 0, Bundle = IsBundle(f) };
+            foreach (var s in ModBundles()) yield return s;
+        }
+
+        private static readonly Dictionary<string, long[]> embedded = new Dictionary<string, long[]>();
+
+        internal static List<Source> ModBundles()
+        {
+            var list = new List<Source>();
+            string plugins;
+            try { plugins = BepInEx.Paths.PluginPath; } catch { return list; }
+            if (string.IsNullOrEmpty(plugins) || !Directory.Exists(plugins)) return list;
+            string[] files;
+            try { files = Directory.GetFiles(plugins, "*", SearchOption.AllDirectories); } catch { return list; }
+            Array.Sort(files, StringComparer.Ordinal);
+            foreach (string f in files)
+            {
+                try
+                {
+                    var info = new FileInfo(f);
+                    if (info.Length < 64) continue;
+                    if (IsBundle(f)) { list.Add(new Source { Path = f, Offset = 0, Bundle = true, Mod = true }); continue; }
+                    if (!f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || info.Length < 4096) continue;
+                    string key = f + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks;
+                    long[] offs;
+                    lock (embedded) embedded.TryGetValue(key, out offs);
+                    if (offs == null) { offs = FindSignatures(f); lock (embedded) embedded[key] = offs; }
+                    foreach (long o in offs) list.Add(new Source { Path = f, Offset = o, Bundle = true, Mod = true });
+                }
+                catch { }
+            }
+            return list;
+        }
+
+        // offsets of "UnityFS\0" in a file, read in 1 MB pieces (a mod's DLL can be 200 MB)
+        private static long[] FindSignatures(string file)
+        {
+            var sig = new byte[] { (byte)'U', (byte)'n', (byte)'i', (byte)'t', (byte)'y', (byte)'F', (byte)'S', 0 };
+            var found = new List<long>();
+            var buf = new byte[(1 << 20) + sig.Length];
+            using (var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16))
+            {
+                long basePos = 0; int keep = 0;
+                while (true)
+                {
+                    int n = fs.Read(buf, keep, buf.Length - keep);
+                    if (n <= 0) break;
+                    int len = keep + n;
+                    for (int i = 0; i + sig.Length <= len; i++)
+                    {
+                        if (buf[i] != (byte)'U') continue;
+                        int k = 1; while (k < sig.Length && buf[i + k] == sig[k]) k++;
+                        if (k == sig.Length) found.Add(basePos + i);
+                    }
+                    keep = Math.Min(sig.Length - 1, len);
+                    Buffer.BlockCopy(buf, len - keep, buf, 0, keep);
+                    basePos += len - keep;
+                }
+            }
+            return found.ToArray();
         }
 
         // A texture's pixels as RGBA32, rows bottom-up as Unity keeps them (also used for the game's map

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+**Link preview card** (#29)
+
+* Posting the map's address in Discord (or Slack, iMessage and the like) now shows a card with the map's title and a line about it. The new `preview_image` setting adds a picture of your choosing: a file (absolute, or under BepInEx, and `$HOME`-style environment variables work) or an http(s) address. `preview_description` sets the text. Apps need the full address to fetch the picture, so set `map_url` to the address people use; otherwise it's taken from the request (a reverse proxy's `X-Forwarded-Host`/`X-Forwarded-Proto` count).
+
+**Heavily modded servers** (#30)
+
+* The server no longer reads the game's files over and over. Item icons, model textures, meshes and materials were each looked up with a full pass over the game's ~2 GB of files, and every name that wasn't there (a mod's items and pieces) cost another full pass, so on a big mod pack the passes ran back to back and the memory kept climbing. Now one pass at the start notes where everything is; after that each lookup goes straight to its file, and a name that's nowhere costs nothing.
+* Item icons and textures that mods carry in their own asset bundles (loose files, or inside their DLLs) are found too, when they're in a format the map reads. Many mods ship crunched textures, which still go without.
+
 ## 3.3.0
 
 **Your map survives updates** (#28)

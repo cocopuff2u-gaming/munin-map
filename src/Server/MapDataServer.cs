@@ -314,6 +314,13 @@ namespace MuninMap
             if (path.StartsWith("/models/", StringComparison.Ordinal)) return post ? false : ServeModel(e, path);
             if (path.StartsWith("/icons/game/", StringComparison.Ordinal)) return post ? false : ServeGameIcon(e, path);
             if (path.StartsWith("/icons/item/", StringComparison.Ordinal)) return post ? false : ServeItemIcon(e, path);
+            if (path.StartsWith("/preview-image.", StringComparison.Ordinal))
+            {
+                if (post) return false;
+                byte[] img = Server.Preview.Image(out string ictype);
+                if (img == null || Path.GetExtension(path).ToLowerInvariant() != Path.GetExtension(Server.Preview.FilePath() ?? "").ToLowerInvariant()) { NotFound(res); return true; }
+                return Bytes(e, img, ictype, req.QueryString["v"] != null ? "public, max-age=2592000, immutable" : "no-cache", etag: ETagOf(img));
+            }
 
             switch (path)
             {
@@ -761,7 +768,16 @@ namespace MuninMap
 
             byte[] data = ReadWebFile(rel);
             if (data == null) { NotFound(res); return; }
-            if (rel == "index.html") data = StampIndex(data);
+            if (rel == "index.html")
+            {
+                data = StampIndex(data);
+                // the link preview card's tags (#29): per request, for the address the request came in on
+                string title = string.IsNullOrEmpty(MAP_TITLE) ? (MuninMap.serverInfo != null && MuninMap.serverInfo.ContainsKey("serverName") ? MuninMap.serverInfo["serverName"].ToString() : "Valheim") : MAP_TITLE;
+                string html = Encoding.UTF8.GetString(data);
+                int head = html.IndexOf("<meta name=\"theme-color\"", StringComparison.Ordinal);
+                if (head < 0) head = html.IndexOf("</head>", StringComparison.Ordinal);
+                if (head >= 0) data = Encoding.UTF8.GetBytes(html.Insert(head, Server.Preview.Tags(req, title).TrimStart('\n')));
+            }
             // vendored libraries never change between mod versions. Everything else carries a content
             // hash in its URL (see StampIndex), so it can be cached hard too: a new file is a new URL,
             // and no proxy in between (Cloudflare, a browser) can hand out a stale one.

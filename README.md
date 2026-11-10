@@ -176,7 +176,9 @@ The ones people change most:
 | `enable_3d` | `true` | Offer the 3D view. |
 | `discord_webhook` | (empty) | A Discord webhook URL, to post joins, deaths, raids and more to a channel. |
 | `discord_world_events` | `true` | Also post raids and invasions to Discord. |
-| `map_url` | (empty) | The map's address, for links in Discord posts. |
+| `map_url` | (empty) | The map's address, for links in Discord posts and the link preview card. |
+| `preview_image` | (empty) | A picture (PNG, JPEG, WebP or GIF; a path under BepInEx, an absolute path or a URL) for the preview card Discord and other apps show when the map's address is posted. |
+| `preview_description` | (empty) | The text on that card. Empty: "Live map of" and the title. |
 | `explore_radius` | `110` | How far around each player the fog clears, in metres. The game uses 100. |
 | `reveal_visited` | `true` | When first installed, clear the fog everywhere players have already been. |
 | `always_visible` | `false` | Show players even if they set themselves hidden on the in-game map. |

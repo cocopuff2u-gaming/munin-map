@@ -48,6 +48,8 @@ namespace MuninMap
 
         public static string URL = "";
         public static string MAP_TITLE = "";
+        public static string PREVIEW_IMAGE = "";
+        public static string PREVIEW_DESCRIPTION = "";
         public static string DATA_PATH = "";
 
         // tile renderer
@@ -229,6 +231,16 @@ namespace MuninMap
             MAP_TITLE = config.Bind("Server", "map_title",
                 MuninConfig.MAP_TITLE,
                 "Title shown in the web map header. Empty = the server name.").Value;
+
+            PREVIEW_IMAGE = config.Bind("Server", "preview_image",
+                MuninConfig.PREVIEW_IMAGE,
+                "Picture for the link preview card Discord and other apps show when someone posts the map's address: a PNG, JPEG, WebP or GIF file "
+                + "(absolute, or under BepInEx; environment variables like $HOME or %APPDATA% work), or an http(s) address. Empty: a card with no picture. "
+                + "Apps need the full address to fetch it: set map_url to the address people use, or it is taken from the request.").Value;
+
+            PREVIEW_DESCRIPTION = config.Bind("Server", "preview_description",
+                MuninConfig.PREVIEW_DESCRIPTION,
+                "Text under the title on the link preview card. Empty: \"Live map of <title>\".").Value;
 
             RENDER_THREADS = config.Bind("Render", "render_threads",
                 MuninConfig.RENDER_THREADS,

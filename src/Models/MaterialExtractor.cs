@@ -90,6 +90,13 @@ namespace MuninMap.Models
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int total = wanted.Count;
             var found = new Dictionary<string, Dictionary<string, Color>>();
+            // names the game's files don't have (a mod's materials) are given up at once (#30)
+            var have = TextureExtractor.InGameFiles(dataDir, 21, wanted);
+            if (have != null)
+            {
+                lock (sync) foreach (var w in wanted) if (!have.Contains(w)) gaveUp.Add(w);
+                wanted.IntersectWith(have);
+            }
             foreach (string path in TextureExtractor.AssetFiles(dataDir))
             {
                 if (wanted.Count == 0) break;
