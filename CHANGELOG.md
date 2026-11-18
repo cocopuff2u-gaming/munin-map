@@ -1,12 +1,16 @@
 # Changelog
 
-## Unreleased
+## 3.4.0
+
+**Fly through the world in 3D** (#8)
+
+* A **Fly** button in the 3D view (with a mouse) turns it into free look: the mouse turns the camera, WASD flies where you look, Space and Shift go straight up and down, the wheel sets the speed, Esc stops. There are no collisions: you float through buildings, trees and rocks, only never under the ground. The terrain, buildings and objects load round wherever you fly, and stopping leaves you orbiting the spot ahead.
 
 **A brand-new world gets its map at once**
 
 * On a world with no save yet, the map waited for the next restart before it came up (it started when the game read the world's save, and a new world has none). It now starts as soon as the new world's locations are placed. Old-format worlds, which load another way, are covered too.
 
-**Layers remember more**
+**Layers remember more** (#31, thanks Sleavely)
 
 * The kinds you hide one by one under a row's arrow are remembered in your browser like the switches: leave Rocks on with only Giant bones ticked and it stays that way after a refresh. The same goes for every tree, bush, berry, ore, mushroom and plant kind, and for the World structures kinds.
 * The Map style, the 3D Time of day and the Activity time spans (last 3 or 24 hours, last day or week) are remembered too.
