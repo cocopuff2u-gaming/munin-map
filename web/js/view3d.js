@@ -180,7 +180,7 @@ export class View3D {
     canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) { down = null; return; }
       down = null;
-      if (!this.onPlayerClick || this.players.size === 0) return;
+      if (this.flying || !this.onPlayerClick || this.players.size === 0) return;
       const r = canvas.getBoundingClientRect();
       const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       this.raycaster.setFromCamera(ndc, this.camera);
@@ -197,8 +197,10 @@ export class View3D {
     });
     document.addEventListener('keyup', (e) => { this.keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key); });
     window.addEventListener('blur', () => this.keys.clear());
+    this.setupFly(canvas);
     // double click: centre on that spot
     canvas.addEventListener('dblclick', (e) => {
+      if (this.flying) return;
       const r = canvas.getBoundingClientRect();
       const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       this.raycaster.setFromCamera(ndc, this.camera);
@@ -214,6 +216,118 @@ export class View3D {
     if (id === null) return;
     const e = this.players.get(id);
     if (e) this.lookAt(e.group.position.x, -e.group.position.z);
+  }
+
+  // ---------------------------------------------------------------- fly mode (#8)
+  // Free look: the mouse turns the camera (pointer lock), WASD flies along where you look, Space
+  // and Shift go straight up and down, the wheel sets the speed. No collisions: you float through
+  // everything, only never below the ground. Esc (the browser's own pointer-lock exit) stops it.
+  setupFly(canvas) {
+    this.flying = false;
+    this.flySpeed = 1;
+    this.flyButton = document.getElementById('btn-fly');
+    this.flyHelp = document.querySelector('.v3d-flyhelp');
+    // a mouse is needed: no button on touch screens, or where the browser can't lock the pointer
+    const can = typeof canvas.requestPointerLock === 'function' && matchMedia('(pointer: fine)').matches;
+    if (this.flyButton) {
+      this.flyButton.hidden = !can;
+      this.flyButton.addEventListener('click', () => this.startFly());
+    }
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement === canvas) return;
+      if (this.flying && this.flyLocked) this.stopFly();   // Esc, or the window lost focus
+    });
+    document.addEventListener('pointerlockerror', () => { if (this.flying) this.stopFly(); });
+    canvas.addEventListener('mousemove', (e) => {
+      if (!this.flying || (this.flyLocked && document.pointerLockElement !== canvas)) return;
+      this.flyYaw -= e.movementX * 0.0025;
+      this.flyPitch = Math.max(-1.55, Math.min(1.55, this.flyPitch - e.movementY * 0.0025));
+      this.invalidate();
+    });
+    canvas.addEventListener('wheel', (e) => {
+      if (!this.flying) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      this.flySpeed = Math.max(0.25, Math.min(16, this.flySpeed * (e.deltaY < 0 ? 1.25 : 0.8)));
+      this.showFlySpeed();
+    }, { capture: true, passive: false });
+    document.addEventListener('keydown', (e) => { if (this.flying && e.key === 'Escape') this.stopFly(); });
+  }
+
+  // lock: false starts it without pointer lock (the mouse then turns the view only while it moves over
+  // the canvas; used by tests, where no real pointer exists)
+  startFly(lock = true) {
+    if (this.flying || !this.running) return;
+    if (this.followId !== null) { this.follow(null); if (this.onUnfollow) this.onUnfollow(); }
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    this.flyYaw = Math.atan2(-dir.x, -dir.z);
+    this.flyPitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+    this.camera.rotation.order = 'YXZ';
+    this.flying = true; this.flyLocked = lock;
+    this.controls.enabled = false;
+    this.keys.clear();
+    this.canvas.parentElement?.classList.add('flying');
+    if (this.flyHelp) this.flyHelp.hidden = false;
+    this.showFlySpeed();
+    if (lock) { try { const p = this.canvas.requestPointerLock(); if (p && p.catch) p.catch(() => this.stopFly()); } catch (e) { this.stopFly(); } }
+    this.invalidate();
+  }
+
+  stopFly() {
+    if (!this.flying) return;
+    this.flying = false;
+    this.keys.clear();
+    if (document.pointerLockElement === this.canvas) { try { document.exitPointerLock(); } catch (e) { /* gone */ } }
+    this.canvas.parentElement?.classList.remove('flying');
+    if (this.flyHelp) this.flyHelp.hidden = true;
+    // back to orbiting round the ground ahead (where flyTarget left the target), at a distance it allows
+    const t = this.controls.target, off = _v.copy(this.camera.position).sub(t);
+    const d = Math.min(this.controls.maxDistance, Math.max(this.controls.minDistance, off.length()));
+    if (off.y < 1) off.y = 1;   // the orbit keeps the camera above its target
+    this.camera.position.copy(t).add(off.setLength(d));
+    this.controls.enabled = true;
+    this.controls.update();
+    this.invalidate(); this.scheduleUpdate();
+  }
+
+  showFlySpeed() {
+    const el = document.getElementById('fly-speed');
+    if (el) el.textContent = (this.flySpeed >= 1 ? this.flySpeed.toFixed(this.flySpeed < 10 ? 1 : 0) : this.flySpeed.toFixed(2)).replace(/\.0+$/, '') + 'x';
+  }
+
+  // every frame while flying
+  handleFly(dt) {
+    const K = this.keys, cam = this.camera.position;
+    this.camera.rotation.set(this.flyPitch, this.flyYaw, 0, 'YXZ');
+    const fwd = new THREE.Vector3(-Math.sin(this.flyYaw) * Math.cos(this.flyPitch), Math.sin(this.flyPitch), -Math.cos(this.flyYaw) * Math.cos(this.flyPitch));
+    const right = new THREE.Vector3(Math.cos(this.flyYaw), 0, -Math.sin(this.flyYaw));
+    const move = new THREE.Vector3();
+    if (K.has('w') || K.has('ArrowUp')) move.add(fwd);
+    if (K.has('s') || K.has('ArrowDown')) move.sub(fwd);
+    if (K.has('d') || K.has('ArrowRight')) move.add(right);
+    if (K.has('a') || K.has('ArrowLeft')) move.sub(right);
+    if (K.has(' ')) move.y += 1;
+    if (K.has('Shift')) move.y -= 1;
+    // ~20 m/s at 1x near the ground, up to ~200 m/s high up so crossing the map doesn't take all day
+    const ground = this.heightAt(cam.x, -cam.z) ?? this.waterLevel;
+    const above = Math.max(0, cam.y - ground);
+    if (move.lengthSq() > 0) cam.addScaledVector(move.normalize(), (20 + Math.min(above, 300) * 0.6) * this.flySpeed * dt);
+    cam.y = Math.max(cam.y, Math.max(ground, this.waterLevel - 40) + 1.8);   // through everything, but never under the ground
+    cam.y = Math.min(cam.y, 6000);
+    this.flyTarget();
+  }
+
+  // the terrain, objects and markers load round controls.target: keep it on the ground ahead of
+  // the camera, nearer the lower it flies, so the ground in front gets its detail
+  flyTarget() {
+    const cam = this.camera.position, t = this.controls.target;
+    const ground = this.heightAt(cam.x, -cam.z) ?? this.waterLevel;
+    const d = Math.max(25, Math.min(900, (cam.y - ground) * 1.2));
+    const fx = -Math.sin(this.flyYaw), fz = -Math.cos(this.flyYaw);
+    const nx = cam.x + fx * d, nz = cam.z + fz * d;
+    if (Math.abs(nx - t.x) + Math.abs(nz - t.z) > 2) {
+      t.set(nx, this.heightAt(nx, -nz) ?? this.waterLevel, nz);
+      this.scheduleUpdate();
+    }
   }
 
   // keyboard movement, called every frame. Speeds scale with the camera distance so a key press
@@ -272,7 +386,7 @@ export class View3D {
     this.loop();
   }
 
-  hide() { this.running = false; clearInterval(this.fogTimer); }
+  hide() { this.stopFly(); this.running = false; clearInterval(this.fogTimer); }
 
   // ---------------------------------------------------------------- layer toggles (shared with the 2D map)
   applyLayerState(key) {
@@ -574,8 +688,8 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     if (!this.running) return;
     requestAnimationFrame(() => this.loop());
     const now = performance.now(), dt = Math.min(0.1, (now - (this.lastFrame || now)) / 1000); this.lastFrame = now;
-    this.handleKeys(dt);
-    this.controls.update();
+    if (this.flying) this.handleFly(dt);
+    else { this.handleKeys(dt); this.controls.update(); }
     // a camera that moved by any means (drag, keys, glide, follow) needs a frame
     const cam = this.camera.position, tgt = this.controls.target;
     const sig = `${cam.x.toFixed(2)},${cam.y.toFixed(2)},${cam.z.toFixed(2)},${tgt.x.toFixed(2)},${tgt.z.toFixed(2)}`;
@@ -588,7 +702,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
     if (!this.dirty && now - (this.lastRender || 0) < IDLE_MS) return;
     this.dirty = false; this.lastRender = now;
     // keep the target on the ground so orbiting feels anchored
-    const h = this.heightAt(this.controls.target.x, -this.controls.target.z);
+    const h = this.flying ? null : this.heightAt(this.controls.target.x, -this.controls.target.z);
     if (h !== null && Math.abs(h - this.controls.target.y) > 0.5) {
       const d = h - this.controls.target.y;
       this.controls.target.y += d * 0.2; this.camera.position.y += d * 0.2;
@@ -1261,7 +1375,7 @@ uniform sampler2D uFog; uniform float uFogOn; uniform float uFogOpacity; uniform
   }
 }
 
-const KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', 'r', 'f', 'z', 'x', '+', '=', '-', '_', 'Shift', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home']);
+const KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', 'r', 'f', 'z', 'x', '+', '=', '-', '_', 'Shift', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', ' ']);
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
 const IDENTITY = new THREE.Matrix4();
 const _v = new THREE.Vector3();

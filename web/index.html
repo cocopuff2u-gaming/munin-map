@@ -62,6 +62,8 @@ for (const u of ['config', 'data/markers.json', 'data/icons.json', 'data/pins.js
   <div id="map" class="map"></div>
   <div id="view3d" class="view3d" hidden><canvas id="gl"></canvas>
     <div class="v3d-help">Drag to pan · right-drag / two fingers to orbit · wheel to zoom · double-click to centre · WASD move · Q E turn · R F tilt · Z X zoom · Shift fast</div>
+    <button type="button" class="v3d-fly" id="btn-fly" title="Fly through the world: mouse to look, WASD to move" hidden><svg viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5Z"/></svg><span>Fly</span></button>
+    <div class="v3d-flyhelp" hidden>Mouse to look · WASD move · Space up · Shift down · wheel <b>speed <i id="fly-speed">1x</i></b> · Esc to stop</div>
   </div>
 
   <header class="topbar">
