@@ -557,21 +557,44 @@ namespace MuninMap
             }
         }
 
+        // The map goes online once per run: right after a saved world's zone data loads, or, for a world
+        // that has no save yet (or an old-format one, which loads through ZoneSystem.LoadOld), once
+        // ServerLoadWorld has its locations: before, a brand-new world kept the map down until a restart.
+        private static bool wentOnline;
+
+        private static void GoOnline()
+        {
+            if (wentOnline) return;
+            wentOnline = true;
+            if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out ZoneSystem.LocationInstance startLocation))
+            {
+                MuninConfig.WORLD_START_POS = startLocation.m_position;
+                ZLog.Log("MuninMap: starting point " + MuninConfig.WORLD_START_POS);
+            }
+            else ZLog.LogWarning("MuninMap: failed to find starting point");
+
+            MuninMap.instance.Online();
+            mapDataServer.ListenAsync();
+            try { Fog.RevealVisitedZones(wait: true); } catch (Exception e) { ZLog.LogWarning("MuninMap: visited-zone reveal failed: " + e.Message); }
+        }
+
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Load))]
         private class ZoneSystemLoadPatch
         {
+            private static void Postfix() => GoOnline();
+        }
+
+        [HarmonyPatch(typeof(ZNet), "ServerLoadWorld")]
+        private class ZNetServerLoadWorldPatch
+        {
             private static void Postfix()
             {
-                if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out ZoneSystem.LocationInstance startLocation))
-                {
-                    MuninConfig.WORLD_START_POS = startLocation.m_position;
-                    ZLog.Log("MuninMap: starting point " + MuninConfig.WORLD_START_POS);
-                }
-                else ZLog.LogWarning("MuninMap: failed to find starting point");
-
-                MuninMap.instance.Online();
-                mapDataServer.ListenAsync();
-                try { Fog.RevealVisitedZones(wait: true); } catch (Exception e) { ZLog.LogWarning("MuninMap: visited-zone reveal failed: " + e.Message); }
+                if (wentOnline || ZoneSystem.instance == null) return;
+                if (ZoneSystem.instance.LocationsGenerated) { GoOnline(); return; }
+                ZLog.Log("MuninMap: new world, going online once its locations are placed");
+                Action once = null;
+                once = () => { ZoneSystem.instance.GenerateLocationsCompleted -= once; GoOnline(); };
+                ZoneSystem.instance.GenerateLocationsCompleted += once;
             }
         }
 

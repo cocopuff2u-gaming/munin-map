@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**A brand-new world gets its map at once**
+
+* On a world with no save yet, the map waited for the next restart before it came up (it started when the game read the world's save, and a new world has none). It now starts as soon as the new world's locations are placed. Old-format worlds, which load another way, are covered too.
+
 **Layers remember more**
 
 * The kinds you hide one by one under a row's arrow are remembered in your browser like the switches: leave Rocks on with only Giant bones ticked and it stays that way after a refresh. The same goes for every tree, bush, berry, ore, mushroom and plant kind, and for the World structures kinds.
