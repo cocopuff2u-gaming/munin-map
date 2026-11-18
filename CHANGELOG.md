@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Layers remember more**
+
+* The kinds you hide one by one under a row's arrow are remembered in your browser like the switches: leave Rocks on with only Giant bones ticked and it stays that way after a refresh. The same goes for every tree, bush, berry, ore, mushroom and plant kind, and for the World structures kinds.
+* The Map style, the 3D Time of day and the Activity time spans (last 3 or 24 hours, last day or week) are remembered too.
+
 ## 3.3.1
 
 **Link preview card** (#29)
