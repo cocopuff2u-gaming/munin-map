@@ -115,6 +115,20 @@ export class Sidebar {
     let toggles = {};
     try { toggles = JSON.parse(localStorage.getItem('munin-layer-toggles') || '{}') || {}; } catch (e) { /* none */ }
     const remember = (key, v) => { toggles[key] = v; try { localStorage.setItem('munin-layer-toggles', JSON.stringify(toggles)); } catch (e) { /* this visit only */ } };
+    // the kinds hidden one by one under a row's arrow, remembered too: tree and rock kinds by their
+    // id (the game's, stable), world structures by name (RUIN_SITES may grow or reorder)
+    let kinds = {};
+    try { kinds = JSON.parse(localStorage.getItem('munin-layer-kinds') || '{}') || {}; } catch (e) { /* none */ }
+    if (Array.isArray(kinds.vegHidden)) for (const k of kinds.vegHidden) if (Number.isInteger(k) && VEG[k]) S.vegHidden.add(k);
+    if (Array.isArray(kinds.ruinHidden)) for (const n of kinds.ruinHidden) { const i = RUIN_SITES.indexOf(n); if (i >= 0) S.ruinHidden.add(i); }
+    if (S.vegHidden.size) S.emit('vegHidden');   // (in case a layer drew before the panel was built)
+    if (S.ruinHidden.size) S.emit('ruinHidden');
+    const rememberKinds = () => {
+      kinds = { vegHidden: [...S.vegHidden], ruinHidden: [...S.ruinHidden].map((i) => RUIN_SITES[i]).filter(Boolean) };
+      try { localStorage.setItem('munin-layer-kinds', JSON.stringify(kinds)); } catch (e) { /* this visit only */ }
+    };
+    // a select's value as this browser left it, when it's still one of its options
+    const restoreSelect = (sel, key) => { const v = toggles[key]; if (typeof v === 'string' && [...sel.options].some((o) => o.value === v)) sel.value = v; return sel.value; };
     const row = (icon, label, desc, checked, onToggle, key) => {
       key = key || label.replace(/<[^>]*>/g, '').trim();
       const saved = toggles[key];
@@ -133,9 +147,10 @@ export class Sidebar {
       const style = el(`<div class="lrow"><span class="lico">${BIOME_SVG}</span><span class="ltext"><b>Map style</b><small>Terrain, biomes or height</small></span><select class="sel"><option value="terrain">Terrain</option><option value="biomes">Biomes</option>${this.app.gl && (this.app.config?.height_max_zoom ?? -1) >= 0 ? '<option value="height">Height</option>' : ''}</select></div>`);
       const keyEl = el('<div class="biome-key" hidden></div>');
       const sel = style.querySelector('select'); sel.value = S.mapStyle;
+      S.mapStyle = restoreSelect(sel, 'Map style');
       const apply = () => { const on = sel.value === 'biomes'; this.app.biomes.setOn(on); this.app.setHeightStyle(sel.value === 'height'); keyEl.hidden = !on; S.set('mapStyle', sel.value); };
       this.app.biomes.onColours = (cols) => { keyEl.replaceChildren(...Object.entries(cols).map(([n, c]) => el(`<span><i style="background:${c}"></i>${escape(n)}</span>`))); };
-      sel.addEventListener('change', apply);
+      sel.addEventListener('change', () => { remember('Map style', sel.value); apply(); });
       world.append(style, keyEl);
       if (S.mapStyle !== 'terrain') apply();
     }
@@ -161,7 +176,7 @@ export class Sidebar {
       r.append(more);
       for (const [k, name, swatch] of kinds) {
         const c = el(`<label class="vkind"><input type="checkbox" ${hidden.has(k) ? '' : 'checked'}>${swatch || ''}<span title="${name}">${name}</span></label>`);
-        c.querySelector('input').addEventListener('change', (e) => { if (e.target.checked) hidden.delete(k); else hidden.add(k); S.set(key, hidden); });
+        c.querySelector('input').addEventListener('change', (e) => { if (e.target.checked) hidden.delete(k); else hidden.add(k); S.set(key, hidden); rememberKinds(); });
         list.append(c);
       }
       return [r, list];
@@ -203,22 +218,25 @@ export class Sidebar {
     // ---- where players go, and what weighs on their frame rate (all off at first: data on demand)
     const act = card('Activity', '2D map');
     const A = L.activity;
+    // the time spans as this browser left them (set before the rows, which may switch a layer back on)
+    if (toggles['act:hours'] === 3 || toggles['act:hours'] === 24) A.hours = toggles['act:hours'];
+    if (toggles['act:days'] === 1 || toggles['act:days'] === 7) A.days = toggles['act:days'];
     // trails: the last 3 or 24 hours, and whose
     const trailOpts = el(`<div class="act-opts" hidden>
-      <div class="act-line"><span class="mp-seg"><button data-h="3" class="on">Last 3 hours</button><button data-h="24">Last 24 hours</button></span></div>
+      <div class="act-line"><span class="mp-seg"><button data-h="3"${A.hours === 3 ? ' class="on"' : ''}>Last 3 hours</button><button data-h="24"${A.hours === 24 ? ' class="on"' : ''}>Last 24 hours</button></span></div>
       <div class="act-names chips"></div></div>`);
     const hotOpts = el('<div class="act-opts" hidden><small class="act-note"></small></div>');
     const buildOpts = el(`<div class="act-opts" hidden>
-      <div class="act-line"><span class="mp-seg"><button data-d="1" class="on">Last day</button><button data-d="7">Last week</button></span></div>
+      <div class="act-line"><span class="mp-seg"><button data-d="1"${A.days === 1 ? ' class="on"' : ''}>Last day</button><button data-d="7"${A.days === 7 ? ' class="on"' : ''}>Last week</button></span></div>
       <div class="act-key"><span><i class="built"></i>Built</span><span><i class="gone"></i>Taken down</span></div></div>`);
-    const trailRow = row(TRAIL_SVG, 'Trails', 'Where players went, last 3 hours', false, (v) => { trailOpts.hidden = !v; A.set('trails', v); });
+    const trailRow = row(TRAIL_SVG, 'Trails', `Where players went, last ${A.hours} hours`, false, (v) => { trailOpts.hidden = !v; A.set('trails', v); });
     act.append(trailRow, trailOpts);
     act.append(row(HEAT_SVG, 'Time spent', 'Click a square for who and how long', false, (v) => A.set('heat', v)));
     act.append(row(ico('tombstone', '#e0485a'), 'Deaths', 'Where players have died', false, (v) => A.set('deaths', v)));
     act.append(row(BUILD_SVG, 'New building', 'Where bases grew or came down', false, (v) => { buildOpts.hidden = !v; A.set('building', v); }), buildOpts);
     act.append(row(ico('fire', '#ff6a3d'), 'Lag hotspots', 'Busy areas: click one for why', false, (v) => { hotOpts.hidden = !v; A.set('hotspots', v); }), hotOpts);
-    for (const b of trailOpts.querySelectorAll('[data-h]')) b.addEventListener('click', () => { if (A.hours !== +b.dataset.h) A.setHours(+b.dataset.h); });
-    for (const b of buildOpts.querySelectorAll('[data-d]')) b.addEventListener('click', () => { if (A.days !== +b.dataset.d) A.setDays(+b.dataset.d); });
+    for (const b of trailOpts.querySelectorAll('[data-h]')) b.addEventListener('click', () => { if (A.hours !== +b.dataset.h) { remember('act:hours', +b.dataset.h); A.setHours(+b.dataset.h); } });
+    for (const b of buildOpts.querySelectorAll('[data-d]')) b.addEventListener('click', () => { if (A.days !== +b.dataset.d) { remember('act:days', +b.dataset.d); A.setDays(+b.dataset.d); } });
     let namesSig = '';
     A.onChange(() => {
       for (const b of trailOpts.querySelectorAll('[data-h]')) b.classList.toggle('on', +b.dataset.h === A.hours);
@@ -254,7 +272,8 @@ export class Sidebar {
       const light = el(`<div class="lrow"><span class="lico">${SUN_SVG}</span><span class="ltext"><b>Time of day</b><small>The light in 3D</small></span><select class="sel">
         <option value="live">Live</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="evening">Evening</option><option value="night">Night</option></select></div>`);
       const sel = light.querySelector('select'); sel.value = S.time3d;
-      sel.addEventListener('change', () => S.set('time3d', sel.value));
+      if (restoreSelect(sel, 'Time of day') !== S.time3d) S.set('time3d', sel.value);
+      sel.addEventListener('change', () => { remember('Time of day', sel.value); S.set('time3d', sel.value); });
       d3.append(light);
       d3.append(row(SHADOW_SVG, 'Shadows', 'Softer on slower devices when off', S.shadows, (v) => S.set('shadows', v)));
     }
